@@ -518,7 +518,7 @@ function m6LifecycleFixture(fixture, readiness, expectedStatus) {
     redirected: false, statusCode: 404, bodyByteCount: fixture.faviconBody.length,
     bodySha256: fixture.faviconHash, bodyText: fixture.faviconBody, cleanupErrors: [], serverExit: { observed: true, code: 0 } };
   const browserProvenance = { status: 'PASS', candidateSha256: fixture.candidateSha, buildDigest: fixture.artifact.digest,
-    frozenSeedSha256: 'eb9cb264f1d7e561e506810a5ae4bb1be086102977b3a786d8f9488a452eb77d',
+    frozenSeedSha256: 'ee2963f5eebaf13a41e8c61324ccfc6a480ab8b5e1ab37163bf08807cf164db5',
     playwrightTestVersion: '1.64.1', playwrightCoreVersion: '1.64.1',
     executable: '/root/.cache/ms-playwright/chromium-1510/chrome-linux/chrome', executableIsFile: true, executableBytes: 100 };
   return { receipt: JSON.parse(JSON.stringify(receipt)), summary, buildReceipt: fixture.buildReceipt, faviconProbe, browserProvenance };
