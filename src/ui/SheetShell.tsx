@@ -193,11 +193,15 @@ export function cellEditorFormulaSource(editor: { entity: string; kind: string; 
 }
 
 export function formulaOptionsUi(ui: CellOptionsUi & { key: string } | null, key: string, cellKey: string): CellOptionsUi {
-  return ui?.key === key ? ui : { open: true, index: !ui || ui.key === cellKey ? -1 : 0 };
+  return ui?.key === key ? ui : { open: true, index: !ui || ui.key === cellKey ? -1 : 0, navigated: false };
 }
 
 export function formulaOptionIndex(index: number, count: number): number | null {
   return count > 0 ? Math.min(Math.max(index, 0), count - 1) : null;
+}
+
+export function formulaTabKeepsField(exactField: boolean, ui: CellOptionsUi): boolean {
+  return exactField && !ui.navigated;
 }
 
 export function cellEditorListAttributes(suggestionCount: number, allowedCount: number, open: boolean): Pick<CellEditorProps, "role" | "aria-autocomplete" | "aria-expanded"> {
@@ -5872,14 +5876,14 @@ export function SheetShell(props: SheetShellProps) {
         }
         const modified = event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
         const pickIndex = formulaOptionIndex(optionsUi.index, cellOptions.length);
-        const exactField = suggestions && editor && columns.some(column => column.key === editor.value.slice(suggestions.start, suggestions.end));
-        if (!composing && !modified && event.key === "Tab" && exactField && optionsUi.index < 0) { onEditorKeyDown(event); return; }
+        const exactField = Boolean(suggestions && editor && columns.some(column => column.key === editor.value.slice(suggestions.start, suggestions.end)));
+        if (!composing && !modified && event.key === "Tab" && formulaTabKeepsField(exactField, optionsUi)) { onEditorKeyDown(event); return; }
         const action = composing || modified ? null : formulaMode && optionsOpen && event.key === "Tab" && pickIndex !== null ? { kind: "pick" as const, index: pickIndex } : cellOptionsKeyAction(event.key, formulaMode && optionsUi.index >= 0 && pickIndex !== null ? { ...optionsUi, index: pickIndex } : optionsUi, cellOptions.length);
         if (!action) { onEditorKeyDown(event); return; }
         // The open list owns this key; Enter picks without committing, so a second Enter commits.
         event.preventDefault();
         event.stopPropagation();
-        if (action.kind === "move") setCellOptionsUi({ key: optionsKey, ...action.ui });
+        if (action.kind === "move") setCellOptionsUi({ key: optionsKey, ...action.ui, navigated: true });
         else if (action.kind === "pick") pickCellOption(cellOptions[action.index]!);
         else setCellOptionsUi({ key: optionsKey, open: false, index: -1 });
       },
