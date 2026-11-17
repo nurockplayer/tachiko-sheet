@@ -237,7 +237,7 @@ try {
   const productionIndex = await readFile(path.join(dist, "index.html"));
   assert.ok(productionIndex.length, "production dist index exists");
   const builtPkg = JSON.parse(await readFile(path.join(root, "node_modules/@playwright/test/package.json"), "utf8"));
-  assert.equal(builtPkg.version, "1.62.1", "locked Playwright version");
+  assert.equal(builtPkg.version, "1.64.1", "locked Playwright version");
   const example = await import(path.join(root, "scripts/sales-catalog-source.mjs"));
   const j4 = await import(path.join(root, "tests/fixtures/j4-catalog-sales.mjs"));
   const inventoryHash = (source) => sha256(JSON.stringify(Object.entries(source).sort(([a], [b]) => a.localeCompare(b))));

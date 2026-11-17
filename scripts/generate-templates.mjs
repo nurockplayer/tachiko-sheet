@@ -16,7 +16,7 @@
 // worktree copy and its --out bind mount write that same directory, and GNU tar
 // refuses the copy ("file changed as we read it"). Then:
 //   rm -f public/templates/*.ro
-//   orb-test --local --image mcr.microsoft.com/playwright:v1.62.1-noble \
+//   orb-test --local --image mcr.microsoft.com/playwright:v1.64.1-noble \
 //     --out public/templates -- node scripts/generate-templates.mjs
 import assert from 'node:assert/strict';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';

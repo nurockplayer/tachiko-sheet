@@ -445,7 +445,7 @@ function m6AuxiliaryFixture(kind, port) {
     status: 'BLOCKED', reason: 'Independent cold-Home readiness contained an HTTP, request, response, console, page or CDP error.', candidateKind: kind, candidateIdentity: candidateSha,
     mutantCandidateIdentity: kind === 'mutant' ? candidateSha : null,
     httpIndexStatus: 200, productionAssetStatus: 200, browserNavigationStatus: 200, cdpReady: true, coldHomeReady: true,
-    browserVersion: 'Chrome/151.0.7922.34', playwrightVersion: '1.62.1', buildDigest: artifact.digest,
+    browserVersion: 'Chrome/151.0.7922.34', playwrightVersion: '1.64.1', buildDigest: artifact.digest,
     productionEntryAssetPath: `/${entry}`,
     independentHttpGets: [
       { name: 'production-index', url: `${origin}/`, method: 'GET', status: 200,
@@ -500,7 +500,7 @@ function m6LifecycleFixture(fixture, readiness, expectedStatus) {
       error: { name: 'AssertionError', message: 'normal Home Sales Open is enabled when the production runtime is ready', stack: 'AssertionError: Home/Open\n    at frozen lifecycle' },
     } : {
       error: null,
-      environment: { node: 'v24.15.0', platform: 'linux', arch: 'x64', origin, playwrightVersion: '1.62.1',
+      environment: { node: 'v24.15.0', platform: 'linux', arch: 'x64', origin, playwrightVersion: '1.64.1',
         executable: '/root/.cache/ms-playwright/chromium-1510/chrome-linux/chrome', browserVersion: 'Chrome/151.0.7922.34',
         profile: '/tmp/profile', copyName: 'fixture-copy' },
       artifacts: { production: inventory, acceptance: fixture.acceptanceArtifact ?? inventory,
@@ -519,7 +519,7 @@ function m6LifecycleFixture(fixture, readiness, expectedStatus) {
     bodySha256: fixture.faviconHash, bodyText: fixture.faviconBody, cleanupErrors: [], serverExit: { observed: true, code: 0 } };
   const browserProvenance = { status: 'PASS', candidateSha256: fixture.candidateSha, buildDigest: fixture.artifact.digest,
     frozenSeedSha256: 'eb9cb264f1d7e561e506810a5ae4bb1be086102977b3a786d8f9488a452eb77d',
-    playwrightTestVersion: '1.62.1', playwrightCoreVersion: '1.62.1',
+    playwrightTestVersion: '1.64.1', playwrightCoreVersion: '1.64.1',
     executable: '/root/.cache/ms-playwright/chromium-1510/chrome-linux/chrome', executableIsFile: true, executableBytes: 100 };
   return { receipt: JSON.parse(JSON.stringify(receipt)), summary, buildReceipt: fixture.buildReceipt, faviconProbe, browserProvenance };
 }
