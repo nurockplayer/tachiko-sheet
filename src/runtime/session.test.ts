@@ -2915,6 +2915,29 @@ describe("confirmed changed-cell patches", () => {
     expect(result.view.revision).toBe(result.publication.resulting_revision);
   });
 
+  it("updates the native-table view even though the last whole-table reply remains unchanged", async () => {
+    const { client, runtime, fullTable } = await queryTableSession();
+    const tableReplies: TableProjection[] = [];
+    client.hooks.queryTable = async () => {
+      const table = { ...fullTable(), native_table_profile: true };
+      tableReplies.push(table);
+      return table;
+    };
+    const view = await runtime.read();
+    const lastTableReply = tableReplies.at(-1)!;
+    const queriesBefore = client.calls.queryTable.length;
+    const result = await runtime.editConfirmed(view, IMPACT, { kind: "number", input: "12" });
+
+    expect(client.calls.queryTable).toHaveLength(queriesBefore);
+    expect(tableReplies.at(-1)).toBe(lastTableReply);
+    expect(lastTableReply.rows[0]!.fields[0]!.stored).toEqual({ kind: "number", value: 5 });
+    expect(result.view.table.rows[0]!.fields[0]!.stored).toEqual({ kind: "number", value: 12 });
+    expect(result.view.table.rows[1]).toBe(view.table.rows[1]);
+    expect(result.view.revision).toBe(result.publication.resulting_revision);
+    expect(result.view.table).toEqual((await runtime.read()).table);
+    expect(client.calls.queryTable).toHaveLength(queriesBefore + 1);
+  });
+
   async function patchSession(windowed = true, initiallyBlank = false) {
     const { client, runtime, view: openedView } = await opened();
     const initialFields = openedView.table.rows[0]!.fields;
