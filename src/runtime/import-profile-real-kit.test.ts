@@ -97,7 +97,7 @@ describe("working-size imported sessions with the vendored kit", () => {
       expect(imported.metadata.sheets[0]!.rows[0]!.styles).toHaveLength(1);
       const before = await runtime.read();
       const occurrence = await client.observeOccurrence();
-      for (const kind of ["width", "style", "format"] as const) {
+      for (const kind of ["width", "style", "format", "header", "plain"] as const) {
         // Build the source directly: capacity-profile export correctly refuses
         // presentation, so it cannot manufacture this admission regression.
         const file = execFileSync("python3", ["-I", "-c", String.raw`
@@ -106,8 +106,8 @@ kind = sys.argv[1]
 ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 rel = "http://schemas.openxmlformats.org/package/2006/relationships"
 width = '<cols><col min="1" max="1" width="12"/></cols>' if kind == "width" else ""
-xf = 'fontId="1" applyFont="1"' if kind == "style" else 'numFmtId="2" applyNumberFormat="1"'
-rows = ''.join('<row r="%d"><c r="A%d" t="str" s="%d"><v>%s</v></c></row>' % (i + 1, i + 1, int(i > 0 and kind != "width"), "Name" if i == 0 else "Item %d" % i) for i in range(201))
+xf = 'fontId="1" applyFont="1"' if kind in ("style", "header") else 'numFmtId="2" applyNumberFormat="1"'
+rows = ''.join('<row r="%d"><c r="A%d" t="str" s="%d"><v>%s</v></c></row>' % (i + 1, i + 1, int((i == 0 and kind == "header") or (i > 0 and kind in ("style", "format"))), "Name" if i == 0 else "Item %d" % i) for i in range(201))
 parts = {
   "[Content_Types].xml": '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/></Types>',
   "_rels/.rels": '<Relationships xmlns="%s"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' % rel,
@@ -116,6 +116,12 @@ parts = {
   "xl/worksheets/sheet1.xml": '<worksheet xmlns="%s">%s<sheetData>%s</sheetData></worksheet>' % (ns, width, rows),
   "xl/styles.xml": '<styleSheet xmlns="%s"><fonts count="2"><font/><font><b/></font></fonts><fills count="1"><fill/></fills><borders count="1"><border/></borders><cellXfs count="2"><xf numFmtId="0" fontId="0"/><xf %s/></cellXfs></styleSheet>' % (ns, xf),
 }
+if kind == "plain":
+  del parts["xl/styles.xml"]
+  parts["xl/_rels/workbook.xml.rels"] = '<Relationships xmlns="%s"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>' % rel
+  # A formula forces the ordinary 128-row profile without adding presentation.
+  rows = '<row r="1"><c r="A1" t="str"><v>Name</v></c></row>' + ''.join('<row r="%d"><c r="A%d">%s<v>%d</v></c></row>' % (i + 1, i + 1, '<f>1+1</f>' if i == 1 else '', 2 if i == 1 else i) for i in range(1, 201))
+  parts["xl/worksheets/sheet1.xml"] = '<worksheet xmlns="%s"><sheetData>%s</sheetData></worksheet>' % (ns, rows)
 output = io.BytesIO()
 with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
   for name, content in parts.items(): archive.writestr(name, content)
@@ -123,9 +129,24 @@ sys.stdout.buffer.write(output.getvalue())
 `, kind]);
         const bytes = Uint8Array.from(file).buffer;
         const preview = await client.inspectSpreadsheet(bytes, "xlsx", options, "working_size");
+        expect(preview.sheets[0]!.rows).toHaveLength(200);
+        await expect(client.inspectSpreadsheet(bytes, "xlsx", options)).rejects.toMatchObject({ failure: { code: "capacity_exceeded" } });
+        if (kind === "plain") {
+          expect(preview.ledger.some(finding => finding.category === "lossy_on_export")).toBe(false);
+          expect(await runtime.inspectSpreadsheet(bytes, "xlsx", options)).toEqual(preview);
+          const plain = await runtime.importSpreadsheet(bytes, "xlsx", options,
+            { column_types: [["number"]], extra_columns: [[]] });
+          expect(plain.metadata.version).toBe(2);
+          expect(plain.view.table.collection.entity_count).toBe(200);
+          continue;
+        }
         if (kind === "width") expect(preview.sheets[0]!.columns[0]!.width).toBe(12);
         if (kind === "style") expect(preview.sheets[0]!.rows[0]![0]!.style.bold).toBe(true);
         if (kind === "format") expect(preview.sheets[0]!.rows[0]![0]!.style.number_format).toBe("0.00");
+        if (kind === "header") {
+          expect(preview.sheets[0]!.rows.every(row => row.every(cell => !cell.style.bold))).toBe(true);
+          expect(preview.ledger).toContainEqual(expect.objectContaining({ code: "header_style_not_preserved" }));
+        }
         await expect(runtime.inspectSpreadsheet(bytes, "xlsx", options)).rejects.toMatchObject({ failure: { code: "capacity_exceeded" } });
         await expect(runtime.importSpreadsheet(bytes, "xlsx", options, textSelection)).rejects.toMatchObject({ failure: { code: "capacity_exceeded" } });
         expect(await client.observeOccurrence()).toEqual(occurrence);

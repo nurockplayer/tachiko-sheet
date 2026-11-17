@@ -1320,6 +1320,26 @@ describe("createSheetRuntime", () => {
     expect(await runtime.read()).toEqual(view);
   });
 
+  it.each(["header_style_not_preserved", "style_profile", "column_width_outside_grid"])(
+    "retains the original capacity refusal for ledger-only presentation loss: %s", async code => {
+      const { client, runtime, view } = await opened();
+      const refusal = new FakeDesignerRuntimeError("capacity_exceeded", client.currentRevision);
+      const source = { sheets: [], ledger: [{ category: "lossy_on_export", code,
+        location: "source", message: "Source presentation remains source-only", blocking: false }] };
+      const inspect = vi.fn(async (_bytes: ArrayBuffer, _format: string, _options: unknown, profile?: string) => {
+        if (!profile) throw refusal;
+        return source;
+      });
+      const fallback = vi.fn();
+      Object.assign(client, { inspectSpreadsheet: inspect, importSpreadsheet: async () => { throw refusal; },
+        importSpreadsheetWorkingSize: fallback });
+      const args = [new ArrayBuffer(4), "xlsx", { delimiter: ",", header: true }] as const;
+      await expect(runtime.inspectSpreadsheet(...args)).rejects.toBe(refusal);
+      await expect(runtime.importSpreadsheet(...args, { column_types: [], extra_columns: [] })).rejects.toBe(refusal);
+      expect(fallback).not.toHaveBeenCalled();
+      expect(await runtime.read()).toEqual(view);
+    });
+
   it("uses working-size inspection only after a typed capacity refusal", async () => {
     const { client, runtime } = await opened();
     const source = { sheets: [], ledger: [] };
