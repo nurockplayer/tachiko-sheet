@@ -1,3 +1,4 @@
+import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 // #185 production UI, real kit and IndexedDB. Select cases separately so every
 // new regression has a behavioral RED receipt on the unchanged base build.
 import assert from 'node:assert/strict';
@@ -27,6 +28,7 @@ async function start() {
   pid = (await cdp.send('SystemInfo.getProcessInfo')).processInfo.find(p => p.type === 'browser').id;
   await cdp.detach(); processes.push({ pid, profile });
   await installDistRoutes(context, dist);
+  await installPublishedTablePatcher(context);
   await context.addInitScript(() => {
     window.__saveEvidence = { requests: [], tables: [] };
     const Original = window.Worker;
@@ -41,7 +43,11 @@ async function start() {
               this.dispatchEvent(new ErrorEvent('error', { message: 'Controlled lost observation' }));
               return;
             }
-            window.__saveEvidence.tables.push(structuredClone(e.data.response.payload));
+            window.__saveEvidence.tables.push(window.__trackObservedTable(window.__saveEvidence, structuredClone(e.data.response.payload)));
+          }
+          if (e.data.response?.type === 'published') {
+            const table = window.__trackPublished(window.__saveEvidence, e.data.response.payload);
+            if (table) window.__saveEvidence.tables.push(table);
           }
           if (window.__saveEvidence.staleExport && ['canonical_tree_exported', 'project_exported', 'portable_ro_exported'].includes(e.data.status)) {
             window.__saveEvidence.staleExport = false;
@@ -67,7 +73,7 @@ async function terminate() {
   assert.equal(exists(owned), false, 'browser process must exit before same-profile restart');
   processes.at(-1).exitObserved = true; context = pid = undefined;
 }
-async function projection(p) { return p.evaluate(() => window.__saveEvidence.tables.at(-1)); }
+async function projection(p) { return p.evaluate(() => window.__readObservedTable(window.__saveEvidence)); }
 async function edit(p, value) {
   await p.getByRole('tab', { name: 'Table', exact: true }).click();
   const table = await projection(p);

@@ -1,3 +1,4 @@
+import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
@@ -8,6 +9,7 @@ if (!dist) { console.error("BLOCKED: WORK_DIST must name a built product."); pro
 const browser = await chromium.launch({ headless: true, ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}), ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) });
 const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"], viewport: { width: 1440, height: 900 } });
 await installDistRoutes(context, dist);
+await installPublishedTablePatcher(context);
 await context.addInitScript(() => {
   window.__editingEvidence = { records: [] };
   const Original = window.Worker;
@@ -18,7 +20,11 @@ await context.addInitScript(() => {
       window.__editingEvidence.records.push(record);
       this.addEventListener("message", event => {
         record.replies.push(structuredClone(event.data));
-        if (event.data.response?.type === "table") record.tables.push(structuredClone(event.data.response.payload));
+        if (event.data.response?.type === "table") record.tables.push(window.__trackObservedTable(record, structuredClone(event.data.response.payload)));
+        if (event.data.response?.type === "published") {
+          const table = window.__trackPublished(record, event.data.response.payload);
+          if (table) record.tables.push(table);
+        }
       });
       this.record = record;
     }
@@ -27,7 +33,7 @@ await context.addInitScript(() => {
 });
 const page = await context.newPage();
 const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
-const projection = () => page.evaluate(() => window.__editingEvidence.records.flatMap(record => record.tables).at(-1));
+const projection = () => page.evaluate(() => window.__readObservedTable(window.__editingEvidence.records.findLast(record => record.tables.length)));
 const count = () => page.evaluate(() => window.__editingEvidence.records.flatMap(record => record.requests).filter(message => message.request?.type === "edit_cells").length);
 const publications = () => page.evaluate(() => window.__editingEvidence.records.reduce((n, record) => n + record.replies.filter(reply => reply.response?.type === "published" && record.requests.find(request => request.id === reply.id)?.request?.type === "edit_cells").length, 0));
 const cell = (table, r, c) => page.getByTestId(`cell:${table.rows[r].fields[0]?.target.entity ?? table.rows[r].id}:${table.columns[c].id}`);
