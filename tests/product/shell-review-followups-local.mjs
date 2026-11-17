@@ -19,14 +19,19 @@ const ready = page => page.locator('[data-testid="project-ready"][aria-busy="fal
 const row = (page, index) => page.locator(`tbody tr.ts-row[aria-rowindex="${index + 2}"]`);
 async function check(name, test) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  let page;
   try {
     await installDistRoutes(context, process.env.WORK_DIST ?? "dist-acceptance");
-    const page = await context.newPage();
+    page = await context.newPage();
     page.setDefaultTimeout(10000);
     await page.goto(LOCAL_ORIGIN); await waitForColdHome(page);
     await test(page);
     console.log(`PASS ${name}`);
-  } catch (error) { failures.push(error); console.error(`FAIL ${name}: ${error.stack}`); }
+  } catch (error) {
+    failures.push(error);
+    console.error(`FAIL ${name}: ${error.stack}`);
+    if (page) console.error("Focus diagnostics:", await page.evaluate(() => ({ active: document.activeElement?.outerHTML.slice(0, 500), tabs: document.querySelector('[aria-label="Sheets"]')?.outerHTML, trace: window.__deleteFocusTrace })));
+  }
   finally { await context.close(); }
 }
 async function importRows(page) {
@@ -87,6 +92,10 @@ try {
     await tabs.nth(1).click({ button: "right" });
     await page.getByRole("menuitem", { name: "Delete sheet…" }).click();
     dialog = page.getByRole("dialog", { name: "Delete sheet", exact: true });
+    await page.evaluate(() => {
+      window.__deleteFocusTrace = [];
+      document.addEventListener("focusin", event => window.__deleteFocusTrace.push(event.target.outerHTML.slice(0, 300)));
+    });
     await dialog.getByRole("button", { name: "Delete sheet", exact: true }).click();
     await ready(page);
     await page.waitForFunction(() => {
