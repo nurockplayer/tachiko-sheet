@@ -219,7 +219,7 @@ describe("keyboard history queue", () => {
     return { container, update, key, cell, view };
   }
 
-  it.each(["su", "s"])("Tab preserves exact field %s and still completes other prefixes", async token => {
+  it.each([["su", false], ["s", false], ["su", true]] as const)("Tab handles field prefix %s (suggestion explicitly selected: %s)", async (token, navigated) => {
     const view = makeView();
     view.table.native_table_profile = true;
     view.table.columns[1]!.key = "su";
@@ -234,8 +234,12 @@ describe("keyboard history queue", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     expect(ui.container.querySelector('[role="listbox"]')).not.toBeNull();
+    if (navigated) {
+      await act(async () => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })); });
+      expect(ui.container.querySelector('[role="option"][aria-selected="true"]')?.textContent).toContain("SUM");
+    }
     await act(async () => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })); });
-    if (token === "su") expect(onCommit.mock.calls[0]?.[2]).toEqual({ kind: "formula", source: "su" });
+    if (token === "su" && !navigated) expect(onCommit.mock.calls[0]?.[2]).toEqual({ kind: "formula", source: "su" });
     else { expect(onCommit).not.toHaveBeenCalled(); expect(input.value).toBe("=SUM("); }
   });
 
@@ -274,6 +278,21 @@ describe("keyboard history queue", () => {
     expect(ui.container.querySelector('[role="dialog"][aria-label="Keyboard shortcuts"]')).not.toBeNull();
     expect(ui.container.querySelector('[role="menu"]')).toBeNull();
     expect(disclosure.open).toBe(false);
+  });
+
+  it("returns focus to More document commands after closing shortcut help", async () => {
+    const ui = await mount();
+    const disclosure = ui.container.querySelector<HTMLDetailsElement>(".ts-command-overflow")!;
+    const summary = disclosure.querySelector<HTMLElement>('summary[aria-label="More document commands"]')!;
+    const help = [...disclosure.querySelectorAll("button")].find(button => button.textContent === "Keyboard shortcuts")!;
+    await act(async () => { summary.click(); help.focus(); help.click(); });
+    const dialog = ui.container.querySelector<HTMLElement>('[role="dialog"][aria-label="Keyboard shortcuts"]')!;
+    expect(dialog).not.toBeNull();
+    expect(disclosure.open).toBe(false);
+    await act(async () => { dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+    expect(ui.container.querySelector('[role="dialog"][aria-label="Keyboard shortcuts"]')).toBeNull();
+    expect(document.activeElement).toBe(summary);
   });
 
   it("disables unavailable Rename without blocking history via menu, F2 or double-click", async () => {
