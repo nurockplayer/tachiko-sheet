@@ -22,6 +22,7 @@ import type {
   ImportSelection,
   InteropMetadata,
   SpreadsheetFormat,
+  SourceWorkbook,
 } from "../../public/core-kit/runtime/interop-protocol.js";
 import {
   UnknownOperationOutcomeError,
@@ -1462,8 +1463,29 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     return enqueue(async () => {
       const { kit, client } = await loadKitOnce();
       const inspect = capability(client.inspectSpreadsheet, "spreadsheet inspection");
-      return dispatch(kit, () => inspect.call(client, bytes.slice(0), format, options, "working_size"));
+      try {
+        return await dispatch(kit, () => inspect.call(client, bytes.slice(0), format, options));
+      } catch (error) {
+        if (!hasFailureCode(kit, error, "capacity_exceeded")) throw error;
+        return inspectLosslessWorkingSize(kit, client, bytes, format, options, error);
+      }
     });
+  }
+
+  async function inspectLosslessWorkingSize(
+    kit: CoreKit, client: PublicClient, bytes: ArrayBuffer, format: SpreadsheetFormat,
+    options: ImportOptions, capacityRefusal: unknown,
+  ): Promise<SourceWorkbook> {
+    const inspect = capability(client.inspectSpreadsheet, "spreadsheet inspection");
+    const source = await dispatch(kit, () => inspect.call(client, bytes.slice(0), format, options, "working_size"));
+    // Working-size metadata carries no presentation. Only use it when there
+    // is no source presentation to lose; retain Work's original refusal otherwise.
+    if (source.sheets.some(sheet => sheet.columns.some(column => column.width !== null) ||
+      sheet.rows.some(row => row.some(({ style }) => style.number_format !== null || style.bold ||
+        style.fill !== null || style.wrap || style.border || style.alignment !== null)))) {
+      throw capacityRefusal;
+    }
+    return source;
   }
 
   function importSpreadsheet(
@@ -1476,13 +1498,21 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     return enqueue(async () => {
       assertNotReplaced(requestedAt);
       const { kit, client } = await loadKitOnce();
-      const importSheet = capability(client.importSpreadsheetWorkingSize, "working-size spreadsheet import");
+      const importSheet = capability(client.importSpreadsheet, "spreadsheet import");
       let imported;
       try {
-        imported = await afterNotReplaced(
-          requestedAt,
-          dispatch(kit, () => importSheet.call(client, bytes.slice(0), format, options, selection)),
-        );
+        try {
+          imported = await afterNotReplaced(
+            requestedAt,
+            dispatch(kit, () => importSheet.call(client, bytes.slice(0), format, options, selection)),
+          );
+        } catch (error) {
+          if (!hasFailureCode(kit, error, "capacity_exceeded")) throw error;
+          await afterNotReplaced(requestedAt, inspectLosslessWorkingSize(kit, client, bytes, format, options, error));
+          const workingImport = capability(client.importSpreadsheetWorkingSize, "working-size spreadsheet import");
+          imported = await afterNotReplaced(requestedAt,
+            dispatch(kit, () => workingImport.call(client, bytes.slice(0), format, options, selection)));
+        }
       } catch (error) {
         if (error instanceof UnknownOperationOutcomeError) {
           openedFromWorkFile = false;
@@ -1501,7 +1531,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       residentCollection = null;
       residentAvailable = true;
       closed = false;
-      requestByteLimit = imported.opened.profile === "working_size"
+      requestByteLimit = "profile" in imported.opened && imported.opened.profile === "working_size"
         ? MAX_PROJECT_TRANSFER_BYTES : MAX_WIRE_REQUEST_BYTES;
       let read: CoherentRead;
       try {

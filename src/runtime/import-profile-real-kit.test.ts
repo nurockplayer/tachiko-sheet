@@ -58,6 +58,34 @@ describe("working-size imported sessions with the vendored kit", () => {
     } finally { client.close(); }
   }, 30_000);
 
+  it("preserves full-fidelity metadata and refuses a styled capacity fallback without replacing work", async () => {
+    const client = await realClient();
+    const runtime = createSheetRuntime(async () => ({ ...kit, createExperimentalDesignerClient: () => client }));
+    const textSelection = { column_types: [["text" as const]], extra_columns: [[]] };
+    try {
+      const csv = new TextEncoder().encode("Name\n" + Array.from({ length: 200 }, (_, i) => `Item ${i}`).join("\n")).buffer;
+      const imported = await runtime.importSpreadsheet(csv, "csv", options, textSelection);
+      expect(imported.metadata.version).toBe(1);
+      if (imported.metadata.version !== 1) throw new Error("Expected full-fidelity metadata");
+      expect(imported.metadata.sheets[0]!.columns[0]).toHaveProperty("width", null);
+      expect(imported.metadata.sheets[0]!.rows).toHaveLength(200);
+      expect(imported.metadata.sheets[0]!.rows[0]!.styles).toHaveLength(1);
+      const before = await runtime.read();
+      const occurrence = await client.observeOccurrence();
+      for (const kind of ["width", "style", "format"] as const) {
+        const metadata = structuredClone(imported.metadata);
+        if (kind === "width") metadata.sheets[0]!.columns[0]!.width = 12;
+        if (kind === "style") metadata.sheets[0]!.rows[0]!.styles[0]!.bold = true;
+        if (kind === "format") metadata.sheets[0]!.rows[0]!.styles[0]!.number_format = "0.00";
+        const xlsx = await client.exportSpreadsheet(imported.view.revision, metadata, "xlsx", imported.view.table.collection.id);
+        await expect(runtime.inspectSpreadsheet(xlsx.bytes, "xlsx", options)).rejects.toMatchObject({ failure: { code: "capacity_exceeded" } });
+        await expect(runtime.importSpreadsheet(xlsx.bytes, "xlsx", options, textSelection)).rejects.toMatchObject({ failure: { code: "capacity_exceeded" } });
+        expect(await client.observeOccurrence()).toEqual(occurrence);
+        expect(await runtime.read()).toEqual(before);
+      }
+    } finally { client.close(); }
+  }, 30_000);
+
   it("admits 8,407 and 10,000 rows and preserves resident work after a 10,001-row refusal", async () => {
     const client = await realClient();
     const runtime = createSheetRuntime(async () => ({ ...kit, createExperimentalDesignerClient: () => client }));
