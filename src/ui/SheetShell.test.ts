@@ -15,6 +15,7 @@ import {
   cellEditorFormulaSource,
   formulaOptionsUi,
   formulaOptionIndex,
+  formulaTabKeepsField,
   scrollCellIntoGridNearest,
   focusRevealNextScrollTop,
   focusRevealScrollDelta,
@@ -1810,13 +1811,30 @@ describe("cell editor formula roles", () => {
 
 describe("formula completion boundaries", () => {
   it("resets selection for a changed list and clamps acceptance", () => {
-    const old = { key: "A-list", open: true, index: 5 };
-    expect(formulaOptionsUi(old, "SU-list", "cell")).toEqual({ open: true, index: 0 });
+    const old = { key: "A-list", open: true, index: 5, navigated: true };
+    const changed = formulaOptionsUi(old, "SU-list", "cell");
+    expect(changed).toEqual({ open: true, index: 0, navigated: false });
+    expect(formulaTabKeepsField(true, changed)).toBe(true);
     expect(formulaOptionsUi(null, "SU-list", "cell").index).toBe(-1);
     expect(formulaOptionsUi({ key: "cell", open: true, index: -1 }, "SU-list", "cell").index).toBe(-1);
     expect(formulaOptionIndex(5, 3)).toBe(2);
     expect(formulaOptionIndex(-1, 3)).toBe(0);
     expect(formulaOptionIndex(0, 0)).toBeNull();
+  });
+  it("picks the highlighted suggestion after navigating the same list", () => {
+    const navigated = { key: "SU-list", open: true, index: 0, navigated: true };
+    const ui = formulaOptionsUi(navigated, "SU-list", "cell");
+    expect(ui).toBe(navigated);
+    expect(formulaTabKeepsField(true, ui)).toBe(false);
+  });
+  it("does not keep a token that is not an exact field", () => {
+    expect(formulaTabKeepsField(false, { open: true, index: -1 })).toBe(false);
+    expect(formulaTabKeepsField(false, { open: true, index: 0, navigated: true })).toBe(false);
+  });
+  it("keeps an exact field in a fresh list", () => {
+    const ui = formulaOptionsUi(null, "SU-list", "cell");
+    expect(ui).toEqual({ open: true, index: -1, navigated: false });
+    expect(formulaTabKeepsField(true, ui)).toBe(true);
   });
   it("only offers formulas where commit accepts them", () => {
     expect(cellEditorFormulaSource({ entity: "row", kind: "number", value: "=SU" })).toBe("SU");

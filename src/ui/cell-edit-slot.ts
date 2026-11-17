@@ -37,7 +37,7 @@ export function cellOptionMatches(options: readonly string[], value: string): re
   return options.filter(option => option.toLocaleLowerCase().includes(needle));
 }
 
-export interface CellOptionsUi { open: boolean; index: number }
+export interface CellOptionsUi { open: boolean; index: number; navigated?: boolean }
 export type CellOptionsKeyAction = { kind: "move"; ui: CellOptionsUi } | { kind: "pick"; index: number } | { kind: "close" } | null;
 
 /** Keys the choice list owns; any other key (and Enter/Escape with no list) keeps the editor's own handling. */
