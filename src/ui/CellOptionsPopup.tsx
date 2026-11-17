@@ -73,18 +73,26 @@ export function CellOptionsPopup({ id, label, options, activeIndex, anchor, cont
 
 /** A single-line formula hint anchored to the editing cell. */
 export function FormulaHint({ id, text, summary, anchor, container }: { id: string; text: string; summary: string; anchor: HTMLElement | null; container: HTMLElement | null }) {
+  const hintRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {
     if (!anchor) return;
     const place = () => {
       const rect = anchor.getBoundingClientRect();
-      setBox({ left: rect.left, top: rect.bottom });
+      const hint = hintRef.current;
+      if (!hint) return;
+      const { width, height } = hint.getBoundingClientRect();
+      const left = Math.max(0, Math.min(rect.left, window.innerWidth - width));
+      const top = Math.max(0, Math.min(rect.bottom + height <= window.innerHeight ? rect.bottom : rect.top - height, window.innerHeight - height));
+      setBox(current => current?.left === left && current.top === top ? current : { left, top });
     };
     place();
     window.addEventListener("scroll", place, true);
     window.addEventListener("resize", place);
     return () => { window.removeEventListener("scroll", place, true); window.removeEventListener("resize", place); };
-  }, [anchor]);
-  if (!container || !box) return null;
-  return createPortal(<div id={id} className="ts-formula-hint" role="note" style={box}><code>{text}</code> — {summary}</div>, container);
+  }, [anchor, container, text, summary]);
+  if (!container || !anchor) return null;
+  return createPortal(<div ref={hintRef} id={id} className="ts-formula-hint" role="note"
+    style={{ ...box, visibility: box ? "visible" : "hidden", maxWidth: "min(36rem, 100vw)", maxHeight: "100vh", boxSizing: "border-box" }}
+    title={`${text} — ${summary}`}><code>{text}</code> — {summary}</div>, container);
 }

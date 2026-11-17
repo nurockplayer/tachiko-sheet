@@ -62,12 +62,17 @@ export async function runDraftTabAmendmentCases({ page, ready, projection, check
   await close();
 
   await create("Tab run draft", [["One", "text"], ["Two", "text"], ["Three", "text"]]);
-  await entry().first().press("F2"); await editor().fill("a"); await editor().press("Tab");
-  await page.keyboard.press("F2"); await editor().fill("b"); await editor().press("Tab");
+  // Begin the run in column Two; losing the origin must not pass as column One.
+  await entry().nth(1).press("F2"); await editor().fill("b"); await editor().press("Tab");
   await page.keyboard.press("F2"); await editor().fill("c"); await editor().press("Enter");
   await ready(page);
-  await page.waitForFunction(() => document.activeElement === document.querySelector(".ts-entry-row [data-entry-field]"));
-  assert.equal((await projection(page)).rows.length, 1, "Tab run publishes the draft row");
+  await page.waitForFunction(() => document.activeElement === document.querySelectorAll(".ts-entry-row [data-entry-field]")[1]);
+  const tabRun = await projection(page);
+  assert.equal(tabRun.rows.length, 1, "Tab run publishes the draft row");
+  for (const [index, value] of [[1, "b"], [2, "c"]]) {
+    assert.deepEqual(tabRun.rows[0].fields.find(field => field.target.field === tabRun.columns[index].id)?.stored,
+      { kind: "text", value });
+  }
   checks.push("draft-tab-tab-enter-start-column");
   await close();
 

@@ -4,7 +4,7 @@ import { groupKeyLabel, groupKeyMarker } from "./group-totals.js";
 export type GroupChartType = "bar" | "line" | "pie";
 
 export interface GroupChartPoint {
-  /** Tells groups apart: labels can repeat, as a blank and the text "(blank)" do. */
+  /** Stable identity independent of the displayed label. */
   id: string;
   label: string;
   /** A blank or empty key, shown apart from text as in the table. */
@@ -26,7 +26,7 @@ export function groupChartPoints(projection: GroupTotalsProjection, measureIndex
     if (value === null || value === undefined) return null;
     points.push({
       id: JSON.stringify(group.keys),
-      label: group.keys.map(groupKeyLabel).join(" · "),
+      label: group.keys.map(key => key.kind === "text" ? JSON.stringify(key.value) : groupKeyLabel(key)).join(" · "),
       marked: group.keys.some((key) => groupKeyMarker(key) !== null),
       value,
     });

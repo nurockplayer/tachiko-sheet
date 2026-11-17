@@ -215,7 +215,7 @@ describe("producer presentation disclosures", () => {
 
 describe("capped import ledger compatibility", () => {
   it("keeps imported cell locations and the producer's cap summary", () => {
-    // Work a5348952: interop_document.rs (explicit_column_type) and
+    // Work e434dc38: interop_document.rs (explicit_column_type) and
     // wasm/import_capacity_tests.rs::assert_ledger_summary (100,000 conversions).
     const code = "explicit_column_type";
     const message = "Source scalar converted using the explicitly selected column type; original source remains available.";

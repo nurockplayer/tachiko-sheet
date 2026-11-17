@@ -1628,7 +1628,8 @@ const cases = [
     await page.keyboard.press("Tab");
     assert.equal(await dialog.getByRole("region", { name: "Shortcuts" }).evaluate(n => n === document.activeElement), true);
     await page.keyboard.press("Escape");
-    assert.equal(await activeId(page), await cell.getAttribute("data-testid"), "focus did not return to cell");
+    await page.waitForFunction(id => document.activeElement?.dataset.testid === id,
+      await cell.getAttribute("data-testid"));
     assert.equal(await executeCount(page), before, "help changed data");
     assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).first().isDisabled(), undo, "help changed undo availability");
     await cell.press("F2");

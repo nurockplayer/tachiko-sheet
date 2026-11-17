@@ -188,8 +188,16 @@ try {
   }
   console.log("PASS: 20 immediate Undo/Redo loops with value/control consistency in the same frame (6x CPU slowdown)");
   await page.keyboard.press("Control+Z");
-  await waitCell(productCode, "UNDO-A");
-  assert.equal(await redo.isDisabled(), false);
+  // Read value and controls together after the throttled loop. Allow deferred
+  // rendering to settle, but a persistent mismatch still times out and fails.
+  await page.waitForFunction(testId => {
+    const value = document.querySelector(`[data-testid="${testId}"] .ts-cell-value`)?.textContent?.trim();
+    const controls = [...document.querySelectorAll(".ts-history-command")];
+    const undo = controls.find(node => node.textContent.trim() === "Undo");
+    const redo = controls.find(node => node.textContent.trim() === "Redo");
+    return value === "UNDO-A" && undo instanceof HTMLButtonElement && !undo.disabled
+      && redo instanceof HTMLButtonElement && !redo.disabled;
+  }, productCode, { timeout: 8000 });
   await page.keyboard.press("Control+Z");
   await waitCell(productCode, initialValue);
   await page.keyboard.press("Control+Shift+Z");
