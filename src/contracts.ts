@@ -108,6 +108,7 @@ export interface SheetRuntime {
   /** Read-only, cached client/kit readiness; never opens or creates work. */
   prepare(): Promise<void>;
   newTable(name: string, columns: NewTableColumn[]): Promise<WorkbookView>;
+  addTable(witness: ViewWitness, name: string, columns: NewTableColumn[]): Promise<ConfirmedPublication>;
   insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[]): Promise<ConfirmedPublication>;
   editCells(witness: ViewWitness, edits: CellEdit[]): Promise<ConfirmedPublication>;
   pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]): Promise<ConfirmedPublication>;
@@ -405,6 +406,7 @@ export interface SheetShellProps {
   onSetColumnDateFormat?(witness: ViewWitness, collection: string, field: string, format: DateFormat | null): Promise<RowCommandOutcome>;
   onSetColumnNumberFormat?(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null): Promise<RowCommandOutcome>;
   onRenameTable?(witness: ViewWitness, collection: string, name: string): Promise<RowCommandOutcome>;
+  onAddTable?(witness: ViewWitness, name: string, columns: NewTableColumn[]): Promise<RowCommandOutcome>;
   onDeleteTable?(witness: ViewWitness, collection: string): Promise<RowCommandOutcome>;
   onRenameColumn?(witness: ViewWitness, collection: string, field: string, name: string): Promise<RowCommandOutcome>;
   onRemoveColumn?(witness: ViewWitness, collection: string, field: string): Promise<RowCommandOutcome>;

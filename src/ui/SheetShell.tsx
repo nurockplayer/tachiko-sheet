@@ -193,11 +193,15 @@ export function cellEditorFormulaSource(editor: { entity: string; kind: string; 
 }
 
 export function formulaOptionsUi(ui: CellOptionsUi & { key: string } | null, key: string, cellKey: string): CellOptionsUi {
-  return ui?.key === key ? ui : { open: true, index: !ui || ui.key === cellKey ? -1 : 0 };
+  return ui?.key === key ? ui : { open: true, index: !ui || ui.key === cellKey ? -1 : 0, navigated: false };
 }
 
 export function formulaOptionIndex(index: number, count: number): number | null {
   return count > 0 ? Math.min(Math.max(index, 0), count - 1) : null;
+}
+
+export function formulaTabKeepsField(exactField: boolean, ui: CellOptionsUi): boolean {
+  return exactField && !ui.navigated;
 }
 
 export function cellEditorListAttributes(suggestionCount: number, allowedCount: number, open: boolean): Pick<CellEditorProps, "role" | "aria-autocomplete" | "aria-expanded"> {
@@ -561,6 +565,7 @@ export function SheetShell(props: SheetShellProps) {
     onCopyFormula,
     onRemoveRows,
     onRenameTable,
+    onAddTable,
     onDeleteTable,
     onDuplicateTable,
     onQueryShownTotals,
@@ -870,6 +875,7 @@ export function SheetShell(props: SheetShellProps) {
   const settleFormulaHandoffRef = useRef<() => void>(() => {});
   const newTableFocusIntentRef = useRef<number | null>(null);
   const duplicateFocusIntentRef = useRef<number | null>(null);
+  const [addSheetFocus, setAddSheetFocus] = useState<{ generation: number; occurrence: string; source: string } | null>(null);
   const liveOccurrenceRef = useRef<string | null>(null);
   const appFocusingRef = useRef(false);
   // Declared before the windowing effects so a replacement occurrence never
@@ -3647,6 +3653,19 @@ export function SheetShell(props: SheetShellProps) {
     });
   }, [duplicateOpen, view]);
 
+  useLayoutEffect(() => {
+    const intent = addSheetFocus;
+    if (!intent || !view || view.occurrence !== intent.occurrence || view.table.collection.key === intent.source || commitPending) return;
+    setAddSheetFocus(null);
+    requestAnimationFrame(() => {
+      if (!completionMayUpdateUi(intent)) return;
+      withAppFocus(() => {
+        const first = gridScrollRef.current?.querySelector<HTMLElement>("td[data-testid^='cell:'], .ts-entry-row [data-entry-field]");
+        first?.focus();
+      });
+    });
+  }, [view, commitPending, tab, addSheetFocus]);
+
   function onCellKeyDown(
     event: ReactKeyboardEvent<HTMLTableCellElement>,
     entity: string,
@@ -5857,14 +5876,14 @@ export function SheetShell(props: SheetShellProps) {
         }
         const modified = event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
         const pickIndex = formulaOptionIndex(optionsUi.index, cellOptions.length);
-        const exactField = suggestions && editor && columns.some(column => column.key === editor.value.slice(suggestions.start, suggestions.end));
-        if (!composing && !modified && event.key === "Tab" && exactField && optionsUi.index < 0) { onEditorKeyDown(event); return; }
+        const exactField = Boolean(suggestions && editor && columns.some(column => column.key === editor.value.slice(suggestions.start, suggestions.end)));
+        if (!composing && !modified && event.key === "Tab" && formulaTabKeepsField(exactField, optionsUi)) { onEditorKeyDown(event); return; }
         const action = composing || modified ? null : formulaMode && optionsOpen && event.key === "Tab" && pickIndex !== null ? { kind: "pick" as const, index: pickIndex } : cellOptionsKeyAction(event.key, formulaMode && optionsUi.index >= 0 && pickIndex !== null ? { ...optionsUi, index: pickIndex } : optionsUi, cellOptions.length);
         if (!action) { onEditorKeyDown(event); return; }
         // The open list owns this key; Enter picks without committing, so a second Enter commits.
         event.preventDefault();
         event.stopPropagation();
-        if (action.kind === "move") setCellOptionsUi({ key: optionsKey, ...action.ui });
+        if (action.kind === "move") setCellOptionsUi({ key: optionsKey, ...action.ui, navigated: true });
         else if (action.kind === "pick") pickCellOption(cellOptions[action.index]!);
         else setCellOptionsUi({ key: optionsKey, open: false, index: -1 });
       },
@@ -6545,11 +6564,53 @@ export function SheetShell(props: SheetShellProps) {
                 }}
                 onClick={() => void selectCollection(collection.key)}>{name}</button>;
             })}
+            <button type="button" className="ts-tab" aria-label="Add sheet"
+              disabled={!onAddTable || !!interop?.metadata || columnChangesBlocked || commitPending || modalInteractionOpen}
+              title={interop?.metadata ? "Adding sheets to imported work is not available yet." : "Add sheet (Shift+F11)"}
+              onClick={() => void addSheet()}>+</button>
           </div>
           <div className="ts-workbook-status">{renderStatusStrip()}</div>
         </footer>
       </div>
     );
+  }
+
+  async function addSheet(): Promise<void> {
+    if (interop?.metadata) {
+      setLocalError("Adding sheets to imported work is not available yet.");
+      return;
+    }
+    if (!view || !witness || !onAddTable || columnChangesBlocked || rowCommandPendingRef.current || editor || modalInteractionOpen || props.appearancePreference.getSnapshot().composing) return;
+    const used = new Set(view.collections.map(collection => (names.table(collection.id) ?? collection.display_name).toLowerCase()));
+    let number = view.collections.length + 1;
+    while (used.has(`sheet ${number}`)) number += 1;
+    const intent = { ...completionIntent(), occurrence: view.occurrence, source: view.table.collection.key };
+    rowCommandPendingRef.current = true;
+    setCommitPending(true);
+    setLocalError(null);
+    try {
+      const result = await onAddTable(witness, `Sheet ${number}`, [{ name: "A", field_type: "text", required: false }]);
+      if (result.kind === "confirmed") {
+        setAddSheetFocus(intent);
+        setTab("table");
+      } else if (result.kind === "refused") setLocalError(result.message);
+    } catch (cause) {
+      setLocalError(explain(cause, "The sheet could not be added. Refresh to check the current work."));
+    } finally {
+      rowCommandPendingRef.current = false;
+      setCommitPending(false);
+    }
+  }
+
+  function onAddSheetKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): boolean {
+    if (event.key !== "F11" || !event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented ||
+      isComposingEvent(event) || props.appearancePreference.getSnapshot().composing || editor || modalInteractionOpen) return false;
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"]') ||
+      !target.closest('[role="grid"], [role="tablist"][aria-label="Sheets"]')) return false;
+    event.preventDefault();
+    if (!event.repeat) void addSheet();
+    return true;
   }
 
   function tableTabId(key: string): string { return `ts-table-tab-${encodeURIComponent(key)}`; }
@@ -6570,6 +6631,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function onTableTabsKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (onAddSheetKeyDown(event)) return;
     if (!view || isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || event.ctrlKey || event.metaKey || event.altKey) return;
     const index = view.collections.findIndex(collection => tableTabId(collection.key) === (event.target as HTMLElement).id);
@@ -6581,6 +6643,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function onWorkspaceTableKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (onAddSheetKeyDown(event)) return;
     if (!view || !isTableSwitchShortcut(event) || event.defaultPrevented || isComposingEvent(event) ||
       props.appearancePreference.getSnapshot().composing || editor !== null || modalInteractionOpen) return;
     const target = event.target;
