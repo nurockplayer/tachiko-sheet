@@ -1,3 +1,4 @@
+import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 // J1 product acceptance: author, constrain, sort/filter, edit, save and reopen a tracker.
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
@@ -18,7 +19,7 @@ const profile = path.join(work, "profile");
 let context, pid, page;
 const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
 const entry = () => page.locator(".ts-entry-row");
-const projection = () => page.evaluate(() => window.__j1Evidence.records.flatMap(record => record.tables).at(-1));
+const projection = () => page.evaluate(() => window.__readObservedTable(window.__j1Evidence.records.findLast(record => record.tables.length)));
 const values = table => table.rows.map(row => table.columns.map(column => row.fields.find(field => field.target.field === column.id)?.stored?.value));
 const cell = (table, r, c) => page.getByTestId(`cell:${table.rows[r].fields[0]?.target.entity ?? table.rows[r].id}:${table.columns[c].id}`);
 async function start() {
@@ -31,6 +32,7 @@ async function start() {
   pid = info.processInfo.find(row => row.type === "browser")?.id;
   assert.ok(Number.isInteger(pid) && pid > 0); processes.push({ pid, profile });
   await installDistRoutes(context, dist);
+  await installPublishedTablePatcher(context);
   await context.addInitScript(() => {
     window.__j1Evidence = { records: [], hostWrites: 0 };
     for (const method of ["put", "add", "delete", "clear"]) {
@@ -41,18 +43,24 @@ async function start() {
     window.Worker = class extends Original {
       constructor(...args) {
         super(...args);
-        this.record = { requests: [], replies: [], tables: [] };
+        this.record = { requests: [], replies: [], tables: [], gaps: [] };
         window.__j1Evidence.records.push(this.record);
         window.__j1Evidence.worker = this;
         this.addEventListener("message", event => {
           this.record.replies.push(structuredClone(event.data));
           // Tables above 1,000 rows arrive as unfiltered windows; assemble them.
-          if (event.data.response?.type === "table") this.record.tables.push(structuredClone(event.data.response.payload));
+          if (event.data.response?.type === "table") {
+            this.record.tables.push(window.__trackObservedTable(this.record, structuredClone(event.data.response.payload)));
+          }
           if (event.data.response?.type === "table_window") {
             const w = structuredClone(event.data.response.payload);
             if (w.start === 0 || !this.__windowTable || this.__windowTable.revision !== w.revision) this.__windowTable = { ...(w.tracker_profile ? { tracker_profile: true } : {}), ...(w.native_table_profile ? { native_table_profile: true } : {}), revision: w.revision, collection: w.collection, columns: w.columns, rows: [] };
             this.__windowTable.rows.push(...w.rows);
-            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(assembled); }
+            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(window.__trackObservedTable(this.record, assembled, true)); }
+          }
+          if (event.data.response?.type === "published") {
+            const table = window.__trackPublished(this.record, event.data.response.payload);
+            if (table) this.record.tables.push(table);
           }
         });
       }
