@@ -1071,7 +1071,8 @@ async function nativeCoverage() {
   await timed("Name Box dispatched-composition Enter and Escape", async () => {
     const selectFirst = () => evaluate(`
       click(cellAt(0, 0));
-      await waitFor(() => textbox("Name Box")?.value === "A1", "R6 A1 selected");
+      // Row 1 holds the headers; the first data cell is A2.
+      await waitFor(() => textbox("Name Box")?.value === "A2", "R6 A2 selected");
       return true;
     `);
     const state = () => evaluate(`return {
@@ -1104,7 +1105,7 @@ async function nativeCoverage() {
       const ordinary = await state();
       assert.throws(() => assert.deepEqual(ordinary, composing), assert.AssertionError,
         `unguarded ${key} must fail the composition oracle`);
-      assert.equal(ordinary.text, key === "Enter" ? "B3" : "A1", `ordinary ${key} control`);
+      assert.equal(ordinary.text, key === "Enter" ? "B3" : "A2", `ordinary ${key} control`);
       assert.equal(ordinary.focused, false, `ordinary ${key} returns to grid`);
       if (key === "Enter") assert.notDeepEqual(ordinary.selected, composing.selected, "ordinary Enter navigates");
     }
