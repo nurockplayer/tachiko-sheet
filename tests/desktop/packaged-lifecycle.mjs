@@ -1021,35 +1021,6 @@ async function nativeCoverage() {
     assert.equal(await noUndo(), true, "exactly one edit history entry");
   };
 
-  await timed("real system clipboard Paste values and one Undo", async () => {
-    const previousText = execFileSync("pbpaste");
-    const pasted = [["雪 clipboard", "0012"], ["native value", "second"]];
-    const expected = structuredClone(before);
-    for (let row = 0; row < 2; row++) for (let col = 0; col < 2; col++) expected[row][col].text = pasted[row][col];
-    // Falsifier: an absent/no-op paste must fail this exact full-table oracle.
-    assert.throws(() => assert.deepEqual(before, expected), assert.AssertionError);
-    try {
-      execFileSync("pbcopy", { input: pasted.map(row => row.join("\t")).join("\n") });
-      await evaluate(`
-        if (Object.hasOwn(navigator, "clipboard")) throw new Error("R6 must use WebKit's own clipboard");
-        click(cellAt(0, 0));
-        await waitFor(() => document.activeElement === cellAt(0, 0) && cellAt(0, 0).getAttribute("aria-selected") === "true", "R6 paste selection");
-        return true;
-      `);
-      // A real OS key supplies WebKit's user gesture; no navigator.clipboard override.
-      execFileSync("osascript", ["-e", `tell application id "${bundleId}" to activate`, "-e",
-        'tell application "System Events" to keystroke "v" using {command down, shift down}']);
-      await evaluate(`
-        await waitFor(() => current() && cellAt(0, 0)?.textContent === "雪 clipboard", "real clipboard Paste values");
-        return true;
-      `);
-      assert.deepEqual(await snapshot(), expected, "real WKWebView read changes only the four clipboard cells");
-      await undoOnce();
-    } finally {
-      execFileSync("pbcopy", { input: previousText });
-    }
-  });
-
   await timed("native Replace preview Cancel commit and one Undo", async () => {
     await evaluate(`
       click(cellAt(0, 0));
@@ -1140,6 +1111,37 @@ async function nativeCoverage() {
     assert.deepEqual(await snapshot(), before, "Name Box never edits cells");
     assert.equal(await noUndo(), true, "Name Box adds no history");
   });
+  await timed("real system clipboard Paste values and one Undo", async () => {
+    const previousText = execFileSync("pbpaste");
+    const pasted = [["雪 clipboard", "0012"], ["native value", "second"]];
+    const expected = structuredClone(before);
+    for (let row = 0; row < 2; row++) for (let col = 0; col < 2; col++) expected[row][col].text = pasted[row][col];
+    // Falsifier: an absent/no-op paste must fail this exact full-table oracle.
+    assert.throws(() => assert.deepEqual(before, expected), assert.AssertionError);
+    try {
+      execFileSync("pbcopy", { input: pasted.map(row => row.join("\t")).join("\n") });
+      await evaluate(`
+        if (Object.hasOwn(navigator, "clipboard")) throw new Error("R6 must use WebKit's own clipboard");
+        click(cellAt(0, 0));
+        await waitFor(() => document.activeElement === cellAt(0, 0) && cellAt(0, 0).getAttribute("aria-selected") === "true", "R6 paste selection");
+        return true;
+      `);
+      await evaluate(`
+        // Same UI shortcut as a user, dispatched like this lifecycle's other
+        // keys. The clipboard data and WebKit read remain real and unmodified.
+        cellAt(0, 0).dispatchEvent(new KeyboardEvent("keydown", {
+          key: "V", metaKey: true, shiftKey: true, bubbles: true, cancelable: true,
+        }));
+        await waitFor(() => current() && cellAt(0, 0)?.textContent === "雪 clipboard", "real clipboard Paste values");
+        return true;
+      `);
+      assert.deepEqual(await snapshot(), expected, "real WKWebView read changes only the four clipboard cells");
+      await undoOnce();
+    } finally {
+      execFileSync("pbcopy", { input: previousText });
+    }
+  });
+
 }
 
 // ---- run ---------------------------------------------------------------------
