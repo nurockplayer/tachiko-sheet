@@ -12,7 +12,7 @@
 // Usage: node tests/desktop/packaged-lifecycle.mjs "<path to Tachiko Sheet E2E.app>"
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { appendFile, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
@@ -23,7 +23,8 @@ import { formulaPersistence } from "./formula-persistence.mjs";
 import { pasteRaces } from "./paste-races.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const app = path.resolve(process.argv[2] ?? "");
+// LaunchServices resolves symlinks; process lookup and cleanup must match it.
+const app = realpathSync(path.resolve(process.argv[2] ?? ""));
 const bundleId = "dev.tachiko.sheet.e2e";
 assert.ok(existsSync(path.join(app, "Contents", "Info.plist")), `packaged app not found: ${app}`);
 const executable = path.join(app, "Contents", "MacOS");
