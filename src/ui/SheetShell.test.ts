@@ -219,6 +219,78 @@ describe("keyboard history queue", () => {
     return { container, update, key, cell, view };
   }
 
+  it.each(["su", "s"])("Tab preserves exact field %s and still completes other prefixes", async token => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.columns[1]!.key = "su";
+    const onCommit = vi.fn<SheetShellProps["onCommit"]>(async () => ({ accepted: true }));
+    const ui = await mount({ view, onCommit });
+    const cell = ui.container.querySelector<HTMLElement>(`[data-testid="cell:${entityA}:c-impact"]`)!;
+    await act(async () => { cell.focus(); cell.dispatchEvent(new KeyboardEvent("keydown", { key: "=", bubbles: true })); });
+    const input = ui.container.querySelector<HTMLInputElement>('[data-testid="cell-editor"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, `=${token}`);
+      input.setSelectionRange(token.length + 1, token.length + 1);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(ui.container.querySelector('[role="listbox"]')).not.toBeNull();
+    await act(async () => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })); });
+    if (token === "su") expect(onCommit.mock.calls[0]?.[2]).toEqual({ kind: "formula", source: "su" });
+    else { expect(onCommit).not.toHaveBeenCalled(); expect(input.value).toBe("=SUM("); }
+  });
+
+  it.each(["sort", "filter"])("clears the copied outline after local %s", async change => {
+    const ui = await mount();
+    const data = new DataTransfer();
+    await act(async () => { ui.cell().dispatchEvent(new ClipboardEvent("copy", { bubbles: true, cancelable: true, clipboardData: data })); });
+    expect(ui.container.querySelector('[class*="ts-cell--copied"]')).not.toBeNull();
+    const header = ui.container.querySelector("th.ts-column-header")!;
+    if (change === "sort") {
+      const sort = header.querySelector<HTMLButtonElement>('[aria-label="Sort A → Z"]')!;
+      await act(async () => sort.click());
+    } else {
+      const filter = header.querySelector<HTMLButtonElement>('[aria-label="Filter…"]')!;
+      await act(async () => filter.click());
+      const input = header.querySelector<HTMLInputElement>('input[aria-label="Filter title"]')!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Alpha");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      const apply = [...header.querySelectorAll("button")].find(button => button.textContent === "Apply")!;
+      await act(async () => apply.click());
+    }
+    expect(ui.container.querySelector('[class*="ts-cell--copied"]')).toBeNull();
+  });
+
+  it("closes menus and disclosures before shortcut help", async () => {
+    const ui = await mount({ onDeleteTable: async () => ({ kind: "confirmed" }) });
+    const tab = ui.container.querySelector<HTMLElement>('[aria-label="Sheets"] [role="tab"]')!;
+    await act(async () => { tab.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })); });
+    expect(ui.container.querySelector('[role="menu"]')).not.toBeNull();
+    const disclosure = ui.container.querySelector<HTMLDetailsElement>(".ts-column-overflow")!;
+    disclosure.open = true;
+    const help = [...ui.container.querySelectorAll("button")].find(button => button.textContent === "Keyboard shortcuts")!;
+    await act(async () => help.click());
+    expect(ui.container.querySelector('[role="dialog"][aria-label="Keyboard shortcuts"]')).not.toBeNull();
+    expect(ui.container.querySelector('[role="menu"]')).toBeNull();
+    expect(disclosure.open).toBe(false);
+  });
+
+  it("disables unavailable Rename without blocking history via menu, F2 or double-click", async () => {
+    const onHistory = vi.fn<SheetShellProps["onHistory"]>(async () => null);
+    const ui = await mount({ onHistory, onDeleteTable: async () => ({ kind: "confirmed" }) });
+    const tab = ui.container.querySelector<HTMLElement>('[aria-label="Sheets"] [role="tab"]')!;
+    await act(async () => { tab.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })); });
+    const rename = ui.container.querySelector<HTMLButtonElement>('[role="menuitem"]')!;
+    expect(rename.disabled).toBe(true);
+    expect(rename.title).toBe("Renaming sheets is not available.");
+    await act(async () => { rename.click(); tab.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true })); tab.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); });
+    expect(ui.container.querySelector('[role="dialog"][aria-label="Rename sheet"]')).toBeNull();
+    await act(async () => { tab.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    await ui.key("z", ui.cell());
+    expect(onHistory).toHaveBeenCalledOnce();
+  });
+
   function deferred<T>() {
     let resolve!: (value: T) => void;
     const promise = new Promise<T>(done => { resolve = done; });
