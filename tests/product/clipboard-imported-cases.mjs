@@ -5,29 +5,23 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { homeImportInput } from "./home-entry.mjs";
 
-export async function runImportedClipboardCases({ page, work, ready, close, projection, commands, values, cell, paste, status, unchangedPaste, checks }) {
+export async function runImportedClipboardCases({ page, work, ready, close, displayed, tableMetadata, commands, values, cell, paste, status, unchangedPaste, checks }) {
   async function importFile(file, types, expectedNative) {
     await (await homeImportInput(page)).setInputFiles(file);
     const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
     for (const [index, type] of types.entries()) await preview.locator(".ts-import-column select").nth(index).selectOption(type);
     await preview.getByRole("button", { name: "Import file", exact: true }).click();
     await preview.waitFor({ state: "detached" }); await ready();
-    const table = await projection();
+    const table = await tableMetadata();
     assert.equal(Boolean(table.native_table_profile), expectedNative, "consume the real fixture projection, independent of import origin");
     assert.deepEqual(table.columns.map(column => column.field_type), types);
     return table;
   }
   const editsFor = (table, start, block) => block.flatMap((row, r) => row.map((value, c) => ({
-    target: table.rows[start + r].fields.find(field => field.target.field === table.columns[c].id).target,
+    target: { entity: table.rows[start + r].id, field: table.columns[c].id },
     input: { kind: "text", value },
   })));
-  function expectedRows(table, start, block) {
-    const rows = structuredClone(table.rows);
-    for (const [r, row] of block.entries()) for (const [c, value] of row.entries()) {
-      rows[start + r].fields.find(field => field.target.field === table.columns[c].id).stored.value = value;
-    }
-    return rows;
-  }
+
 
   await close();
   // Reuse the exact capacity-8406 fixture recipe and ordinary import path.
@@ -37,11 +31,45 @@ export async function runImportedClipboardCases({ page, work, ready, close, proj
   const baseline = await importFile(path.join(fixtures, "source-8406.csv"), ["text", "text", "text"], true);
   assert.equal(baseline.rows.length, 8406);
   const start = 8000;
-  await page.evaluate(index => {
-    const scroller = document.querySelector(".ts-grid-scroll");
-    const pitch = document.querySelector('table[aria-label="Table"] tbody tr.ts-row').offsetHeight;
-    scroller.scrollTop = index * pitch - scroller.clientHeight / 2;
-  }, start);
+  async function scrollTo(index) {
+    await page.evaluate(index => {
+      const scroller = document.querySelector(".ts-grid-scroll");
+      const pitch = document.querySelector('table[aria-label="Table"] tbody tr.ts-row').offsetHeight;
+      scroller.scrollTop = index * pitch - scroller.clientHeight / 2;
+    }, index);
+    await cell(baseline, index, 0).waitFor();
+  }
+  async function readAllRows() {
+    const rows = new Map();
+    const step = await page.evaluate(() => {
+      const scroller = document.querySelector(".ts-grid-scroll");
+      const pitch = document.querySelector('table[aria-label="Table"] tbody tr.ts-row').offsetHeight;
+      return Math.max(1, Math.floor(scroller.clientHeight / pitch / 2));
+    });
+    let revision;
+    for (let index = 0; ; index = Math.min(index + step, baseline.rows.length - 1)) {
+      await scrollTo(index);
+      const grid = await displayed();
+      revision ??= grid.revision;
+      assert.equal(grid.revision, revision, "scrolling preserves the displayed revision");
+      for (const row of grid.rows) {
+        assert.deepEqual(row.cells.map(cell => cell.field), baseline.columns.map(column => column.id));
+        rows.set(row.id, row);
+      }
+      if (index === baseline.rows.length - 1) break;
+    }
+    assert.equal(rows.size, 8406, "all 8,406 row identities are displayed");
+    return { revision, rows: baseline.rows.map((row, index) => {
+      assert.ok(rows.has(row.id), `row ${index + 1} displays its original identity`);
+      return rows.get(row.id);
+    }) };
+  }
+  const before = await readAllRows();
+  assert.equal(before.revision, baseline.revision, "imported fixture and grid start at the same revision");
+  const beforeValues = values(before);
+  assert.deepEqual(beforeValues, baseline.rows.map(row => baseline.columns.map(column =>
+    String(row.fields.find(field => field.target.field === column.id).stored.value))));
+  await scrollTo(start);
   const anchor = cell(baseline, start, 0);
   await anchor.waitFor();
   assert.equal(await anchor.locator("..").getAttribute("aria-rowindex"), String(start + 2));
@@ -52,31 +80,35 @@ export async function runImportedClipboardCases({ page, work, ready, close, proj
   const beforeCount = (await commands()).length;
   await paste(anchor, block.map(row => row.join("\t")).join("\n"));
   await status().filter({ hasText: "Updated 2 rows" }).waitFor();
-  const after = await projection();
+  const after = await readAllRows();
+  assert.notEqual(after.revision, before.revision, "paste advances the application revision");
   assert.equal((await commands()).length, beforeCount + 1);
   assert.deepEqual((await commands()).at(-1), {
     type: "edit_cells", expected_revision: baseline.revision, edits: editsFor(baseline, start, block),
   }, "one command addresses exactly the six original stable targets at rows 8001–8002");
-  assert.deepEqual(after.columns, baseline.columns);
-  assert.deepEqual(after.rows, expectedRows(baseline, start, block), "every identity and all 25,218 values checked; only six stored values change");
+  assert.deepEqual(after.rows.map(row => row.id), before.rows.map(row => row.id));
+  assert.deepEqual(values(after), beforeValues.map((row, index) =>
+    index === start || index === start + 1 ? block[index - start] : row),
+  "every identity and all 25,218 displayed values checked; only six change");
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
-  assert.deepEqual((await projection()).rows, baseline.rows);
+  assert.deepEqual((await readAllRows()).rows, before.rows, "one Undo restores every displayed value and identity");
   await page.getByRole("button", { name: "Redo", exact: true }).click(); await ready();
-  assert.deepEqual((await projection()).rows, after.rows);
-  checks.push("221.a real capacity-8406 import; windowed far-scroll 2x3 paste; exact six stable targets and all rows/fields unchanged elsewhere; one Undo/Redo");
+  assert.deepEqual((await readAllRows()).rows, after.rows, "one Redo restores the pasted display and all untouched rows");
+  checks.push("221.a real capacity-8406 import; windowed far-scroll 2x3 paste; exact six stable targets; all 8,406 row identities and 25,218 DOM values/revisions; one Undo/Redo of all rows");
   await close(); page.setDefaultTimeout(10000);
 
   const typedCsv = path.join(work, "imported-paste-types.csv");
   await writeFile(typedCsv, "Item,Paid,When\nfirst,false,2026-10-01\nsecond,true,2026-10-02\nuntouched,false,2026-10-03\n");
   // Work #606: imported optional Yes/No and Date columns keep the table native.
-  const typedBaseline = await importFile(typedCsv, ["text", "boolean", "date"], true);
-  assert.deepEqual(values(typedBaseline), [["first", false, "2026-10-01"], ["second", true, "2026-10-02"], ["untouched", false, "2026-10-03"]]);
+  await importFile(typedCsv, ["text", "boolean", "date"], true);
+  const typedBaseline = await displayed();
+  assert.deepEqual(values(typedBaseline), [["first", "false", "2026-10-01"], ["second", "true", "2026-10-02"], ["untouched", "false", "2026-10-03"]]);
   await cell(typedBaseline, 0, 0).click();
   const typedCount = (await commands()).length;
   await paste(cell(typedBaseline, 0, 0), "changed-first\tTrUe\t2026-10-19\nchanged-second\tFaLsE\t2026-10-20");
   await status().filter({ hasText: "Updated 2 rows" }).waitFor();
-  const typedAfter = await projection();
-  const typedValues = [["changed-first", true, "2026-10-19"], ["changed-second", false, "2026-10-20"], ["untouched", false, "2026-10-03"]];
+  const typedAfter = await displayed();
+  const typedValues = [["changed-first", "true", "2026-10-19"], ["changed-second", "false", "2026-10-20"], ["untouched", "false", "2026-10-03"]];
   assert.deepEqual(values(typedAfter), typedValues);
   assert.deepEqual(typedAfter.rows.map(row => row.id), typedBaseline.rows.map(row => row.id));
   assert.deepEqual(typedAfter.rows[2], typedBaseline.rows[2], "untouched row is identical");
@@ -98,8 +130,8 @@ export async function runImportedClipboardCases({ page, work, ready, close, proj
     assert.deepEqual((await commands()).at(-1).edits.at(-1).input, { kind: "date", value: bad }, "raw invalid date reaches Work unchanged");
   }
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
-  assert.deepEqual((await projection()).rows, typedBaseline.rows, "all refusals preserve the single successful paste history entry");
+  assert.deepEqual((await displayed()).rows, typedBaseline.rows, "all refusals preserve the single successful paste history entry");
   await page.getByRole("button", { name: "Redo", exact: true }).click(); await ready();
-  assert.deepEqual((await projection()).rows, typedAfter.rows);
+  assert.deepEqual((await displayed()).rows, typedAfter.rows);
   checks.push("221.b–c real imported Text/Yes-No/Date fixture; exact mixed-case TRUE/FALSE folding and valid ISO dates; other Boolean text and invalid dates refuse whole, preserving every field/revision/history");
 }

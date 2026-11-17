@@ -23,7 +23,7 @@ const implementationPaths = [
   'tests/save-closure-mutations.test.mjs', 'tests/save-closure-workflow-scope.test.mjs',
 ];
 const expectedSeeds = {
-  'tests/product/web-save-closure-current.mjs': '5ac07168a801f1415a21dc9069e1dbe877c49a2b949a32177d07474e019adb9c',
+  'tests/product/web-save-closure-current.mjs': '31b43d889a4e0208e6dab1c2a94ca2749e3c3167bf736c23510fff2a5492b534',
   'tests/product/web-save-closure-prerequisites.mjs': 'b3e0f9a99b64db9d8bc0caa35e78fc7973f96896bd84f4d77eb5cec08bd9e704',
   'tests/product/production-lifecycle.mjs': 'eb9cb264f1d7e561e506810a5ae4bb1be086102977b3a786d8f9488a452eb77d',
 };
@@ -33,7 +33,7 @@ const currentCases = [
   'A-Date-only-normal-Save-fresh-reopen', 'B-same-table-Date-summary-refusal',
   'C-unrelated-Date-summary-refusal', 'C-empty-unrelated-Date-schema-refusal',
   'D-canonical-opaque-complete-copy-controls', 'E-CSV64-row-control', 'E-CSV32-column-control',
-  'E-profile-refusal-rows-8407.csv', 'E-profile-refusal-fields-33.csv',
+  'E-profile-refusal-rows-10001.csv', 'E-profile-refusal-fields-33.csv',
   'F-existing-read-fault-no-publication-recovery', 'R-unchanged-private-reader-Date-fixture',
 ];
 const prerequisiteCases = [

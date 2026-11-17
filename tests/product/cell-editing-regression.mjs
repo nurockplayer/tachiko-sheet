@@ -1101,28 +1101,22 @@ const cases = [
     const totalId = await total.getAttribute("data-testid");
     let count = await dispatches(page);
 
-    // A formula with no address goes straight to Work, as before translation,
-    // with no oversized read in front of it. Work holds this table in its text
-    // capacity profile, which takes no formula yet, and says so itself.
+    // Working-size imports now accept formulas; these nearby references are
+    // successful controls before the unchanged whole-column refusal below.
     await total.click();
     await bar.fill("=1+2");
     await bar.press("Enter");
-    await error.waitFor();
-    assert.match((await error.textContent()).trim(), /Text capacity/, "Work answers the formula, not the transport");
+    await page.waitForFunction(id => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === "3", totalId);
+    assert.equal(await error.count(), 0);
     assert.equal(await dispatches(page), count + 1, "=1+2 reaches Work exactly once");
-    assert.equal((await page.locator(`[data-testid="${totalId}"]`).textContent()).trim(), "2", "the refused formula changes nothing");
-    await bar.press("Escape");
 
-    // An address near this row keeps a small geometry, so Enter commits the
-    // translated source and Work refuses it as it refuses any formula here.
     count = await dispatches(page);
     await total.click();
     await bar.fill("=B2*2");
     await bar.press("Enter");
-    await error.waitFor();
-    assert.match((await error.textContent()).trim(), /Text capacity/, "Work answers the translated formula itself");
+    await page.waitForFunction(id => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === "2", totalId);
+    assert.equal(await error.count(), 0);
     assert.equal(await dispatches(page), count + 1, "the translated formula reaches Work exactly once");
-    await bar.press("Escape");
 
     // A range over the whole column does not fit one request.
     count = await dispatches(page);

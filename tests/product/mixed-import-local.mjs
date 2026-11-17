@@ -15,7 +15,6 @@ import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
 import { collectWindowedRows } from "./windowed-table-collector.mjs";
-import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -190,35 +189,39 @@ async function refusedImport(page, file, label) {
 }
 
 try {
-  // Ordinary imports admit 8,406 rows; the smaller lifecycle fixtures do not
-  // cross that boundary. Exercise both UI writers at the actual edge.
+  // At Work's working-size row limit, Sheet prevents both insertion paths
+  // before dispatch. The full resident table and publication count stay exact.
   COLS = 1;
   const edgeProfile = await mkdtemp(path.join(work, "profile-edge-"));
   const edgePage = await start(edgeProfile);
-  await importSource(edgePage, path.join(fixtures, "source-8406x1.csv"));
+  await importSource(edgePage, path.join(fixtures, "source-10000x1.csv"));
   const beforeInsert = await observedTable(edgePage);
-  assert.equal(beforeInsert.rows.length, 8406);
-  const draft = grid(edgePage).locator(".ts-entry-row");
-  const entry = draft.locator("[data-entry-field]").first();
-  await fillDraftCell(edgePage, entry, "new");
-  await draftActions(edgePage).getByRole("button", { name: "Add row", exact: true }).click();
-  const sentence = "This table can hold up to 8,406 rows; this change would make 8,407. Nothing was changed.";
+  assert.equal(beforeInsert.rows.length, 10000);
+  const publications = () => edgePage.evaluate(() => window.__capacityEvidence.replies.published ?? 0);
+  const writes = () => edgePage.evaluate(() => Object.entries(window.__capacityEvidence.requests)
+    .filter(([type]) => ["insert_row", "paste_cells", "edit_cells"].includes(type)));
+  const beforePublications = await publications();
+  const beforeWrites = await writes();
+  const sentence = "This table has reached the 10,000-row limit for adding rows here. Nothing was changed.";
   try {
-    await edgePage.getByRole("alert").filter({ hasText: sentence }).waitFor();
-    assert.deepEqual((await observedTable(edgePage)).rows, beforeInsert.rows, "entry refusal adds nothing");
-    await capacitySnapshot(edgePage, "8406-row imported entry refusal");
-    console.log(`PASS: imported entry refusal: ${sentence}`);
-    await draftActions(edgePage).getByRole("button", { name: "Discard", exact: true }).click();
-    await entry.evaluate(node => {
-      // Two lines: one line only fills the draft row; two ask Work to add rows.
+    assert.equal(await grid(edgePage).locator(".ts-entry-row").count(), 0, "full table offers no Add row action");
+    await edgePage.getByRole("status").filter({ hasText: sentence }).waitFor();
+    assert.deepEqual(await observedTable(edgePage), beforeInsert, "entry limit changes no resident state");
+    assert.equal(await publications(), beforePublications, "entry limit publishes nothing");
+    assert.deepEqual(await writes(), beforeWrites, "entry limit dispatches no writer");
+    await capacitySnapshot(edgePage, "10000-row imported entry limit");
+    await reveal(edgePage, 9999);
+    await cellAt(edgePage, 9999, 0).evaluate(node => {
+      // Overwrite the last row and append one: 10,001 rows must be refused.
       const data = new DataTransfer(); data.setData("text/plain", "new\nnewer");
       node.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
     });
-    await edgePage.locator('.ts-clipboard-status[role="alert"]').filter({ hasText: /^This table can hold up to 8,406 rows; this change would make 8,408\. Nothing was changed\.$/ }).waitFor();
-    assert.deepEqual((await observedTable(edgePage)).rows, beforeInsert.rows, "paste refusal adds nothing");
-    await capacitySnapshot(edgePage, "8406-row imported paste refusal");
-    console.log(`PASS: imported paste refusal: ${await edgePage.locator('.ts-clipboard-status[role="alert"]').textContent()}`);
-  } catch (error) { await capacitySnapshot(edgePage, "8406-row imported refusal failure"); throw error; }
+    await edgePage.locator('.ts-clipboard-status[role="alert"]').filter({ hasText: sentence }).waitFor();
+    assert.deepEqual(await observedTable(edgePage), beforeInsert, "paste refusal changes no resident state");
+    assert.equal(await publications(), beforePublications, "paste refusal publishes nothing");
+    assert.deepEqual(await writes(), beforeWrites, "paste refusal dispatches no writer");
+    await capacitySnapshot(edgePage, "10000-row imported paste refusal");
+  } catch (error) { await capacitySnapshot(edgePage, "10000-row imported refusal failure"); throw error; }
   await context.close(); context = undefined;
   for (const [rows, cols] of [[320, 2], [1000, 16]]) {
     ROWS = rows; COLS = cols;
@@ -253,7 +256,7 @@ try {
       // Home is the ordinary import entry. Refusals protect the saved copy;
       // native-parity separately proves a resident occurrence/history unchanged.
       const refusals = {};
-      for (const file of [`source-320x17.${format}`, `source-8407x2.${format}`, `source-1577x16.${format}`, `malformed.${format}`]) {
+      for (const file of [`source-320x33.${format}`, `source-10001x2.${format}`, `source-6251x16.${format}`, `malformed.${format}`]) {
         refusals[file] = await refusedImport(page, path.join(fixtures, file), file);
         assert.match(refusals[file], file.startsWith("malformed") ? /file could not be read/ : /outside what this beta can open/);
       }

@@ -1213,7 +1213,7 @@ function instrumentClient(client: PublicClient, runtimeState: RuntimeInvocationS
           return result;
         };
       }
-      if (property === "importSpreadsheet") {
+      if (property === "importSpreadsheet" || property === "importSpreadsheetWorkingSize") {
         return async (...args: unknown[]): Promise<unknown> => {
           const origin = runtimeInvocationOrigin(evidence.identity, "publication");
           if (origin.status === "valid" && currentScalarAttempt?.runtimeState === origin.state &&

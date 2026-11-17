@@ -181,17 +181,16 @@ try {
     targets: largeTable.rows.map(row => ({ entity: row.id, field: largeTable.columns[0].id })) };
   const largeRequestBytes = Buffer.byteLength(JSON.stringify(largeRequest));
   await page.getByRole("columnheader", { name: "Amount", exact: true }).click();
-  const largeState = page.getByTestId("selection-statistics");
-  await largeState.getByText("Selection too large for statistics", { exact: true }).waitFor();
-  assert.equal(await largeState.evaluate(node => getComputedStyle(node).userSelect), "text");
-  assert.equal(await page.getByTestId("selection-count").count(), 0);
-  assert.equal(await queryCount(), largeQueries, "oversize statistics request is never dispatched");
+  // The working-size request budget admits this selection; no publication or
+  // Save-state change may accompany the real read.
+  await expectStatistics({ count: 8406, "numerical-count": 8406, sum: 16812, average: 2, min: 2, max: 2 });
+  assert.equal(await queryCount(), largeQueries + 1, "working-size statistics reaches Work once");
   assert.equal(await publications(), largePublications);
   assert.equal(await page.getByTestId("work-state").getAttribute("data-work-state"), largeSave);
   assert.equal((await projection()).revision, largeTable.revision);
-  console.log(`PASS: 8,406-row imported selection shows selectable size-limit text without dispatch (${largeRequestBytes}-byte request)`);
+  console.log(`PASS: 8,406-row imported selection returns real working-size statistics without publication (${largeRequestBytes}-byte request)`);
   await select(largeTable, 0, 0, 1, 0);
   await expectStatistics({ count: 2, "numerical-count": 2, sum: 4, average: 2, min: 2, max: 2 });
-  assert.equal(await queryCount(), largeQueries + 1, "a smaller selection still reads real Work statistics");
+  assert.equal(await queryCount(), largeQueries + 2, "a smaller selection still reads real Work statistics");
   console.log("PASS: selection statistics browser acceptance cases 1, 2, 4–7");
 } finally { await context.close(); await browser.close(); }
