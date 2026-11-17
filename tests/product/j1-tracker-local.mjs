@@ -1,3 +1,4 @@
+import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 // J1 product acceptance: author, constrain, sort/filter, edit, save and reopen a tracker.
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
@@ -31,8 +32,9 @@ async function start() {
   pid = info.processInfo.find(row => row.type === "browser")?.id;
   assert.ok(Number.isInteger(pid) && pid > 0); processes.push({ pid, profile });
   await installDistRoutes(context, dist);
+  await installPublishedTablePatcher(context);
   await context.addInitScript(() => {
-    window.__j1Evidence = { records: [], hostWrites: 0, observerGaps: 0 };
+    window.__j1Evidence = { records: [], hostWrites: 0 };
     for (const method of ["put", "add", "delete", "clear"]) {
       const original = IDBObjectStore.prototype[method];
       IDBObjectStore.prototype[method] = function (...args) { window.__j1Evidence.hostWrites++; return original.apply(this, args); };
@@ -46,59 +48,19 @@ async function start() {
         window.__j1Evidence.worker = this;
         this.addEventListener("message", event => {
           this.record.replies.push(structuredClone(event.data));
-          let completeTable = null;
           // Tables above 1,000 rows arrive as unfiltered windows; assemble them.
           if (event.data.response?.type === "table") {
-            completeTable = structuredClone(event.data.response.payload);
-            this.record.tables.push(completeTable);
-            this.__tableDisplay = false;
+            this.record.tables.push(window.__trackObservedTable(this.record, structuredClone(event.data.response.payload)));
           }
           if (event.data.response?.type === "table_window") {
             const w = structuredClone(event.data.response.payload);
             if (w.start === 0 || !this.__windowTable || this.__windowTable.revision !== w.revision) this.__windowTable = { ...(w.tracker_profile ? { tracker_profile: true } : {}), ...(w.native_table_profile ? { native_table_profile: true } : {}), revision: w.revision, collection: w.collection, columns: w.columns, rows: [] };
             this.__windowTable.rows.push(...w.rows);
-            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(assembled); this.__tableDisplay = true; completeTable = assembled; }
-          }
-          if (completeTable) {
-            for (const gap of this.record.gaps) {
-              if (gap.resolved || gap.publication.resulting_revision !== completeTable.revision) continue;
-              if (!gap.publication.changed.every(change => {
-                const row = completeTable.rows.find(row => row.id === change.target.entity);
-                return row && completeTable.columns.some(column => column.id === change.target.field) &&
-                  (row.fields.some(field => field.target.field === change.target.field) || row.blank_fields?.includes(change.target.field));
-              })) continue;
-              gap.resolved = true;
-              window.__j1Evidence.observerGaps--;
-            }
+            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(window.__trackObservedTable(this.record, assembled, true)); }
           }
           if (event.data.response?.type === "published") {
-            const publication = event.data.response.payload;
-            const last = this.record.tables.at(-1);
-            if (!last || publication.many || !Array.isArray(publication.changed)) return;
-            const table = structuredClone(last);
-            for (const change of publication.changed) {
-              const row = table.rows.find(row => row.id === change.target.entity);
-              const fieldId = change.target.field;
-              if (!row || !table.columns.some(column => column.id === fieldId) ||
-                (!row.fields.some(field => field.target.field === fieldId) && !row.blank_fields?.includes(fieldId))) {
-                window.__j1Evidence.observerGaps++;
-                this.record.gaps.push({ publication: structuredClone(publication), resolved: false });
-                return;
-              }
-              const fields = new Map(row.fields.map(field => [field.target.field, field]));
-              if (change.blank === true) fields.delete(fieldId);
-              else {
-                const field = structuredClone(change);
-                if (!this.__tableDisplay) delete field.display;
-                fields.set(fieldId, field);
-              }
-              row.fields = table.columns.flatMap(column => fields.has(column.id) ? [fields.get(column.id)] : []);
-              const blanks = table.columns.filter(column => !fields.has(column.id)).map(column => column.id);
-              if (blanks.length) row.blank_fields = blanks;
-              else delete row.blank_fields;
-            }
-            table.revision = publication.resulting_revision;
-            this.record.tables.push(table);
+            const table = window.__trackPublished(this.record, event.data.response.payload);
+            if (table) this.record.tables.push(table);
           }
         });
       }
@@ -114,7 +76,7 @@ async function start() {
 function exists(id) { try { process.kill(id, 0); return true; } catch (error) { if (error.code === "ESRCH") return false; throw error; } }
 async function stop() {
   if (!context) return;
-  const observerGaps = await page.evaluate(() => window.__j1Evidence.observerGaps);
+  const observerGaps = await page.evaluate(() => window.__observerGaps);
   await context.close();
   const deadline = Date.now() + 5000;
   while (exists(pid) && Date.now() < deadline) await delay(50);
@@ -355,7 +317,7 @@ try {
   assert.ok(values(table).some(row => row[0] === "出貨" && row[1] === "Done" && row[2] === 4));
   checks.push("10 Appended 出貨 / Done / 4 after reopen; the row appears and all prior row identities and contents are unchanged.");
 
-  assert.equal(await page.evaluate(() => window.__j1Evidence.observerGaps), 0, "the projection observer resolved every changed target");
+  assert.equal(await page.evaluate(() => window.__observerGaps), 0, "the projection observer resolved every changed target");
   console.log(JSON.stringify({ status: "PASS", checks }));
 } catch (error) {
   console.error(error);

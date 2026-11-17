@@ -1,3 +1,4 @@
+import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 import { runCreateDraftReadinessCases } from "./create-draft-readiness-cases.mjs";
 import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 // #184: normal UI over a production-style build and unchanged real Worker/WASM.
@@ -47,6 +48,7 @@ async function start() {
   assert.ok(Number.isInteger(pid) && pid > 0, "BLOCKED: no owned browser PID");
   processes.push({ pid, profile });
   await installDistRoutes(context, dist);
+  await installPublishedTablePatcher(context);
   await context.addInitScript(() => {
     window.__rowEvidence = { workers: [] };
     const originalFrame = window.requestAnimationFrame.bind(window);
@@ -82,12 +84,16 @@ async function start() {
             this.dispatchEvent(new ErrorEvent("error", { message: "Controlled lost mutation acknowledgement" }));
           }
           // Tables above 1,000 rows arrive as unfiltered windows (Work A-03); assemble them.
-          if (event.data.response?.type === "table") this.record.tables.push(structuredClone(event.data.response.payload));
+          if (event.data.response?.type === "table") this.record.tables.push(window.__trackObservedTable(this.record, structuredClone(event.data.response.payload)));
           if (event.data.response?.type === "table_window") {
             const w = structuredClone(event.data.response.payload);
             if (w.start === 0 || !this.__windowTable || this.__windowTable.revision !== w.revision) this.__windowTable = { ...(w.tracker_profile ? { tracker_profile: true } : {}), ...(w.native_table_profile ? { native_table_profile: true } : {}), revision: w.revision, collection: w.collection, columns: w.columns, rows: [] };
             this.__windowTable.rows.push(...w.rows);
-            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(assembled); }
+            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(window.__trackObservedTable(this.record, assembled, true)); }
+          }
+          if (event.data.response?.type === "published") {
+            const table = window.__trackPublished(this.record, event.data.response.payload);
+            if (table) this.record.tables.push(table);
           }
           const request = this.record.requests.find(request => request.id === event.data.id);
           if (window.__rowEvidence.loseNextCreateReply && request?.request?.type === "new_table" && (event.data.response?.type === "opened_window" || event.data.status === "error")) {
@@ -139,6 +145,9 @@ async function start() {
 function exists(processId) { try { process.kill(processId, 0); return true; } catch (cause) { if (cause.code === "ESRCH") return false; throw cause; } }
 async function terminate() {
   if (!context) return;
+  for (const observedPage of context.pages()) {
+    assert.equal(await observedPage.evaluate(() => window.__observerGaps), 0, "the projection observer resolved every changed target");
+  }
   const owned = pid;
   let timer;
   try { await Promise.race([context.close(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("BLOCKED: browser close timed out")), 10000); })]); }

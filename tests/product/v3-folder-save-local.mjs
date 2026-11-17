@@ -1,3 +1,4 @@
+import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 // #197: real producer v3 folders through Open, private copies and full browser exit.
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
@@ -18,6 +19,9 @@ const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false
 function alive(id) { try { process.kill(id, 0); return true; } catch (e) { if (e.code === 'ESRCH') return false; throw e; } }
 async function stop() {
   if (!context) return;
+  for (const observedPage of context.pages()) {
+    assert.equal(await observedPage.evaluate(() => window.__observerGaps), 0, "the projection observer resolved every changed target");
+  }
   await context.close(); context = undefined;
   const deadline = Date.now() + 10000;
   while (alive(pid) && Date.now() < deadline) await delay(50);
@@ -33,13 +37,18 @@ async function start() {
   pid = (await cdp.send('SystemInfo.getProcessInfo')).processInfo.find(p => p.type === 'browser')?.id;
   await cdp.detach(); assert.ok(pid > 0); processes.push({pid, profile});
   await installDistRoutes(context, dist);
+  await installPublishedTablePatcher(context);
   await context.addInitScript(() => {
     window.__v3 = {tables: [], requests: [], replies: []};
     const Original = window.Worker;
     window.Worker = class extends Original {
       constructor(...args) { super(...args); this.addEventListener('message', event => {
         window.__v3.replies.push(structuredClone(event.data));
-        if (event.data.response?.type === 'table') window.__v3.tables.push(structuredClone(event.data.response.payload));
+        if (event.data.response?.type === 'table') window.__v3.tables.push(window.__trackObservedTable(window.__v3, structuredClone(event.data.response.payload)));
+        if (event.data.response?.type === 'published') {
+          const table = window.__trackPublished(window.__v3, event.data.response.payload);
+          if (table) window.__v3.tables.push(table);
+        }
       }); }
       postMessage(message, ...args) { window.__v3.requests.push(structuredClone(message)); return super.postMessage(message, ...args); }
     };

@@ -1,3 +1,4 @@
+import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 // #185 production UI, real kit and IndexedDB. Select cases separately so every
 // new regression has a behavioral RED receipt on the unchanged base build.
 import assert from 'node:assert/strict';
@@ -27,6 +28,7 @@ async function start() {
   pid = (await cdp.send('SystemInfo.getProcessInfo')).processInfo.find(p => p.type === 'browser').id;
   await cdp.detach(); processes.push({ pid, profile });
   await installDistRoutes(context, dist);
+  await installPublishedTablePatcher(context);
   await context.addInitScript(() => {
     window.__saveEvidence = { requests: [], tables: [] };
     const Original = window.Worker;
@@ -41,7 +43,11 @@ async function start() {
               this.dispatchEvent(new ErrorEvent('error', { message: 'Controlled lost observation' }));
               return;
             }
-            window.__saveEvidence.tables.push(structuredClone(e.data.response.payload));
+            window.__saveEvidence.tables.push(window.__trackObservedTable(window.__saveEvidence, structuredClone(e.data.response.payload)));
+          }
+          if (e.data.response?.type === 'published') {
+            const table = window.__trackPublished(window.__saveEvidence, e.data.response.payload);
+            if (table) window.__saveEvidence.tables.push(table);
           }
           if (window.__saveEvidence.staleExport && ['canonical_tree_exported', 'project_exported', 'portable_ro_exported'].includes(e.data.status)) {
             window.__saveEvidence.staleExport = false;
@@ -62,6 +68,9 @@ async function newPage(p = undefined) {
 function exists(id) { try { process.kill(id, 0); return true; } catch (e) { if (e.code === 'ESRCH') return false; throw e; } }
 async function terminate() {
   if (!context) return;
+  for (const observedPage of context.pages()) {
+    assert.equal(await observedPage.evaluate(() => window.__observerGaps), 0, "the projection observer resolved every changed target");
+  }
   const owned = pid; await context.close();
   const deadline = Date.now() + 5000; while (exists(owned) && Date.now() < deadline) await delay(50);
   assert.equal(exists(owned), false, 'browser process must exit before same-profile restart');

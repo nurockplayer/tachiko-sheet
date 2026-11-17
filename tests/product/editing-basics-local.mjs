@@ -1,3 +1,4 @@
+import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
@@ -8,6 +9,7 @@ if (!dist) { console.error("BLOCKED: WORK_DIST must name a built product."); pro
 const browser = await chromium.launch({ headless: true, ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}), ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === "1" ? { args: ["--single-process"] } : {}) });
 const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"], viewport: { width: 1440, height: 900 } });
 await installDistRoutes(context, dist);
+await installPublishedTablePatcher(context);
 await context.addInitScript(() => {
   window.__editingEvidence = { records: [] };
   const Original = window.Worker;
@@ -18,7 +20,11 @@ await context.addInitScript(() => {
       window.__editingEvidence.records.push(record);
       this.addEventListener("message", event => {
         record.replies.push(structuredClone(event.data));
-        if (event.data.response?.type === "table") record.tables.push(structuredClone(event.data.response.payload));
+        if (event.data.response?.type === "table") record.tables.push(window.__trackObservedTable(record, structuredClone(event.data.response.payload)));
+        if (event.data.response?.type === "published") {
+          const table = window.__trackPublished(record, event.data.response.payload);
+          if (table) record.tables.push(table);
+        }
       });
       this.record = record;
     }
@@ -104,5 +110,6 @@ try {
   await page.keyboard.press("ControlOrMeta+X");
   await page.locator('.ts-clipboard-status').filter({ hasText: "Nothing was cut." }).waitFor();
   assert.equal(await count(), refusedCount); assert.equal(await clipboard(), "unchanged clipboard");
+  assert.equal(await page.evaluate(() => window.__observerGaps), 0, "the projection observer resolved every changed target");
   console.log("PASS: drag, real-key copy and cut, refusal, multi-row delete and undo");
 } finally { await context.close(); await browser.close(); }

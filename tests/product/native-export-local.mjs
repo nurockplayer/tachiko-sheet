@@ -1,3 +1,4 @@
+import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 import { observeCapacity, capacitySnapshot } from "./capacity-diagnostics.mjs";
 // #225: normal UI, production bytes, real Worker/WASM; Python's standard
 // CSV/ZIP/XML readers independently check the downloaded files (no JS codec).
@@ -134,6 +135,7 @@ try {
   await cdp.detach(); assert.ok(Number.isInteger(pid), "owned browser PID required");
   await installDistRoutes(context, dist);
   await observeCapacity(context);
+  await installPublishedTablePatcher(context);
   await context.addInitScript(() => {
     window.__exportEvidence = { requests: [], replies: [], table: null };
     const Original = window.Worker;
@@ -143,12 +145,16 @@ try {
         this.addEventListener("message", event => {
           window.__exportEvidence.replies.push(structuredClone(event.data));
           // Tables above 1,000 rows arrive as unfiltered windows (Work A-03); assemble them.
-          if (event.data.response?.type === "table") window.__exportEvidence.table = structuredClone(event.data.response.payload);
+          if (event.data.response?.type === "table") window.__exportEvidence.table = window.__trackObservedTable(window.__exportEvidence, structuredClone(event.data.response.payload));
           if (event.data.response?.type === "table_window") {
             const w = structuredClone(event.data.response.payload);
             if (w.start === 0 || !this.__windowTable || this.__windowTable.revision !== w.revision) this.__windowTable = { ...(w.tracker_profile ? { tracker_profile: true } : {}), ...(w.native_table_profile ? { native_table_profile: true } : {}), revision: w.revision, collection: w.collection, columns: w.columns, rows: [] };
             this.__windowTable.rows.push(...w.rows);
-            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; window.__exportEvidence.table = assembled; }
+            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; window.__exportEvidence.table = window.__trackObservedTable(window.__exportEvidence, assembled, true); }
+          }
+          if (event.data.response?.type === "published") {
+            const table = window.__trackPublished(window.__exportEvidence, event.data.response.payload);
+            if (table) window.__exportEvidence.table = table;
           }
         });
       }
@@ -308,6 +314,7 @@ try {
   await runImportedExportRefusalCases(page, { close, prepare, downloads, checks });
   await runOptionalEditEntryCases(page, { close, checks });
   await runClearCellsCases(page, { close, checks });
+  assert.equal(await page.evaluate(() => window.__observerGaps), 0, "the projection observer resolved every changed target");
   console.log(JSON.stringify({status:"PASS",checks,downloads,output}));
 } catch (error) {
   if (context?.pages()[0]) await capacitySnapshot(context.pages()[0], "native-export failure");

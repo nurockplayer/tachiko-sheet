@@ -1,3 +1,4 @@
+import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 // #189 characterization: normal production controls + real Worker/WASM replies.
 // Faults discard a real acknowledgement/observation; no semantic reply is invented.
@@ -45,6 +46,7 @@ async function run(name, action) {
   const context = await chromium.launchPersistentContext(path.join(root, name), { headless: true, ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}), ...(process.env.TACHIKO_TEST_SINGLE_PROCESS === '1' ? { args: ['--single-process'] } : {}) });
   try {
     await installDistRoutes(context, dist);
+    await installPublishedTablePatcher(context);
     await context.addInitScript(() => {
       const e = window.__completion = { requests: [], tables: [], replies: [] };
       const Original = window.Worker;
@@ -54,12 +56,16 @@ async function run(name, action) {
           this.addEventListener('message', event => {
             const data = event.data, req = e.requests.find(r => r.id === data.id);
             e.replies.push(structuredClone(data));
-            if (data.response?.type === 'table') e.tables.push(structuredClone(data.response.payload));
+            if (data.response?.type === 'table') e.tables.push(window.__trackObservedTable(e, structuredClone(data.response.payload)));
             if (data.response?.type === 'table_window') {
               const w = structuredClone(data.response.payload);
               if (w.start === 0 || !this.windowTable || this.windowTable.revision !== w.revision) this.windowTable = { ...w, rows: [] };
               this.windowTable.rows.push(...w.rows);
-              if (this.windowTable.rows.length >= w.total_rows) { e.tables.push(this.windowTable); this.windowTable = null; }
+              if (this.windowTable.rows.length >= w.total_rows) { e.tables.push(window.__trackObservedTable(e, this.windowTable, true)); this.windowTable = null; }
+            }
+            if (data.response?.type === 'published') {
+              const table = window.__trackPublished(e, data.response.payload);
+              if (table) e.tables.push(table);
             }
             if (e.arm?.type === req?.request?.type && ['published', 'opened_window', 'keyed_grouped_sum_published'].includes(data.response?.type)) {
               const mode = e.arm.mode; e.arm = null;
@@ -77,7 +83,9 @@ async function run(name, action) {
       };
     });
     const p = context.pages()[0]; p.setDefaultTimeout(8000); await p.goto(LOCAL_ORIGIN); await waitForColdHome(p);
-    await action(p); checks.push(name); console.log(`PASS ${name}`);
+    await action(p);
+    assert.equal(await p.evaluate(() => window.__observerGaps), 0, "the projection observer resolved every changed target");
+    checks.push(name); console.log(`PASS ${name}`);
   } catch (error) { console.error(`FAIL ${name}`); throw error; }
   finally { await context.close(); }
 }

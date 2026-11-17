@@ -1,3 +1,4 @@
+import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 // #212: ordinary grid events with the real pinned Worker/WASM. Observations
 // below copy public transport traffic; they never supply semantic results.
 import assert from "node:assert/strict";
@@ -38,6 +39,7 @@ async function start() {
   pid = info.processInfo.find(row => row.type === "browser")?.id;
   assert.ok(Number.isInteger(pid) && pid > 0); processes.push({ pid, profile });
   await installDistRoutes(context, dist);
+  await installPublishedTablePatcher(context);
   await context.addInitScript(() => {
     window.__columnEvidence = { records: [], hostWrites: 0 };
     for (const method of ["put", "add", "delete", "clear"]) {
@@ -54,12 +56,16 @@ async function start() {
         this.addEventListener("message", event => {
           this.record.replies.push(structuredClone(event.data));
           // Tables above 1,000 rows arrive as unfiltered windows (Work A-03); assemble them.
-          if (event.data.response?.type === "table") this.record.tables.push(structuredClone(event.data.response.payload));
+          if (event.data.response?.type === "table") this.record.tables.push(window.__trackObservedTable(this.record, structuredClone(event.data.response.payload)));
           if (event.data.response?.type === "table_window") {
             const w = structuredClone(event.data.response.payload);
             if (w.start === 0 || !this.__windowTable || this.__windowTable.revision !== w.revision) this.__windowTable = { ...(w.tracker_profile ? { tracker_profile: true } : {}), ...(w.native_table_profile ? { native_table_profile: true } : {}), revision: w.revision, collection: w.collection, columns: w.columns, rows: [] };
             this.__windowTable.rows.push(...w.rows);
-            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(assembled); }
+            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(window.__trackObservedTable(this.record, assembled, true)); }
+          }
+          if (event.data.response?.type === "published") {
+            const table = window.__trackPublished(this.record, event.data.response.payload);
+            if (table) this.record.tables.push(table);
           }
           const request = this.record.requests.find(request => request.id === event.data.id);
           if (window.__columnEvidence.holdExport && request?.kind === "export_portable_ro") {
@@ -93,6 +99,9 @@ async function start() {
 function exists(id) { try { process.kill(id, 0); return true; } catch (error) { if (error.code === "ESRCH") return false; throw error; } }
 async function stop() {
   if (!context) return;
+  for (const observedPage of context.pages()) {
+    assert.equal(await observedPage.evaluate(() => window.__observerGaps), 0, "the projection observer resolved every changed target");
+  }
   await context.close();
   const deadline = Date.now() + 5000;
   while (exists(pid) && Date.now() < deadline) await delay(50);
