@@ -19,6 +19,15 @@ test('cleanup does not signal an unmarked reused PID with the same start time', 
   assert.deepEqual(signalled, [456]);
 });
 
+test('output ownership still requires the recorded process start time', () => {
+  const owned = new Map([[123, 'old'], [456, 'same']]);
+  const current = new Map([
+    [123, { started: 'new', marked: false, holdsOutput: true }],
+    [456, { started: 'same', marked: false, holdsOutput: true }],
+  ]);
+  assert.deepEqual(signalableOwnedPids(owned, current), [456]);
+});
+
 async function setup(t, timeoutMs) {
   const directory = await mkdtemp(path.join(tmpdir(), 'sheet-step-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -277,6 +286,68 @@ test('nonzero step remains FAIL and retains its output in the upload directory',
   assert.deepEqual(fixture.entries.map(({ status }) => status), ['START', 'FAIL']);
   assert.deepEqual(await fixture.logs('fail'), ['before failure\n', 'before failure\n']);
 });
+
+for (const [label, detectOutputHolders, hangs, fd] of [
+  ['owned-stdout', true, false, 1],
+  ['owned-stderr', true, false, 2],
+  ['escaped-exit', false, false, 1],
+  ['escaped-timeout', false, true, 1],
+]) {
+  test(`bounded output wait: ${label}`, { skip: detectOutputHolders && process.platform !== 'linux', timeout: 10000 }, async t => {
+    let fixture;
+    // Register before setup's directory removal, including assertion/error paths.
+    t.after(async () => {
+      if (!fixture) return;
+      const receipt = await readFile(path.join(fixture.directory, 'pids.json'), 'utf8').catch(error => {
+        if (error.code === 'ENOENT') return '{}';
+        throw error;
+      });
+      for (const pid of Object.values(JSON.parse(receipt))) {
+        try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+      }
+    });
+    const timeoutMs = 300;
+    const killGraceMs = 100;
+    const closeGraceMs = 300;
+    fixture = await setup(t, timeoutMs);
+    const holder = 'setTimeout(() => {}, 3000);';
+    const source = `
+      const fs = require('node:fs');
+      fs.writeFileSync('pids.json', JSON.stringify({ parent: process.pid }));
+      const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(holder)}], {
+        detached: true, env: {}, stdio: ['ignore', ${fd === 1 ? "'inherit', 'ignore'" : "'ignore', 'inherit'"}],
+      });
+      fs.writeFileSync('pids.json', JSON.stringify({ parent: process.pid, holder: child.pid }));
+      child.unref();
+      ${hangs ? 'setInterval(() => {}, 1000);' : 'process.exit(0);'}
+    `;
+    const started = performance.now();
+    const code = await runStep(label, ['-e', source], {}, {
+      ...fixture.options, killGraceMs, closeGraceMs, detectOutputHolders,
+    });
+    const elapsed = performance.now() - started;
+    assert.ok(elapsed < timeoutMs + killGraceMs + closeGraceMs + 1000, `output wait took ${elapsed} ms`);
+    const expectedStatus = hangs ? 'TIMEOUT' : detectOutputHolders ? 'PASS' : 'FAIL';
+    assert.equal(code, detectOutputHolders ? 0 : 1);
+    assert.deepEqual(fixture.entries.map(({ status }) => status), ['START', expectedStatus]);
+    assert.equal(fixture.options.summary[0].escapedOutput, detectOutputHolders ? undefined : true);
+    const [local, upload] = await fixture.logs(label);
+    assert.equal(local, upload);
+    assert.equal(local, detectOutputHolders ? '' : 'escaped descendant held step output open after exit; failing step\n');
+    const { holder: pid } = JSON.parse(await readFile(path.join(fixture.directory, 'pids.json'), 'utf8'));
+    if (detectOutputHolders) {
+      // Container PID 1 may leave an exited orphan as a zombie.
+      const stat = await readFile(`/proc/${pid}/stat`, 'utf8').catch(error => {
+        if (error.code === 'ENOENT' || error.code === 'ESRCH') return null;
+        throw error;
+      });
+      assert.ok(stat === null || stat.slice(stat.lastIndexOf(')') + 2).startsWith('Z '), 'output holder survived cleanup');
+    } else {
+      assert.doesNotThrow(() => process.kill(pid, 0), 'test must exercise a surviving escaped holder');
+      assert.ok(elapsed >= closeGraceMs + (hangs ? timeoutMs + killGraceMs : 0));
+    }
+  });
+}
 
 for (const cancellation of ['SIGINT', 'SIGTERM', 'SIGHUP', 'exit']) {
   test(`parent ${cancellation} kills the active step and detached descendant`, { timeout: 180000 }, async (t) => {
