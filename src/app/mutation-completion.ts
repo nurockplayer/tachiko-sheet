@@ -45,6 +45,7 @@ interface NewTableCompletionPort {
 export interface MutationCompletionPort {
   state(): ResultSnapshot & { view: WorkbookView | null; history: LocalHistorySnapshot; currentness: Currentness; savedRevision: string | null };
   installView(view: WorkbookView | null): void;
+  acceptPublication?(publication: PublicationProjection): void;
   installHistory(history: LocalHistorySnapshot): void;
   clearResults(): void;
   readResults(view: WorkbookView): Promise<KeyedGroupedSumResult[]>;
@@ -161,6 +162,7 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       if (command.kind === "summary") {
         port.clearResults();
         const confirmed = await command.dispatch();
+        port.acceptPublication?.(confirmed.publication);
         published = true;
         port.endInitial(command.witness.occurrence);
         const next = await port.readView();
@@ -175,6 +177,7 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       } else if (command.kind === "cleanup") {
         const confirmed = await command.dispatch();
         const next = confirmed.view;
+        port.acceptPublication?.(confirmed.publication);
         published = true;
         if (command.recordHistory) port.installHistory(confirmScalarHistory(before.history, next, confirmed.publication, true));
         port.clearResults();
@@ -185,6 +188,7 @@ export function createMutationCompletion(port: MutationCompletionPort) {
         port.clearPreview();
       } else {
         const confirmed = await command.dispatch();
+        port.acceptPublication?.(confirmed.publication);
         published = true;
         const history = port.state().history;
         port.installHistory(command.kind === "history"
@@ -200,6 +204,7 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       port.setOutcome("idle");
       return completed({ kind: "published", focusTarget: null });
     } catch (error) {
+      if (error instanceof PublishedProjectionRecoveryError) port.acceptPublication?.(error.publication);
       if (published || error instanceof PublishedProjectionRecoveryError) return completed(recover("known-publication-recovery", command));
       // Preserve history's existing fail-closed policy even for a trusted
       // refusal: its admitted local tail is discarded, with no command replay.

@@ -994,6 +994,12 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       definitionIds: j4DefinitionIdsRef.current, results: j4ResultsRef.current,
     }),
     installView, installHistory: installLocalHistory,
+    acceptPublication: (publication) => {
+      const metadata = publication.import_metadata;
+      if (!metadata || !importedSourceRef.current) return;
+      importedSourceRef.current = { ...importedSourceRef.current, metadata };
+      setInterop((current) => current ? { ...current, metadata } : current);
+    },
     clearResults: clearJ4Results, readResults: readJ4Results, readView: () => runtime.read(),
     installResults: installJ4Results,
     restoreResults: ({ definitionIds, results }) => restoreJ4Results(definitionIds, results),

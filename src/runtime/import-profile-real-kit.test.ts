@@ -37,6 +37,29 @@ const options = { delimiter: ",", header: true };
 const selection = { column_types: [["text", "number", "number"]] as ("text" | "number")[][], extra_columns: [[]] };
 
 describe("working-size imported sessions with the vendored kit", () => {
+  it("exports the published worksheet mapping after rename, undo and redo", async () => {
+    const client = await realClient();
+    const runtime = createSheetRuntime(async () => ({ ...kit, createExperimentalDesignerClient: () => client }));
+    try {
+      const bytes = new TextEncoder().encode("Name,Qty,Total\nCoffee,2,20\n").buffer;
+      const imported = await runtime.importSpreadsheet(bytes, "csv", options, selection);
+      let view = imported.view;
+      let metadata = imported.metadata;
+      const renamed = await runtime.renameTable(view, view.table.collection.key, "Renamed");
+      expect(renamed.publication.import_metadata).toBeDefined();
+      await expect(runtime.exportSpreadsheet(renamed.view, metadata, "xlsx")).rejects.toThrow(/metadata is stale/i);
+      for (const result of [renamed, await runtime.trackerHistory(renamed.view, "undo")]) {
+        view = result.view;
+        metadata = result.publication.import_metadata!;
+        expect(metadata).toBeDefined();
+        await expect(runtime.exportSpreadsheet(view, metadata, "xlsx")).resolves.toHaveProperty("bytes");
+      }
+      const redone = await runtime.trackerHistory(view, "redo");
+      expect(redone.publication.import_metadata).toBeDefined();
+      await expect(runtime.exportSpreadsheet(redone.view, redone.publication.import_metadata!, "xlsx")).resolves.toHaveProperty("bytes");
+    } finally { client.close(); }
+  }, 30_000);
+
   it("keeps full-fidelity metadata while imported edits reach Work's stored-text bound", async () => {
     const client = await realClient();
     const runtime = createSheetRuntime(async () => ({ ...kit, createExperimentalDesignerClient: () => client }));
