@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 const qualifiedArtifacts = [
   {
     // Re-pin: #246 records the producer handback; PR #507 carries the independent review.
-    // result and import_metadata are not adopted in Sheet code.
+    // Sheet retains lifecycle import_metadata; result is not adopted.
     sourceCommit: '38696aa013c03b8d28e732c7d1214daafc7e418e',
     artifactManifestSha256: 'e58a5dcb3abdf6359fd5dca151da1030dbbde209626d3cbbf0cababc688b2807',
     review: 'https://github.com/nurockplayer/tachiko-sheet/pull/507',

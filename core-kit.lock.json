@@ -14,5 +14,5 @@
     "artifactManifestSha256": "e58a5dcb3abdf6359fd5dca151da1030dbbde209626d3cbbf0cababc688b2807",
     "url": "https://github.com/nurockplayer/tachiko-sheet/pull/507"
   },
-  "notes": "Re-pin to Work 38696aa0: calculated outcome tag and imported worksheet lifecycle mapping. Two clean detached exports match byte for byte; receipt on issue #246. result and import_metadata are not adopted in Sheet code. Product acceptance remains separate."
+  "notes": "Re-pin to Work 38696aa0: calculated outcome tag and imported worksheet lifecycle mapping. Two clean detached exports match byte for byte; receipt on issue #246. Sheet retains published import_metadata for worksheet lifecycle; result is not adopted. Product acceptance remains separate."
 }
