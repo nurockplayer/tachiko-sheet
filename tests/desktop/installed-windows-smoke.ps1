@@ -43,6 +43,20 @@ public static class InstalledSmokeInput {
     [DllImport("user32.dll", SetLastError = true)]
     static extern bool AttachThreadInput(uint from, uint to, bool attach);
     [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
+    [StructLayout(LayoutKind.Sequential)] struct GUITHREADINFO {
+        public uint size, flags;
+        public IntPtr active, focus, capture, menu, move, caret;
+        public int left, top, right, bottom;
+    }
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern bool GetGUIThreadInfo(uint thread, ref GUITHREADINFO info);
+    public static IntPtr FocusedHandle() {
+        var info = new GUITHREADINFO { size = (uint)Marshal.SizeOf<GUITHREADINFO>() };
+        if (!GetGUIThreadInfo(0, ref info))
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "input delivery: cannot read keyboard focus");
+        return info.focus;
+    }
     static IntPtr targetWindow;
     public static void Activate(IntPtr target) {
         targetWindow = target;
@@ -88,6 +102,25 @@ public static class InstalledSmokeInput {
     public static void Text(string text) {
         CheckForeground();
         foreach (char c in text) { Send(0, c, 4); Send(0, c, 6); }
+    }
+    static void Mouse(int x, int y, uint flags) {
+        var input = new INPUT { type = 0, data = new UNION {
+            mouse = new MOUSEINPUT { x = x, y = y, flags = flags }
+        }};
+        if (SendInput(1, new[] { input }, Marshal.SizeOf<INPUT>()) != 1)
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "input delivery: mouse SendInput failed");
+    }
+    public static void Click(double x, double y) {
+        CheckForeground();
+        int left = GetSystemMetrics(76), top = GetSystemMetrics(77);
+        int width = GetSystemMetrics(78), height = GetSystemMetrics(79);
+        if (width <= 1 || height <= 1 || x < left || x >= left + width || y < top || y >= top + height)
+            throw new InvalidOperationException($"input delivery: click ({x}, {y}) outside virtual screen");
+        Mouse((int)Math.Round((x - left) * 65535 / (width - 1)),
+              (int)Math.Round((y - top) * 65535 / (height - 1)), 0xC001); // MOVE | ABSOLUTE | VIRTUALDESK
+        CheckForeground();
+        Mouse(0, 0, 2); // LEFTDOWN
+        Mouse(0, 0, 4); // LEFTUP
     }
 }
 '@
@@ -137,9 +170,28 @@ function Native-Dialog([string]$Title) {
         }
     }
 }
+function Click-Input($Element, $NativeWindow = $window) {
+    [InstalledSmokeInput]::Activate([IntPtr]$NativeWindow.Current.NativeWindowHandle)
+    $bounds = $Element.Current.BoundingRectangle
+    if ($Element.Current.IsOffscreen -or -not $Element.Current.IsEnabled -or $bounds.IsEmpty -or $bounds.Width -le 0 -or $bounds.Height -le 0) {
+        throw "$case : input delivery: '$($Element.Current.Name)' has no enabled, visible click target"
+    }
+    [InstalledSmokeInput]::Click($bounds.Left + $bounds.Width / 2, $bounds.Top + $bounds.Height / 2)
+}
 function Focus-Input($Element, $NativeWindow = $window) {
     [InstalledSmokeInput]::Activate([IntPtr]$NativeWindow.Current.NativeWindowHandle)
-    try { $Element.SetFocus() } catch { throw "$case : input delivery: UIA could not focus '$($Element.Current.Name)': $_" }
+    if ($Element.Current.IsKeyboardFocusable) {
+        try { $Element.SetFocus() } catch { throw "$case : input delivery: UIA could not focus '$($Element.Current.Name)': $_" }
+    } else {
+        Click-Input $Element $NativeWindow
+    }
+    # Native Pane proxies may lack UIA focus properties; compare the actual
+    # keyboard-focus HWND for native controls, never the broader app window.
+    $targetHandle = [IntPtr]$Element.Current.NativeWindowHandle
+    Wait-For "input delivery: keyboard focus on '$($Element.Current.Name)' (HWND=$targetHandle)" {
+        $Element.Current.HasKeyboardFocus -or
+            ($targetHandle -ne [IntPtr]::Zero -and [InstalledSmokeInput]::FocusedHandle() -eq $targetHandle)
+    } | Out-Null
 }
 function Invoke-NativeButton($Dialog, [string]$Name) {
     # This runner exposes native Button-class controls as Pane, too.
@@ -150,8 +202,7 @@ function Invoke-NativeButton($Dialog, [string]$Name) {
         $found = $Dialog.FindFirst($scope, $condition)
         if ($found -and $found.Current.IsEnabled) { $found }
     }
-    Focus-Input $button $Dialog
-    [InstalledSmokeInput]::Key(0x20) # Space activates the focused Cancel button.
+    Click-Input $button $Dialog
 }
 function Dump-Tree([string]$Label) {
     $lines = [Collections.Generic.List[string]]::new()
@@ -164,7 +215,7 @@ function Dump-Tree([string]$Label) {
             if ($Node.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$value)) {
                 $value = $value.Current.Value
             }
-            $lines.Add(('  ' * $Depth) + "$($c.ControlType.ProgrammaticName) Name=[$($c.Name)] Id=[$($c.AutomationId)] Class=[$($c.ClassName)] PID=$($c.ProcessId) Enabled=$($c.IsEnabled) Offscreen=$($c.IsOffscreen) Value=[$value]")
+            $lines.Add(('  ' * $Depth) + "$($c.ControlType.ProgrammaticName) Name=[$($c.Name)] Id=[$($c.AutomationId)] Class=[$($c.ClassName)] PID=$($c.ProcessId) Enabled=$($c.IsEnabled) Offscreen=$($c.IsOffscreen) Focusable=$($c.IsKeyboardFocusable) Focused=$($c.HasKeyboardFocus) HWND=$($c.NativeWindowHandle) Bounds=[$($c.BoundingRectangle)] Value=[$value]")
             $child = $walker.GetFirstChild($Node)
             while ($child -and $lines.Count -lt 2000) {
                 Visit $child ($Depth + 1)
@@ -288,8 +339,14 @@ Focus-Input $name
 [InstalledSmokeInput]::Ctrl(0x41)
 $copyName = 'R7 installed smoke ' + [guid]::NewGuid().ToString('N')
 [InstalledSmokeInput]::Text($copyName)
+# UIA Invoke can overtake queued keyboard messages. Do not create a copy of a
+# partially delivered name (the failed run saved only 'R7 in').
+Wait-For 'input delivery: complete copy name before Create copy' {
+    $name.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value -eq $copyName
+} | Out-Null
 Invoke-Button $copy 'Create copy'
 Wait-For 'Save a copy dialog closed' { -not (Find-Named $window 'Save a copy' ([System.Windows.Automation.ControlType]::Window)) } | Out-Null
+Need-Named $window 'Saved on this device' | Out-Null
 $copyCreated = $true
 $tab = Need-Named $window 'Import & export' ([System.Windows.Automation.ControlType]::TabItem)
 $tab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
@@ -381,6 +438,10 @@ $uiaCase = $false
                 if (-not $failure) { $failure = $_ }
             }
         }
+    } elseif (-not $copyCreated) {
+        Write-Host 'local-copy cleanup skipped: case 3 did not confirm creating the named copy'
+    } else {
+        Write-Host 'local-copy cleanup skipped: the previous app process could not be stopped'
     }
     try {
         # A reused installation and its integrations belong to the existing user.
