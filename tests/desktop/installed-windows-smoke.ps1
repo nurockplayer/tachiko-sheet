@@ -8,6 +8,7 @@ New-Item -ItemType Directory -Path $work -Force | Out-Null
 $app = $null
 $window = $null
 $uninstaller = $null
+$installedByThisRun = $false
 $failure = $null
 $copyName = $null
 $copyCreated = $false
@@ -188,6 +189,7 @@ $entries = @(Installed-Entry)
 if ($entries.Count -eq 0) {
     $setup = Start-Process -FilePath $installerPath -ArgumentList '/S' -Wait -PassThru
     if ($setup.ExitCode -ne 0) { throw "NSIS installer exited with code $($setup.ExitCode)" }
+    $installedByThisRun = $true
     $entries = @(Installed-Entry)
 }
 if ($entries.Count -ne 1) { throw "expected one production uninstall entry, found $($entries.Count)" }
@@ -310,7 +312,8 @@ $uiaCase = $false
         }
     }
     try {
-        if ($uninstaller -and (Test-Path -LiteralPath $uninstaller)) {
+        # A reused installation and its integrations belong to the existing user.
+        if ($installedByThisRun -and $uninstaller -and (Test-Path -LiteralPath $uninstaller)) {
             $removed = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
             if ($removed.ExitCode -ne 0) { throw "uninstaller exited with code $($removed.ExitCode)" }
             if (Test-Path -LiteralPath $exePath) { throw "installed executable remains after uninstall: $exePath" }
