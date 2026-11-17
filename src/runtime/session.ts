@@ -230,6 +230,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   let active: ActiveWork | null = null;
   let liveRead: CoherentRead | null = null;
   let columnsRevision: string | null = null;
+  let readDisplay = false;
   let residentCollection: string | null = null;
   let residentAvailable = false;
   // Work fixes this profile at admission. Ordinary imports (including
@@ -393,11 +394,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     expected: number,
     revision: string,
     key: string,
-  ): Promise<{ table: TableProjection; columnsRevision: string | null }> {
+  ): Promise<{ table: TableProjection; columnsRevision: string | null; display: boolean }> {
     try {
       const table = await afterUsable(expected, dispatch(kit, () => client.queryTable(key)));
       if (!table.columns.some(column => column.field_type === "date" && column.date_format && column.date_format !== "iso")) {
-        return { table, columnsRevision: null };
+        const window = await afterUsable(expected, dispatch(kit, () => client.queryTableWindow(table.revision, key, {}, 0, 0)));
+        return { table, columnsRevision: window.revision === table.revision && window.collection.key === key
+          ? window.columns_revision : null, display: false };
       }
     } catch (error) {
       if (!hasFailureCode(kit, error, "use_window_query")) throw error;
@@ -433,7 +436,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         throw new SheetSessionError("incoherent-reply", "Core returned an empty window inside the table.");
       }
     }
-    return { columnsRevision: first.columns_revision, table: {
+    return { columnsRevision: first.columns_revision, display: true, table: {
       ...(first.tracker_profile ? { tracker_profile: true } : {}),
       ...(first.native_table_profile ? { native_table_profile: true } : {}),
       revision: first.revision, collection: first.collection, columns: first.columns, rows,
@@ -473,6 +476,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         continue;
       }
       columnsRevision = loaded.columnsRevision;
+      readDisplay = loaded.display;
       liveRead = {
         collection: key,
         view: {
@@ -1018,7 +1022,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         if (!authoredSchema && !refreshRows && deletedCollection === undefined && Array.isArray(publication.changed) && !publication.many &&
           columnsRevision !== null && liveRead?.view.revision === live.revision &&
           liveRead.view.occurrence === live.scope && liveRead.collection === live.collection) {
-          const patched = patchTable(liveRead.view.table, publication.changed, true);
+          const patched = patchTable(liveRead.view.table, publication.changed, readDisplay);
           if (patched !== null) {
             const window = await afterUsable(expected, dispatch(kit, () =>
               client.queryTableWindow(publication.resulting_revision, live.collection, {}, 0, 0)));

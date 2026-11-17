@@ -1,6 +1,7 @@
 // #305: one named case per Excel-feel habit. This harness only reports what the
 // product does today; it never changes product code and never softens a check.
 // Every case drives real input through Chromium on Linux, so Ctrl shortcuts.
+import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -42,14 +43,18 @@ function evidence() {
     constructor(...args) {
       super(...args);
       this.addEventListener("message", (event) => {
-        if (event.data && event.data.response && event.data.response.type === "table") window.__habits.tables.push(structuredClone(event.data.response.payload));
+        if (event.data.response?.type === "table") window.__habits.tables.push(window.__trackObservedTable(window.__habits, structuredClone(event.data.response.payload)));
+        if (event.data.response?.type === "published") {
+          const table = window.__trackPublished(window.__habits, event.data.response.payload);
+          if (table) window.__habits.tables.push(table);
+        }
       });
     }
   };
 }
 
 const ready = (page) => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
-const projection = (page) => page.evaluate(() => window.__habits.tables.at(-1));
+const projection = (page) => page.evaluate(() => window.__readObservedTable(window.__habits));
 const activeId = (page) => page.evaluate(() => document.activeElement?.dataset?.testid ?? null);
 const executeCount = (page) => page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
 const clipboard = (page) => page.evaluate(() => navigator.clipboard.readText());
@@ -126,7 +131,7 @@ async function addRow(page, values, expectedRows) {
     if (values[index] !== "") await page.keyboard.type(String(values[index]));
     await page.keyboard.press(index === values.length - 1 ? "Enter" : "Tab");
   }
-  await page.waitForFunction((rows) => window.__habits.tables.at(-1)?.rows.length === rows, expectedRows);
+  await page.waitForFunction((rows) => !window.__habits.stale && window.__readObservedTable(window.__habits)?.rows.length === rows, expectedRows);
   await ready(page);
 }
 
@@ -317,7 +322,7 @@ const cases = [
     await page.getByTestId("cell-editor").waitFor();
     await page.keyboard.type("c");
     await page.keyboard.press("Enter");
-    await page.waitForFunction(() => window.__habits.tables.at(-1)?.rows.length === 1);
+    await page.waitForFunction(() => !window.__habits.stale && window.__readObservedTable(window.__habits)?.rows.length === 1);
     const table = await projection(page);
     assert.deepEqual([0, 1, 2].map((column) => fieldAt(table, 0, column)?.stored?.value), ["a", "b", "c"]);
   } },
@@ -832,6 +837,7 @@ const cases = [
     const open = async () => {
       context = await chromium.launchPersistentContext(profile, { ...launchOptions, viewport: { width: 1440, height: 900 } });
       await installDistRoutes(context, dist);
+      await installPublishedTablePatcher(context);
       await context.addInitScript(evidence);
       const page = context.pages()[0] ?? await context.newPage();
       page.setDefaultTimeout(4000);
@@ -913,6 +919,7 @@ const cases = [
     const open = async () => {
       context = await chromium.launchPersistentContext(profile, { ...launchOptions, viewport: { width: 1440, height: 900 } });
       await installDistRoutes(context, dist);
+      await installPublishedTablePatcher(context);
       await context.addInitScript(evidence);
       const page = context.pages()[0] ?? await context.newPage();
       page.setDefaultTimeout(4000);
@@ -1864,6 +1871,7 @@ for (const testCase of cases) {
   }
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ["clipboard-read", "clipboard-write"] });
   await installDistRoutes(context, dist);
+  await installPublishedTablePatcher(context);
   await context.addInitScript(evidence);
   const page = await context.newPage();
   page.setDefaultTimeout(testCase.waitMs ?? 4000);

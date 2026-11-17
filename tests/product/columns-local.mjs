@@ -1,3 +1,4 @@
+import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 // #212: ordinary grid events with the real pinned Worker/WASM. Observations
 // below copy public transport traffic; they never supply semantic results.
 import assert from "node:assert/strict";
@@ -24,7 +25,7 @@ const profile = path.join(work, "profile");
 let context, pid, page;
 const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
 const entry = () => page.locator('.ts-entry-row');
-const projection = () => page.evaluate(() => window.__columnEvidence.records.flatMap(record => record.tables).at(-1));
+const projection = () => page.evaluate(() => window.__readObservedTable(window.__columnEvidence.records.findLast(record => record.tables.length)));
 const commands = () => page.evaluate(() => window.__columnEvidence.records.flatMap(record => record.requests).filter(message => ["add_column", "rename_column", "remove_column"].includes(message.request?.type)).map(message => message.request));
 const values = table => table.rows.map(row => table.columns.map(column => row.fields.find(field => field.target.field === column.id)?.stored?.value));
 const cell = (table, r, c) => page.getByTestId(`cell:${table.rows[r].fields[0]?.target.entity ?? table.rows[r].id}:${table.columns[c].id}`);
@@ -38,6 +39,7 @@ async function start() {
   pid = info.processInfo.find(row => row.type === "browser")?.id;
   assert.ok(Number.isInteger(pid) && pid > 0); processes.push({ pid, profile });
   await installDistRoutes(context, dist);
+  await installPublishedTablePatcher(context);
   await context.addInitScript(() => {
     window.__columnEvidence = { records: [], hostWrites: 0 };
     for (const method of ["put", "add", "delete", "clear"]) {
@@ -54,12 +56,16 @@ async function start() {
         this.addEventListener("message", event => {
           this.record.replies.push(structuredClone(event.data));
           // Tables above 1,000 rows arrive as unfiltered windows (Work A-03); assemble them.
-          if (event.data.response?.type === "table") this.record.tables.push(structuredClone(event.data.response.payload));
+          if (event.data.response?.type === "table") this.record.tables.push(window.__trackObservedTable(this.record, structuredClone(event.data.response.payload)));
           if (event.data.response?.type === "table_window") {
             const w = structuredClone(event.data.response.payload);
             if (w.start === 0 || !this.__windowTable || this.__windowTable.revision !== w.revision) this.__windowTable = { ...(w.tracker_profile ? { tracker_profile: true } : {}), ...(w.native_table_profile ? { native_table_profile: true } : {}), revision: w.revision, collection: w.collection, columns: w.columns, rows: [] };
             this.__windowTable.rows.push(...w.rows);
-            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(assembled); }
+            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(window.__trackObservedTable(this.record, assembled, true)); }
+          }
+          if (event.data.response?.type === "published") {
+            const table = window.__trackPublished(this.record, event.data.response.payload);
+            if (table) this.record.tables.push(table);
           }
           const request = this.record.requests.find(request => request.id === event.data.id);
           if (window.__columnEvidence.holdExport && request?.kind === "export_portable_ro") {
