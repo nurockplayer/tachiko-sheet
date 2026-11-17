@@ -1,13 +1,22 @@
 // R9a: production UI and real Worker/WASM; no manufactured command replies.
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
-import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
+import { homeImportInput, openFolder, waitForColdHome } from "./home-entry.mjs";
+import { j4CanaryText } from "../fixtures/j4-catalog-sales.mjs";
 
 const work = await mkdtemp(path.join(tmpdir(), "sheet-r9a-"));
+// Home's Sales example adds a cross-table summary that correctly prevents
+// deletion. Open its summary-free canonical source to exercise a confirmed delete.
+const workbook = path.join(work, "delete-focus.roproj");
+for (const [name, text] of Object.entries(j4CanaryText)) {
+  const file = path.join(workbook, name);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, text);
+}
 const csv = path.join(work, "focus.csv");
 await writeFile(csv, ["name,note,code", ...Array.from({ length: 320 }, (_, i) => `item-${i},note-${i},${i === 0 ? "needle" : `code-${i}`}`)].join("\r\n"));
 const browser = await chromium.launch({ headless: true,
@@ -30,7 +39,7 @@ async function check(name, test) {
   } catch (error) {
     failures.push(error);
     console.error(`FAIL ${name}: ${error.stack}`);
-    if (page) console.error("Focus diagnostics:", await page.evaluate(() => ({ active: document.activeElement?.outerHTML.slice(0, 500), tabs: document.querySelector('[aria-label="Sheets"]')?.outerHTML, trace: window.__deleteFocusTrace })));
+    if (page) console.error("Focus diagnostics:", await page.evaluate(() => ({ active: document.activeElement?.outerHTML.slice(0, 500), tabs: document.querySelector('[aria-label="Sheets"]')?.outerHTML, dialogs: [...document.querySelectorAll('[role="dialog"]')].map(dialog => dialog.textContent), trace: window.__deleteFocusTrace })));
   }
   finally { await context.close(); }
 }
@@ -80,7 +89,7 @@ try {
     assert.equal(await row(page, 0).locator("td").nth(2).innerText(), "edited needle");
   });
   await check("#387.2: cancel restores origin; confirmed delete focuses surviving active tab", async page => {
-    await page.getByRole("button", { name: "Open sales example", exact: true }).click(); await ready(page);
+    await openFolder(page, workbook);
     const tabs = page.getByRole("tablist", { name: "Sheets", exact: true }).getByRole("tab");
     await tabs.nth(1).click(); await ready(page);
     const deletedId = await tabs.nth(1).getAttribute("id");
@@ -97,7 +106,9 @@ try {
       document.addEventListener("focusin", event => window.__deleteFocusTrace.push(event.target.outerHTML.slice(0, 300)));
     });
     await dialog.getByRole("button", { name: "Delete sheet", exact: true }).click();
+    await dialog.waitFor({ state: "detached" });
     await ready(page);
+    await page.waitForFunction(() => document.querySelectorAll('[aria-label="Sheets"] [role="tab"]').length === 1);
     await page.waitForFunction(() => {
       const active = document.querySelector('[aria-label="Sheets"] [aria-selected="true"]');
       return active && active === document.activeElement;
