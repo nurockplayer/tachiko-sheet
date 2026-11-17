@@ -1535,6 +1535,9 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         ? MAX_PROJECT_TRANSFER_BYTES : MAX_WIRE_REQUEST_BYTES;
       let read: CoherentRead;
       try {
+        // Confirm the acknowledged import before exporting or replacing it.
+        // A lost query reply does not make that import's outcome unknown.
+        read = await loadCoherentView(kit, client, requestedAt, null);
         if (!("profile" in imported.opened && imported.opened.profile === "working_size")) {
           // Keep the full-fidelity import and its producer metadata. Reopen its
           // opaque v3 snapshot through Work's supported working-size boundary
@@ -1544,13 +1547,19 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
             dispatch(kit, () => client.exportProjectV3(revision)));
           requireCurrentProjectionRevision(revision, project.revision, "imported project export");
           const open = capability(client.openImportedProjectWorkingSize, "working-size imported-project open");
-          const opened = await afterNotReplaced(requestedAt,
-            dispatch(kit, () => open.call(client, project.bytes.slice(0), imported.metadata)));
+          let opened;
+          try {
+            opened = await afterNotReplaced(requestedAt,
+              dispatch(kit, () => open.call(client, project.bytes.slice(0), imported.metadata)));
+          } catch (error) {
+            throw new OpenedProjectionRecoveryError(error, error instanceof UnknownOperationOutcomeError ? "unknown" : "opened");
+          }
           requestByteLimit = opened.profile === "working_size" ? MAX_PROJECT_TRANSFER_BYTES : MAX_WIRE_REQUEST_BYTES;
+          read = await loadCoherentView(kit, client, requestedAt, null);
         }
-        read = await loadCoherentView(kit, client, requestedAt, null);
       } catch (error) {
-        throw new OpenedProjectionRecoveryError(error, error instanceof UnknownOperationOutcomeError ? "unknown" : "opened");
+        if (error instanceof OpenedProjectionRecoveryError) throw error;
+        throw new OpenedProjectionRecoveryError(error);
       }
       active = { scope: read.view.occurrence, revision: read.view.revision, collection: read.collection };
       residentCollection = read.collection;

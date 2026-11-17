@@ -1663,6 +1663,24 @@ describe("Work file adapter admission and export", () => {
     expect(await runtime.read()).toEqual(view);
   });
 
+  it.each([false, true])("keeps an acknowledged import known after projection loss (after reopen=%s)", async afterReopen => {
+    const { runtime, client } = await opened();
+    Object.assign(client, { importSpreadsheet: async () => ({
+      opened: await client.openProject(new ArrayBuffer(4)), metadata: { version: 1, sheets: [] }, ledger: [],
+    }) });
+    const query = vi.spyOn(client, "queryTable");
+    // The first read confirms import; the second observes the acknowledged reopen.
+    const original = FakeClient.prototype.queryTable.bind(client);
+    if (afterReopen) query.mockImplementationOnce(original);
+    query.mockRejectedValue(new Error("lost import projection reply"));
+    const error = await failure(runtime.importSpreadsheet(new ArrayBuffer(4), "csv", { delimiter: ",", header: true },
+      { column_types: [], extra_columns: [] }));
+    expect(error).toBeInstanceOf(OpenedProjectionRecoveryError);
+    expect(error).toMatchObject({ operationOutcome: "opened" });
+    expect(client.calls.exportProjectV3).toHaveLength(afterReopen ? 1 : 0);
+    expect(client.calls.openImportedProjectWorkingSize).toHaveLength(afterReopen ? 1 : 0);
+  });
+
   it.each([false, true])("retains import recovery when the working-size reopen fails (unknown=%s)", async unknown => {
     const { runtime, client } = await opened();
     const cause = unknown ? new Error("lost reopen acknowledgement") : new FakeDesignerRuntimeError("unsupported_project", client.currentRevision);

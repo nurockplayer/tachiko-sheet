@@ -71,6 +71,7 @@ describe("import refusal message", () => {
     expect(importRefusalMessage(new Error("something else"))).toBe("The spreadsheet could not be inspected. Nothing was imported. (Details: something else)");
     expect(importRefusalMessage(new Error("project transfer is invalid: Cell column exceeds profile"))).toMatch(/outside what this beta can open/);
     expect(importRefusalMessage(new Error("project transfer is invalid: Worksheet exceeds the bounded Text/Number capacity rectangle"))).toMatch(/outside what this beta can open/);
+    expect(importRefusalMessage(new Error("project transfer is invalid: XML structure exceeds bounded profile"))).toMatch(/outside what this beta can open/);
     expect(importRefusalMessage(null)).toBe("The spreadsheet could not be inspected. Nothing was imported.");
     const typed = Object.assign(new Error("TableRows capacity exceeded: maximum 8406, attempted 8407"), { failure: { code: "capacity_exceeded" } });
     expect(importRefusalMessage(typed)).toMatch(/^This file is outside what this beta can open: .*Nothing was imported\. \(Details: TableRows capacity exceeded/);
