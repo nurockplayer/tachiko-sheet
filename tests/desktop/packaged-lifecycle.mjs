@@ -982,8 +982,8 @@ async function macShortcutLabels() {
   assert.ok(labels.every(label => !label.includes("Ctrl+")), `macOS help must not render Ctrl+: ${JSON.stringify(labels)}`);
 }
 
-// R6 complements G6's synthetic paste events and overridden delayed read.
-// This runs before any clipboard override, against packaged WebKit/native Work.
+// R6 runs Replace and dispatched composition against packaged WebKit/native Work.
+// Real clipboard coverage remains open as #348.1; no native input is sent here.
 async function nativeCoverage() {
   const host = await coldHome();
   assert.equal(host.protocol, "tauri:", "R6 runs in the packaged app");
@@ -1112,37 +1112,20 @@ async function nativeCoverage() {
     assert.deepEqual(await snapshot(), before, "Name Box never edits cells");
     assert.equal(await noUndo(), true, "Name Box adds no history");
   });
-  await timed("real system clipboard Paste values and one Undo", async () => {
-    const previousText = execFileSync("pbpaste");
-    const pasted = [["雪 clipboard", "0012"], ["native value", "second"]];
-    const expected = structuredClone(before);
-    for (let row = 0; row < 2; row++) for (let col = 0; col < 2; col++) expected[row][col].text = pasted[row][col];
-    // Falsifier: an absent/no-op paste must fail this exact full-table oracle.
-    assert.throws(() => assert.deepEqual(before, expected), assert.AssertionError);
-    try {
-      execFileSync("pbcopy", { input: pasted.map(row => row.join("\t")).join("\n") });
-      await evaluate(`
-        if (Object.hasOwn(navigator, "clipboard")) throw new Error("R6 must use WebKit's own clipboard");
-        click(cellAt(0, 0));
-        await waitFor(() => document.activeElement === cellAt(0, 0) && cellAt(0, 0).getAttribute("aria-selected") === "true", "R6 paste selection");
-        return true;
-      `);
-      await evaluate(`
-        // Same UI shortcut as a user, dispatched like this lifecycle's other
-        // keys. The clipboard data and WebKit read remain real and unmodified.
-        cellAt(0, 0).dispatchEvent(new KeyboardEvent("keydown", {
-          key: "V", metaKey: true, shiftKey: true, bubbles: true, cancelable: true,
-        }));
-        await waitFor(() => current() && cellAt(0, 0)?.textContent === "雪 clipboard", "real clipboard Paste values");
-        return true;
-      `);
-      assert.deepEqual(await snapshot(), expected, "real WKWebView read changes only the four clipboard cells");
-      await undoOnce();
-    } finally {
-      execFileSync("pbcopy", { input: previousText });
-    }
-  });
-
+  const nativeInputAuthorized = JSON.parse(execFileSync("python3", ["-c", [
+    "import ctypes, json",
+    'core = ctypes.CDLL("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")',
+    "core.CGPreflightPostEventAccess.restype = ctypes.c_bool",
+    "print(json.dumps(core.CGPreflightPostEventAccess()))",
+  ].join("\n")], { encoding: "utf8" }));
+  // The authorized native-input driver is deliberately not implemented yet.
+  const reason = nativeInputAuthorized ? "native input driver not implemented" : "native input not authorized on this host";
+  console.log(`NOT RUN: real-clipboard Paste values (#348.1) — ${reason}`);
+  return {
+    nativeReplace: true,
+    nameBoxDispatchedComposition: true,
+    realClipboardPasteValues: { status: "NOT RUN", issue: "#348.1", nativeInputAuthorized, reason },
+  };
 }
 
 // ---- run ---------------------------------------------------------------------
@@ -1154,6 +1137,7 @@ const webkitData = [
 for (const folder of webkitData) await rm(folder, { recursive: true, force: true });
 
 const results = [];
+let nativeCoverageResults;
 let pid;
 let directResult;
 let lifecycleError;
@@ -1173,7 +1157,7 @@ try {
   } else {
   pid = await timed("launch", launch);
   await coldHome();
-  await nativeCoverage();
+  nativeCoverageResults = await nativeCoverage();
   await closeToHome();
   await quit(pid);
   pid = undefined;
@@ -1278,7 +1262,7 @@ try {
   }
   directResult = {
     case: process.env.DESKTOP_NATIVE_ONLY === "1" ? "desktop native subcases" : "desktop packaged lifecycle (native runtime)",
-    journeys: process.env.DESKTOP_NATIVE_ONLY === "1" ? { nativeSubcases: true } : { realClipboardReplaceDispatchedComposition: true, namedTablePortableLocalCopy: true, sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats, mixed320x2and1000x16: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
+    journeys: process.env.DESKTOP_NATIVE_ONLY === "1" ? { nativeSubcases: true } : { ...nativeCoverageResults, namedTablePortableLocalCopy: true, sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats, mixed320x2and1000x16: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
     status: "PASS",
     app,
     machine: execFileSync("uname", ["-mrs"], { encoding: "utf8" }).trim(),

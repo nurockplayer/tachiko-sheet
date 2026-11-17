@@ -18,12 +18,6 @@ const baselineApp = path.join(temporary, "baseline.app");
 await cp(path.join(root, bundle), baselineApp, { recursive: true });
 const mutations = [
   {
-    name: "clipboard-read-removed", file: "src/ui/SheetShell.tsx",
-    from: "try { text = await navigator.clipboard.readText(); } catch {",
-    to: 'try { text = ""; } catch {',
-    failure: "timed out waiting for real clipboard Paste values",
-  },
-  {
     name: "replace-cancel-removed", file: "src/ui/SheetShell.tsx",
     from: 'onClick={cancelReplacePreview}>Cancel preview</button>',
     to: 'onClick={() => {}}>Cancel preview</button>',
