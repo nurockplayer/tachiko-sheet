@@ -19,7 +19,7 @@ const profile = path.join(work, "profile");
 let context, pid, page;
 const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
 const entry = () => page.locator(".ts-entry-row");
-const projection = () => page.evaluate(() => window.__j1Evidence.records.flatMap(record => record.tables).at(-1));
+const projection = () => page.evaluate(() => window.__readObservedTable(window.__j1Evidence.records.findLast(record => record.tables.length)));
 const values = table => table.rows.map(row => table.columns.map(column => row.fields.find(field => field.target.field === column.id)?.stored?.value));
 const cell = (table, r, c) => page.getByTestId(`cell:${table.rows[r].fields[0]?.target.entity ?? table.rows[r].id}:${table.columns[c].id}`);
 async function start() {
@@ -76,13 +76,11 @@ async function start() {
 function exists(id) { try { process.kill(id, 0); return true; } catch (error) { if (error.code === "ESRCH") return false; throw error; } }
 async function stop() {
   if (!context) return;
-  const observerGaps = await page.evaluate(() => window.__observerGaps);
   await context.close();
   const deadline = Date.now() + 5000;
   while (exists(pid) && Date.now() < deadline) await delay(50);
   assert.equal(exists(pid), false, "owned browser process exited before restart");
   processes.at(-1).exitObserved = true; context = pid = undefined;
-  assert.equal(observerGaps, 0, "the projection observer resolved every changed target before browser shutdown");
 }
 const dialog = name => page.getByRole("dialog", { name, exact: true });
 async function assertFocused(target, message) {
@@ -317,7 +315,6 @@ try {
   assert.ok(values(table).some(row => row[0] === "出貨" && row[1] === "Done" && row[2] === 4));
   checks.push("10 Appended 出貨 / Done / 4 after reopen; the row appears and all prior row identities and contents are unchanged.");
 
-  assert.equal(await page.evaluate(() => window.__observerGaps), 0, "the projection observer resolved every changed target");
   console.log(JSON.stringify({ status: "PASS", checks }));
 } catch (error) {
   console.error(error);

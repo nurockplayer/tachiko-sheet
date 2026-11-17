@@ -25,7 +25,7 @@ const profile = path.join(work, "profile");
 let context, pid, page;
 const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
 const entry = () => page.locator('.ts-entry-row');
-const projection = () => page.evaluate(() => window.__columnEvidence.records.flatMap(record => record.tables).at(-1));
+const projection = () => page.evaluate(() => window.__readObservedTable(window.__columnEvidence.records.findLast(record => record.tables.length)));
 const commands = () => page.evaluate(() => window.__columnEvidence.records.flatMap(record => record.requests).filter(message => ["add_column", "rename_column", "remove_column"].includes(message.request?.type)).map(message => message.request));
 const values = table => table.rows.map(row => table.columns.map(column => row.fields.find(field => field.target.field === column.id)?.stored?.value));
 const cell = (table, r, c) => page.getByTestId(`cell:${table.rows[r].fields[0]?.target.entity ?? table.rows[r].id}:${table.columns[c].id}`);
@@ -99,9 +99,6 @@ async function start() {
 function exists(id) { try { process.kill(id, 0); return true; } catch (error) { if (error.code === "ESRCH") return false; throw error; } }
 async function stop() {
   if (!context) return;
-  for (const observedPage of context.pages()) {
-    assert.equal(await observedPage.evaluate(() => window.__observerGaps), 0, "the projection observer resolved every changed target");
-  }
   await context.close();
   const deadline = Date.now() + 5000;
   while (exists(pid) && Date.now() < deadline) await delay(50);

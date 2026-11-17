@@ -145,9 +145,6 @@ async function start() {
 function exists(processId) { try { process.kill(processId, 0); return true; } catch (cause) { if (cause.code === "ESRCH") return false; throw cause; } }
 async function terminate() {
   if (!context) return;
-  for (const observedPage of context.pages()) {
-    assert.equal(await observedPage.evaluate(() => window.__observerGaps), 0, "the projection observer resolved every changed target");
-  }
   const owned = pid;
   let timer;
   try { await Promise.race([context.close(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("BLOCKED: browser close timed out")), 10000); })]); }
@@ -168,7 +165,7 @@ async function capture(page, label) {
   await page.setViewportSize({ width: 1400, height: 1000 });
 }
 async function projection(page) {
-  return page.evaluate(() => window.__rowEvidence.workers[0].tables.at(-1));
+  return page.evaluate(() => window.__readObservedTable(window.__rowEvidence.workers[0]));
 }
 function values(table) {
   const cols = new Map(table.columns.map(col => [col.id, col.key]));

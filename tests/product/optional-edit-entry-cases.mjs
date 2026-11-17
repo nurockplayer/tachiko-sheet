@@ -5,7 +5,7 @@ import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 // Ordinary UI is the only writer. __exportEvidence copies real Worker traffic.
 export async function runOptionalEditEntryCases(page, { close, checks }) {
   const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
-  const projection = () => page.evaluate(() => structuredClone(window.__exportEvidence.table));
+  const projection = () => page.evaluate(() => structuredClone(window.__readObservedTable(window.__exportEvidence)));
   const commands = type => page.evaluate(type => window.__exportEvidence.requests.filter(item => item.request?.type === type).map(item => item.request), type);
   const undo = async () => { await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready(); };
   const noUndo = async () => assert.equal(await page.getByRole("button", { name: "Undo", exact: true }).isDisabled(), true, "no extra history action");

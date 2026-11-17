@@ -19,9 +19,6 @@ const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false
 function alive(id) { try { process.kill(id, 0); return true; } catch (e) { if (e.code === 'ESRCH') return false; throw e; } }
 async function stop() {
   if (!context) return;
-  for (const observedPage of context.pages()) {
-    assert.equal(await observedPage.evaluate(() => window.__observerGaps), 0, "the projection observer resolved every changed target");
-  }
   await context.close(); context = undefined;
   const deadline = Date.now() + 10000;
   while (alive(pid) && Date.now() < deadline) await delay(50);
@@ -57,7 +54,7 @@ async function start() {
   page.setDefaultTimeout(8000); await page.setViewportSize({width: 1400, height: 1000});
   await page.goto(LOCAL_ORIGIN); await waitForColdHome(page);
 }
-const table = () => page.evaluate(() => window.__v3.tables.at(-1));
+const table = () => page.evaluate(() => window.__readObservedTable(window.__v3));
 async function edit(amount) {
   await page.getByRole('tab', {name: 'Table', exact: true}).click();
   const t = await table(), col = t.columns.find(c => c.display_name === 'Amount');

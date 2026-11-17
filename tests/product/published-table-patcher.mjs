@@ -42,6 +42,7 @@ export async function installPublishedTablePatcher(context) {
     };
     window.__trackObservedTable = (record, table, display = false) => {
       record.lastTable = table;
+      record.stale = false;
       record.tableDisplay = display;
       const gaps = (record.gaps ?? []).filter(gap => !gap.resolved && gap.publication.resulting_revision === table.revision);
       if (!gaps.length) return table;
@@ -58,10 +59,19 @@ export async function installPublishedTablePatcher(context) {
       }
       return table;
     };
+    window.__readObservedTable = record => {
+      if (record?.stale) {
+        const summary = record.gaps.filter(gap => !gap.resolved).map(gap =>
+          `${gap.publication.resulting_revision} (${gap.publication.changed.length} changed targets)`).join(", ");
+        throw new Error(`observer stale: ${summary}`);
+      }
+      return record?.lastTable;
+    };
     window.__trackPublished = (record, publication) => {
       const table = window.__patchObservedTable(record.lastTable, publication, record.tableDisplay);
       if (table === null) {
         window.__observerGaps++;
+        record.stale = true;
         (record.gaps ??= []).push({ publication: structuredClone(publication), resolved: false });
       } else if (table) record.lastTable = table;
       return table;

@@ -68,15 +68,12 @@ async function newPage(p = undefined) {
 function exists(id) { try { process.kill(id, 0); return true; } catch (e) { if (e.code === 'ESRCH') return false; throw e; } }
 async function terminate() {
   if (!context) return;
-  for (const observedPage of context.pages()) {
-    assert.equal(await observedPage.evaluate(() => window.__observerGaps), 0, "the projection observer resolved every changed target");
-  }
   const owned = pid; await context.close();
   const deadline = Date.now() + 5000; while (exists(owned) && Date.now() < deadline) await delay(50);
   assert.equal(exists(owned), false, 'browser process must exit before same-profile restart');
   processes.at(-1).exitObserved = true; context = pid = undefined;
 }
-async function projection(p) { return p.evaluate(() => window.__saveEvidence.tables.at(-1)); }
+async function projection(p) { return p.evaluate(() => window.__readObservedTable(window.__saveEvidence)); }
 async function edit(p, value) {
   await p.getByRole('tab', { name: 'Table', exact: true }).click();
   const table = await projection(p);

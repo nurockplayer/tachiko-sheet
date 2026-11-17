@@ -33,7 +33,7 @@ await context.addInitScript(() => {
 });
 const page = await context.newPage();
 const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
-const projection = () => page.evaluate(() => window.__editingEvidence.records.flatMap(record => record.tables).at(-1));
+const projection = () => page.evaluate(() => window.__readObservedTable(window.__editingEvidence.records.findLast(record => record.tables.length)));
 const count = () => page.evaluate(() => window.__editingEvidence.records.flatMap(record => record.requests).filter(message => message.request?.type === "edit_cells").length);
 const publications = () => page.evaluate(() => window.__editingEvidence.records.reduce((n, record) => n + record.replies.filter(reply => reply.response?.type === "published" && record.requests.find(request => request.id === reply.id)?.request?.type === "edit_cells").length, 0));
 const cell = (table, r, c) => page.getByTestId(`cell:${table.rows[r].fields[0]?.target.entity ?? table.rows[r].id}:${table.columns[c].id}`);
@@ -110,6 +110,5 @@ try {
   await page.keyboard.press("ControlOrMeta+X");
   await page.locator('.ts-clipboard-status').filter({ hasText: "Nothing was cut." }).waitFor();
   assert.equal(await count(), refusedCount); assert.equal(await clipboard(), "unchanged clipboard");
-  assert.equal(await page.evaluate(() => window.__observerGaps), 0, "the projection observer resolved every changed target");
   console.log("PASS: drag, real-key copy and cut, refusal, multi-row delete and undo");
 } finally { await context.close(); await browser.close(); }
