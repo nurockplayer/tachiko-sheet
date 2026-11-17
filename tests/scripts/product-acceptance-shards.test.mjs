@@ -20,8 +20,8 @@ const summaries = () => assignShards(steps, durations, 4).map((selected, i) => (
   summary: selected.map(({ name }) => ({ step: name, status: 'PASS', exitCode: 0 })),
 }));
 
-test('--list exposes all 49 steps in the original runner order without setup', () => {
-  assert.equal(names.length, 49);
+test('--list exposes all 50 steps in the original runner order without setup', () => {
+  assert.equal(names.length, 50);
   assert.deepEqual(names, Object.keys(durations));
   assert.equal(names[0], 'workbook-tabs-local');
   assert.equal(names[names.indexOf('cell-editing-regression') + 1], 'component-review-followups-local');
