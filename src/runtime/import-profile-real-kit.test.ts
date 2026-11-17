@@ -48,12 +48,14 @@ describe("working-size imported sessions with the vendored kit", () => {
       const renamed = await runtime.renameTable(view, view.table.collection.key, "Renamed");
       expect(renamed.publication.import_metadata).toBeDefined();
       await expect(runtime.exportSpreadsheet(renamed.view, metadata, "xlsx")).rejects.toThrow(/metadata is stale/i);
-      for (const result of [renamed, await runtime.trackerHistory(renamed.view, "undo")]) {
-        view = result.view;
-        metadata = result.publication.import_metadata!;
-        expect(metadata).toBeDefined();
-        await expect(runtime.exportSpreadsheet(view, metadata, "xlsx")).resolves.toHaveProperty("bytes");
-      }
+      view = renamed.view;
+      metadata = renamed.publication.import_metadata!;
+      await expect(runtime.exportSpreadsheet(view, metadata, "xlsx")).resolves.toHaveProperty("bytes");
+      const undone = await runtime.trackerHistory(view, "undo");
+      view = undone.view;
+      metadata = undone.publication.import_metadata!;
+      expect(metadata).toBeDefined();
+      await expect(runtime.exportSpreadsheet(view, metadata, "xlsx")).resolves.toHaveProperty("bytes");
       const redone = await runtime.trackerHistory(view, "redo");
       expect(redone.publication.import_metadata).toBeDefined();
       await expect(runtime.exportSpreadsheet(redone.view, redone.publication.import_metadata!, "xlsx")).resolves.toHaveProperty("bytes");
