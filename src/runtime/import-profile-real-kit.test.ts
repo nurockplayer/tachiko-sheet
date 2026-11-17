@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { WorkerDesignerClient } from "../../public/core-kit/runtime/worker-client.js";
@@ -73,13 +74,36 @@ describe("working-size imported sessions with the vendored kit", () => {
       const before = await runtime.read();
       const occurrence = await client.observeOccurrence();
       for (const kind of ["width", "style", "format"] as const) {
-        const metadata = structuredClone(imported.metadata);
-        if (kind === "width") metadata.sheets[0]!.columns[0]!.width = 12;
-        if (kind === "style") metadata.sheets[0]!.rows[0]!.styles[0]!.bold = true;
-        if (kind === "format") metadata.sheets[0]!.rows[0]!.styles[0]!.number_format = "0.00";
-        const xlsx = await client.exportSpreadsheet(imported.view.revision, metadata, "xlsx", imported.view.table.collection.id);
-        await expect(runtime.inspectSpreadsheet(xlsx.bytes, "xlsx", options)).rejects.toMatchObject({ failure: { code: "capacity_exceeded" } });
-        await expect(runtime.importSpreadsheet(xlsx.bytes, "xlsx", options, textSelection)).rejects.toMatchObject({ failure: { code: "capacity_exceeded" } });
+        // Build the source directly: capacity-profile export correctly refuses
+        // presentation, so it cannot manufacture this admission regression.
+        const file = execFileSync("python3", ["-I", "-c", String.raw`
+import io, sys, zipfile
+kind = sys.argv[1]
+ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+rel = "http://schemas.openxmlformats.org/package/2006/relationships"
+width = '<cols><col min="1" max="1" width="12"/></cols>' if kind == "width" else ""
+xf = 'fontId="1" applyFont="1"' if kind == "style" else 'numFmtId="2" applyNumberFormat="1"'
+rows = ''.join('<row r="%d"><c r="A%d" t="str" s="%d"><v>%s</v></c></row>' % (i + 1, i + 1, int(i > 0 and kind != "width"), "Name" if i == 0 else "Item %d" % i) for i in range(201))
+parts = {
+  "[Content_Types].xml": '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/></Types>',
+  "_rels/.rels": '<Relationships xmlns="%s"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' % rel,
+  "xl/workbook.xml": '<workbook xmlns="%s" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Orders" sheetId="1" r:id="rId1"/></sheets></workbook>' % ns,
+  "xl/_rels/workbook.xml.rels": '<Relationships xmlns="%s"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' % rel,
+  "xl/worksheets/sheet1.xml": '<worksheet xmlns="%s">%s<sheetData>%s</sheetData></worksheet>' % (ns, width, rows),
+  "xl/styles.xml": '<styleSheet xmlns="%s"><fonts count="2"><font/><font><b/></font></fonts><fills count="1"><fill/></fills><borders count="1"><border/></borders><cellXfs count="2"><xf numFmtId="0" fontId="0"/><xf %s/></cellXfs></styleSheet>' % (ns, xf),
+}
+output = io.BytesIO()
+with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+  for name, content in parts.items(): archive.writestr(name, content)
+sys.stdout.buffer.write(output.getvalue())
+`, kind]);
+        const bytes = Uint8Array.from(file).buffer;
+        const preview = await client.inspectSpreadsheet(bytes, "xlsx", options, "working_size");
+        if (kind === "width") expect(preview.sheets[0]!.columns[0]!.width).toBe(12);
+        if (kind === "style") expect(preview.sheets[0]!.rows[0]![0]!.style.bold).toBe(true);
+        if (kind === "format") expect(preview.sheets[0]!.rows[0]![0]!.style.number_format).toBe("0.00");
+        await expect(runtime.inspectSpreadsheet(bytes, "xlsx", options)).rejects.toMatchObject({ failure: { code: "capacity_exceeded" } });
+        await expect(runtime.importSpreadsheet(bytes, "xlsx", options, textSelection)).rejects.toMatchObject({ failure: { code: "capacity_exceeded" } });
         expect(await client.observeOccurrence()).toEqual(occurrence);
         expect(await runtime.read()).toEqual(before);
       }
