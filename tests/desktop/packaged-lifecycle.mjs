@@ -23,10 +23,11 @@ import { formulaPersistence } from "./formula-persistence.mjs";
 import { pasteRaces } from "./paste-races.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const requestedApp = path.resolve(process.argv[2] ?? "");
+assert.ok(existsSync(path.join(requestedApp, "Contents", "Info.plist")), `packaged app not found: ${requestedApp}`);
 // LaunchServices resolves symlinks; process lookup and cleanup must match it.
-const app = realpathSync(path.resolve(process.argv[2] ?? ""));
+const app = realpathSync(requestedApp);
 const bundleId = "dev.tachiko.sheet.e2e";
-assert.ok(existsSync(path.join(app, "Contents", "Info.plist")), `packaged app not found: ${app}`);
 const executable = path.join(app, "Contents", "MacOS");
 let oracle = path.join(root, "acceptance", "capacity-8406", "oracle.py");
 let ROWS = 8406;
