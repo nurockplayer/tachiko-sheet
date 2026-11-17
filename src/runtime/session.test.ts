@@ -1320,7 +1320,7 @@ describe("createSheetRuntime", () => {
     expect(await runtime.read()).toEqual(view);
   });
 
-  it.each(["header_style_not_preserved", "style_profile", "column_width_outside_grid"])(
+  it.each(["header_style_not_preserved", "checkbox_presentation", "other_style_not_preserved"])(
     "retains the original capacity refusal for ledger-only presentation loss: %s", async code => {
       const { client, runtime, view } = await opened();
       const refusal = new FakeDesignerRuntimeError("capacity_exceeded", client.currentRevision);
@@ -1342,7 +1342,8 @@ describe("createSheetRuntime", () => {
 
   it("uses working-size inspection only after a typed capacity refusal", async () => {
     const { client, runtime } = await opened();
-    const source = { sheets: [], ledger: [] };
+    const source = { sheets: [], ledger: [{ category: "lossy_on_export", code: "style_profile",
+      location: "xl/styles.xml", message: "Basic styles retained; font family remains source-only", blocking: false }] };
     const refusal = new FakeDesignerRuntimeError("capacity_exceeded", client.currentRevision);
     const inspect = vi.fn(async (_bytes: ArrayBuffer, _format: string, _options: unknown, profile?: string) => {
       if (!profile) throw refusal;

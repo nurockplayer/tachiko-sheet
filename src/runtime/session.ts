@@ -1481,7 +1481,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     // Working-size metadata carries no presentation. Only use it when there
     // is no source presentation to lose; retain Work's original refusal otherwise.
     // Work excludes header cells from rows and reports their styling in the ledger.
-    if (source.ledger.some(finding => finding.category === "lossy_on_export" ||
+    // style_profile also occurs on full-fidelity import; basic styles are checked below.
+    if (source.ledger.some(finding => finding.code === "checkbox_presentation" ||
       finding.code.endsWith("_not_preserved")) ||
       source.sheets.some(sheet => sheet.columns.some(column => column.width !== null) ||
       sheet.rows.some(row => row.some(({ style }) => style.number_format !== null || style.bold ||
