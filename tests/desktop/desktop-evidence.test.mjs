@@ -14,6 +14,25 @@ const successfulDirect = { schema: 'sheet-desktop-direct-result-v1', status: 'PA
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const writeJson = (file, value) => writeFile(file, JSON.stringify(value));
 
+test('lifecycle output reaches live diagnostics before exit and retains the captured failure', async () => {
+  let firstOutput;
+  const observed = new Promise(resolve => { firstOutput = resolve; });
+  let finished = false;
+  const chunks = [];
+  const running = captureRunnerCommand(process.execPath, ['-e',
+    'console.log("START: lifecycle"); setTimeout(() => { console.error("FAIL: lifecycle reason"); process.exit(7); }, 100);'], {
+    timeoutMs: 5000,
+    onOutput: chunk => { chunks.push(chunk); firstOutput(); },
+  }).then(result => { finished = true; return result; });
+  await Promise.race([observed, running.then(() => { throw new Error('capture completed without live diagnostics'); })]);
+  assert.equal(finished, false, 'the initial phase is visible while the child is running');
+  const result = await running;
+  assert.equal(result.code, 7);
+  assert.equal(result.outcome, 'EXITED');
+  assert.match(Buffer.concat(chunks).toString(), /START: lifecycle[\s\S]*FAIL: lifecycle reason/);
+  assert.equal(result.output, Buffer.concat(chunks).toString());
+});
+
 test('independent XLSX checker rejects formula loss, source changes and stale or missing caches', async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'sheet-xlsx-formula-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -233,10 +252,10 @@ test('workflow preserves gates, timeouts, permissions and exact narrow upload pa
       `production retention must finish before E2E work: ${retentionOrder[index - 1]} precedes ${retentionOrder[index]}`);
   }
   assert.ok(workflow.indexOf('mjs e2e-identity') < workflow.indexOf('mjs lifecycle'));
-  assert.equal((workflow.match(/uses: actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/g) ?? []).length, 2);
-  assert.equal((workflow.match(/retention-days: 14/g) ?? []).length, 2);
-  assert.equal((workflow.match(/if-no-files-found: error/g) ?? []).length, 2);
-  assert.equal((workflow.match(/github.run_attempt/g) ?? []).length, 2);
+  assert.equal((workflow.match(/uses: actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/g) ?? []).length, 3);
+  assert.equal((workflow.match(/retention-days: 14/g) ?? []).length, 3);
+  assert.equal((workflow.match(/if-no-files-found: error/g) ?? []).length, 3);
+  assert.equal((workflow.match(/github.run_attempt/g) ?? []).length, 3);
   const paths = [...workflow.matchAll(/^            (desktop-evidence\/[^\n]+)$/gm)].map(match => match[1]);
   assert.deepEqual(paths, [...productionFiles.map(file => `desktop-evidence/production/${file}`), ...lifecycleFiles.map(file => `desktop-evidence/e2e/${file}`)]);
   assert.doesNotMatch(workflow, /continue-on-error|permissions: write|upload-artifact@main/);

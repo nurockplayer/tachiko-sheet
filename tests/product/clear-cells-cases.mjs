@@ -266,15 +266,17 @@ export async function runClearCellsCases(page, { close, checks }) {
   // Open a sparse canonical work file through the real working-size path.
   const folder = await mkdtemp(path.join(tmpdir(), "sheet-clear-limit-"));
   try {
+  for (const [rowCount, columnCount] of [[4000, 25], [9091, 11]]) {
+  const inBounds = rowCount * columnCount === 100000;
   const schema = JSON.parse(j4CanaryText["schemas.json"])[0];
-  schema.fields = Array.from({ length: 11 }, (_, i) => ({ id: `10000000-0000-4000-8000-${String(i + 101).padStart(12, "0")}`, key: `column_${i}`, field_type: { type: "text" }, required: false }));
-  await mkdir(path.join(folder, "entities"));
+  schema.fields = Array.from({ length: columnCount }, (_, i) => ({ id: `10000000-0000-4000-8000-${String(i + 101).padStart(12, "0")}`, key: `column_${i}`, field_type: { type: "text" }, required: false }));
+  await mkdir(path.join(folder, "entities"), { recursive: true });
   await writeFile(path.join(folder, "manifest.json"), j4CanaryText["manifest.json"]);
   await writeFile(path.join(folder, "schemas.json"), JSON.stringify([schema], null, 2) + "\n");
   const shards = Object.fromEntries([..."0123456789abcdef"].map(key => [key, ""]));
-  for (let i = 0; i < 9091; i++) {
+  for (let i = 0; i < rowCount; i++) {
     const id = `40000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`;
-    shards[createHash("sha256").update(id).digest("hex")[0]] += JSON.stringify({ id, key: `r${i}`, schema: schema.id, fields: { [schema.fields[0].id]: { kind: "text", value: `r${i}` } } }) + "\n";
+    shards[createHash("sha256").update(id).digest("hex")[0]] += JSON.stringify({ id, key: `r${i}`, schema: schema.id, fields: Object.fromEntries((inBounds ? schema.fields : schema.fields.slice(0, 1)).map((field, c) => [field.id, { kind: "text", value: `r${i}c${c}` }])) }) + "\n";
   }
   for (const [shard, text] of Object.entries(shards)) await writeFile(path.join(folder, "entities", `${shard}.jsonl`), text);
   const windowsBefore = await page.evaluate(() => window.__capacityEvidence.requests.query_table_window ?? 0);
@@ -282,17 +284,59 @@ export async function runClearCellsCases(page, { close, checks }) {
   await page.getByTestId("open-project").setInputFiles(folder);
   await page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor({ timeout: 120_000 });
   const windowRequests = await page.evaluate(() => window.__capacityEvidence.requests.query_table_window ?? 0) - windowsBefore;
-  console.log(`PASS: 9091x11 canonical open ready in ${Math.round(performance.now() - started)} ms; ${windowRequests} window requests`);
-  await capacitySnapshot(page, "9091x11 ready");
+  console.log(`PASS: ${rowCount}x${columnCount} canonical open ready in ${Math.round(performance.now() - started)} ms; ${windowRequests} window requests`);
+  await capacitySnapshot(page, `${rowCount}x${columnCount} ready`);
   const largeBefore = await projection(), largeCount = (await commands()).length;
   assert.equal(largeBefore.native_table_profile, true);
-  assert.equal(largeBefore.rows.length, 9091);
+  assert.equal(largeBefore.rows.length, rowCount);
   const first = page.getByTestId(`cell:${largeBefore.rows[0].id}:${largeBefore.columns[0].id}`);
   await first.click();
   await page.keyboard.press("Control+Shift+End");
+  if (inBounds) {
+    const largeReady = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor({ timeout: 120000 });
+    assert.equal(largeBefore.rows.reduce((n, row) => n + row.fields.length, 0), 100000,
+      "all 100,000 selected cells start with values; this cannot be a no-op");
+    const publishedBefore = await publications();
+    console.log("R5: dispatching one clear for exactly 100,000 populated cells");
+    await page.keyboard.press("Backspace");
+    await status("Cleared 100000 cells.").waitFor({ timeout: 120000 }); await largeReady();
+    assert.equal((await commands()).length, largeCount + 1, "one atomic mutation at the inclusive limit");
+    assert.equal((await commands()).at(-1).edits.length, 100000);
+    assert.equal(await publications(), publishedBefore + 1, "exactly one publication");
+    const cleared = await projection();
+    const assertCleared = table => {
+      assert.equal(table.rows.length, rowCount);
+      for (const row of table.rows) {
+        assert.deepEqual(row.fields, [], "every stored value is cleared");
+        assert.deepEqual([...row.blank_fields].sort(), table.columns.map(c => c.id).sort(), "every cell is blank");
+      }
+    };
+    assertCleared(cleared);
+    await page.getByRole("button", { name: "Undo", exact: true }).click(); await largeReady();
+    assert.deepEqual((await projection()).rows, largeBefore.rows, "one Undo restores all 100,000 original values");
+    await noUndo();
+    await page.getByRole("button", { name: "Redo", exact: true }).click(); await largeReady();
+    assertCleared(await projection());
+    assert.equal(await page.getByRole("button", { name: "Redo", exact: true }).isDisabled(), true);
+    await page.getByRole("button", { name: "Save a copy", exact: true }).click();
+    const save = page.getByRole("dialog", { name: "Save a copy", exact: true });
+    await save.getByLabel("Copy name", { exact: true }).fill("Clear inclusive limit");
+    await save.getByRole("button", { name: "Create copy", exact: true }).click();
+    await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor({ timeout: 120000 });
+    await close(page);
+    await page.getByRole("button", { name: "Open saved Clear inclusive limit", exact: true }).click();
+    await largeReady();
+    const reopened = await projection();
+    assertCleared(reopened);
+    assert.deepEqual(reopened.rows, cleared.rows, "Save/reopen preserves the exact cleared values and presence");
+    await noUndo();
+    checks.push("#373 exactly 100,000 nonempty cells clear atomically; one Undo/Redo and Save/reopen preserve every value/presence");
+  } else {
   await page.keyboard.press("Backspace"); await status("The selected range exceeds the 100,000-cell limit.").waitFor();
   assert.equal((await commands()).length, largeCount); assert.deepEqual(await projection(), largeBefore); await noUndo();
   checks.push("#229 9091x11 range exceeds 100,000: local refusal, no chunks/requests/publication/history");
+  }
   await close(page);
+  }
   } finally { await rm(folder, { recursive: true, force: true }); }
 }

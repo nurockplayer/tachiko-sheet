@@ -75,19 +75,25 @@ else:
   strings = [''.join(t.text or '' for t in item.findall('.//s:t', n)) for item in shared.findall('s:si', n)] if shared is not None else []
   rows = []
   for row in root.findall('s:sheetData/s:row', n):
-   values = []
+   values = ['', '', '']
    for cell in row.findall('s:c', n):
+    ref = cell.attrib['r']
+    column = ''.join(c for c in ref if c.isalpha())
+    assert column in ('A', 'B', 'C'), ref
+    index = ord(column) - ord('A')
     value = cell.find('s:v', n)
-    if cell.get('t') == 's': values.append(strings[int(value.text)])
-    elif cell.get('t') == 'inlineStr': values.append(''.join(t.text or '' for t in cell.findall('.//s:t', n)))
+    if cell.get('t') == 's': values[index] = strings[int(value.text)]
+    elif cell.get('t') == 'inlineStr': values[index] = ''.join(t.text or '' for t in cell.findall('.//s:t', n))
     else:
      text = value.text if value is not None else ''
-     values.append('1' if cell.get('t') is None and text == '1.0' else text)
+     values[index] = str(float(text)).removesuffix('.0') if cell.get('t', 'n') == 'n' and text else text
    rows.append(values)
 print(json.dumps(rows))
 `, file], { encoding: "utf8" }));
     assert.equal(rows.length, 301, `${format} includes a header and 300 rows`);
-    for (const index of [1, 150, 300]) assert.deepEqual(rows[index], [`Item ${index}`, "1", "Note"]);
+    assert.deepEqual(rows[0], ["Item", "Amount", "Note"], `${format} headers`);
+    assert.deepEqual(rows.slice(1), Array.from({ length: 300 }, (_, i) => [`Item ${i + 1}`, "1", "Note"]),
+      `${format} contains every value in every exported row and column`);
   }
   console.log("PASS: 300 pasted rows survive Save a copy and reopen and download as CSV and XLSX");
 } finally {

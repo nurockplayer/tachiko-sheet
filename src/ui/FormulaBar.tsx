@@ -33,6 +33,7 @@ export function FormulaBar(props: FormulaBarProps) {
   const errorRef = useRef<HTMLParagraphElement>(null);
   const state = props.state;
   const value = formulaBarDraftValue(state, props.draft);
+  const reasonText = [state.reason ?? state.note, props.translationNote].filter(Boolean).join(" · ");
   // A refusal keeps to the fixed 18px line, so a long message is cut off with
   // an ellipsis. `title` and the Details disclosure expose the whole text
   // without adding a line that would move the grid. The open disclosure is
@@ -101,7 +102,7 @@ export function FormulaBar(props: FormulaBarProps) {
           className="ts-formula-input"
           type="text"
           aria-label={state.label ? `Formula for ${state.label}` : "Formula"}
-          aria-describedby={[state.reason || state.note ? reasonId : null, props.error ? errorId : null].filter(Boolean).join(" ") || undefined}
+          aria-describedby={[reasonText ? reasonId : null, props.error ? errorId : null].filter(Boolean).join(" ") || undefined}
           placeholder={FORMULA_BAR_PLACEHOLDER}
           value={value}
           readOnly={!state.editable}
@@ -120,8 +121,9 @@ export function FormulaBar(props: FormulaBarProps) {
           shares that line instead of adding one, so the bar keeps its height
           while the message is shown and the grid never moves. */}
       <div className="ts-formula-bar-notes">
-        <p className="ts-hint ts-formula-bar-reason" id={reasonId} data-testid="formula-bar-reason" aria-live="polite" title={state.reason || state.note ? undefined : props.translationNote ?? undefined}>
-          {state.reason ?? state.note ?? props.translationNote ?? ""}
+        <p className="ts-hint ts-formula-bar-reason" id={reasonId} data-testid="formula-bar-reason" aria-live="polite" title={reasonText} aria-label={reasonText || undefined}
+          style={{ height: 18, maxHeight: 18, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {reasonText}
         </p>
         {props.error ? (
           <>
