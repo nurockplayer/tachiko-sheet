@@ -1,16 +1,16 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, writeSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, writeSync } from 'node:fs';
 import path from 'node:path';
 
 const STEP_KILL_GRACE_MS = 5000;
 const PROCESS_SCAN_TIMEOUT_MS = 10_000;
 
 export function signalableOwnedPids(owned, current) {
-  // A descendant that clears its marker may survive cleanup.
+  // Recheck ownership as well as start time before signalling a recorded PID.
   return [...owned].filter(([pid, started]) => {
     const info = current.get(pid);
-    return info?.started === started && info.marked;
+    return info?.started === started && (info.marked || info.holdsOutput);
   }).map(([pid]) => pid);
 }
 
@@ -28,6 +28,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
   const logs = [];
   let timer;
   let killTimer;
+  let closeTimer;
   let descendantTimer;
   let groupCleanup;
   let timedOut = false;
@@ -41,6 +42,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
     console.log(JSON.stringify({ step: name, status: 'START', timeoutMs, log }));
     const owner = randomUUID();
     const ownership = `TACHIKO_ACCEPTANCE_STEP_OWNER=${owner}`;
+    const outputPipes = new Set();
     let baseline;
     const processTable = () => {
       if (process.platform === 'linux') {
@@ -60,7 +62,20 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
           } catch (error) {
             if (!['ENOENT', 'ESRCH', 'EACCES', 'EPERM'].includes(error.code)) throw error;
           }
-          table.set(Number(pid), { parent: Number(fields[1]), group: Number(fields[2]), started: fields[19], marked });
+          let holdsOutput = false;
+          if (outputPipes.size && Number(pid) !== process.pid) {
+            try {
+              holdsOutput = readdirSync(`/proc/${pid}/fd`).some(fd => {
+                try { return outputPipes.has(readlinkSync(`/proc/${pid}/fd/${fd}`)); } catch (error) {
+                  if (!['ENOENT', 'ESRCH', 'EACCES', 'EPERM'].includes(error.code)) throw error;
+                  return false;
+                }
+              });
+            } catch (error) {
+              if (!['ENOENT', 'ESRCH', 'EACCES', 'EPERM'].includes(error.code)) throw error;
+            }
+          }
+          table.set(Number(pid), { parent: Number(fields[1]), group: Number(fields[2]), started: fields[19], marked, holdsOutput });
         }
         return table;
       }
@@ -99,6 +114,23 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    if (process.platform === 'linux' && options.detectOutputHolders !== false) {
+      for (const [index, stream] of [[1, child.stdout], [2, child.stderr]]) {
+        const fd = stream?._handle?.fd;
+        if (!Number.isInteger(fd) || fd < 0) continue;
+        try {
+          const pipe = readlinkSync(`/proc/self/fd/${fd}`);
+          if (/^pipe:\[\d+\]$/.test(pipe)) outputPipes.add(pipe);
+          // Node uses socket pairs on Linux: the inherited write end has its own inode.
+          else if (/^socket:\[\d+\]$/.test(pipe)) {
+            const writer = readlinkSync(`/proc/${child.pid}/fd/${index}`);
+            if (/^socket:\[\d+\]$/.test(writer)) outputPipes.add(writer);
+          }
+        } catch (error) {
+          if (!['ENOENT', 'ESRCH', 'EACCES', 'EPERM'].includes(error.code)) throw error;
+        }
+      }
+    }
     // Remember ancestry while parents are alive: detached children can later be
     // reparented. Start times prevent signalling a reused PID from an old sample.
     const owned = new Map();
@@ -109,7 +141,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
       }
       // The original process group remains ours even after its leader exits.
       for (const [pid, info] of current) {
-        if (info.group === child.pid || info.marked) owned.set(pid, info.started);
+        if (info.group === child.pid || info.marked || info.holdsOutput) owned.set(pid, info.started);
       }
       let added;
       do {
@@ -175,7 +207,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
     };
     child.stdout.on('data', collect);
     child.stderr.on('data', collect);
-    const closed = new Promise(resolve => child.once('close', resolve));
+    const closed = new Promise(resolve => child.once('close', () => resolve(true)));
     const result = await new Promise((resolve, reject) => {
       child.once('error', reject);
       // A detached descendant may hold these pipes open after the step exits.
@@ -199,14 +231,28 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
     // A successful direct child can also leave detached descendants behind.
     if (!groupCleanup && descendants().length) groupCleanup = killGroup();
     await groupCleanup;
-    await closed;
-    const exitCode = timedOut ? 1 : typeof result.code === 'number' ? result.code : 1;
+    const escapedOutput = !await Promise.race([
+      closed,
+      new Promise(resolve => {
+        closeTimer = setTimeout(() => resolve(false), options.closeGraceMs ?? STEP_KILL_GRACE_MS);
+      }),
+    ]);
+    clearTimeout(closeTimer);
+    if (escapedOutput) {
+      try { killGroupImmediately(); } finally {
+        child.stdout.destroy();
+        child.stderr.destroy();
+      }
+      collect(Buffer.from('escaped descendant held step output open after exit; failing step\n'));
+    }
+    const exitCode = timedOut || escapedOutput ? 1 : typeof result.code === 'number' ? result.code : 1;
     const entry = {
       step: name,
       status: timedOut ? 'TIMEOUT' : exitCode === 0 ? 'PASS' : 'FAIL',
       exitCode,
       log,
       ...(options.details ?? {}),
+      ...(escapedOutput ? { escapedOutput: true } : {}),
     };
     summary.push(entry);
     console.log(JSON.stringify(entry));
@@ -214,6 +260,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
   } finally {
     clearTimeout(timer);
     clearTimeout(killTimer);
+    clearTimeout(closeTimer);
     clearInterval(descendantTimer);
     cleanupParentListeners();
     try { cleanupOwned(); } finally {
