@@ -871,7 +871,7 @@ export function SheetShell(props: SheetShellProps) {
   const settleFormulaHandoffRef = useRef<() => void>(() => {});
   const newTableFocusIntentRef = useRef<number | null>(null);
   const duplicateFocusIntentRef = useRef<number | null>(null);
-  const addSheetFocusRef = useRef<{ generation: number; occurrence: string; source: string } | null>(null);
+  const [addSheetFocus, setAddSheetFocus] = useState<{ generation: number; occurrence: string; source: string } | null>(null);
   const liveOccurrenceRef = useRef<string | null>(null);
   const appFocusingRef = useRef(false);
   // Declared before the windowing effects so a replacement occurrence never
@@ -3650,9 +3650,9 @@ export function SheetShell(props: SheetShellProps) {
   }, [duplicateOpen, view]);
 
   useLayoutEffect(() => {
-    const intent = addSheetFocusRef.current;
+    const intent = addSheetFocus;
     if (!intent || !view || view.occurrence !== intent.occurrence || view.table.collection.key === intent.source || commitPending) return;
-    addSheetFocusRef.current = null;
+    setAddSheetFocus(null);
     requestAnimationFrame(() => {
       if (!completionMayUpdateUi(intent)) return;
       withAppFocus(() => {
@@ -3660,7 +3660,7 @@ export function SheetShell(props: SheetShellProps) {
         first?.focus();
       });
     });
-  }, [view, commitPending, tab]);
+  }, [view, commitPending, tab, addSheetFocus]);
 
   function onCellKeyDown(
     event: ReactKeyboardEvent<HTMLTableCellElement>,
@@ -6587,7 +6587,7 @@ export function SheetShell(props: SheetShellProps) {
     try {
       const result = await onAddTable(witness, `Sheet ${number}`, [{ name: "A", field_type: "text", required: false }]);
       if (result.kind === "confirmed") {
-        addSheetFocusRef.current = intent;
+        setAddSheetFocus(intent);
         setTab("table");
       } else if (result.kind === "refused") setLocalError(result.message);
     } catch (cause) {

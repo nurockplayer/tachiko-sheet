@@ -239,15 +239,18 @@ describe("keyboard history queue", () => {
     expect(ui.container.querySelector('[role="dialog"]:not([hidden])')).toBeNull();
   });
 
-  it("lands in the first cell only after Work confirms the new sheet", async () => {
+  it("lands in the first cell when the new projection renders before confirmation completes", async () => {
     let confirm!: (result: { kind: "confirmed" }) => void;
     const ui = await mount({ onAddTable: () => new Promise(resolve => { confirm = resolve; }), onInsertRow: async () => ({ kind: "confirmed" }) });
     await act(async () => ui.container.querySelector<HTMLButtonElement>('[aria-label="Add sheet"]')!.click());
     expect(ui.container.querySelector('[aria-label="Sheets"] [aria-selected="true"]')?.textContent).toBe("release_items");
     const collection = { id: "new", key: "new", display_name: "Sheet 2", entity_count: 0 };
     const view = { ...ui.view, revision: "rev-2", collections: [collection, ...ui.view.collections], table: { ...ui.view.table, revision: "rev-2", collection, rows: [], columns: [{ id: "a", key: "a", display_name: "A", field_type: "text" as const, required: false }] } };
-    await act(async () => confirm({ kind: "confirmed" }));
+    // App can install the projection before its mutation promise resolves.
+    // The view-key reset clears commitPending during this render.
     await ui.update({ view });
+    expect(document.activeElement).not.toBe(ui.container.querySelector('.ts-entry-row [data-entry-field="a"]'));
+    await act(async () => confirm({ kind: "confirmed" }));
     await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
     expect(ui.container.querySelector('[aria-label="Sheets"] [aria-selected="true"]')?.textContent).toBe("Sheet 2");
     const firstCell = ui.container.querySelector('.ts-entry-row [data-entry-field="a"]');
