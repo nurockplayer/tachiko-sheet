@@ -561,6 +561,7 @@ export function SheetShell(props: SheetShellProps) {
     onCopyFormula,
     onRemoveRows,
     onRenameTable,
+    onAddTable,
     onDeleteTable,
     onDuplicateTable,
     onQueryShownTotals,
@@ -870,6 +871,7 @@ export function SheetShell(props: SheetShellProps) {
   const settleFormulaHandoffRef = useRef<() => void>(() => {});
   const newTableFocusIntentRef = useRef<number | null>(null);
   const duplicateFocusIntentRef = useRef<number | null>(null);
+  const addSheetFocusRef = useRef<{ generation: number; occurrence: string; source: string } | null>(null);
   const liveOccurrenceRef = useRef<string | null>(null);
   const appFocusingRef = useRef(false);
   // Declared before the windowing effects so a replacement occurrence never
@@ -3646,6 +3648,19 @@ export function SheetShell(props: SheetShellProps) {
       });
     });
   }, [duplicateOpen, view]);
+
+  useLayoutEffect(() => {
+    const intent = addSheetFocusRef.current;
+    if (!intent || !view || view.occurrence !== intent.occurrence || view.table.collection.key === intent.source || commitPending) return;
+    addSheetFocusRef.current = null;
+    requestAnimationFrame(() => {
+      if (!completionMayUpdateUi(intent)) return;
+      withAppFocus(() => {
+        const first = gridScrollRef.current?.querySelector<HTMLElement>("td[data-testid^='cell:'], .ts-entry-row [data-entry-field]");
+        first?.focus();
+      });
+    });
+  }, [view, commitPending, tab]);
 
   function onCellKeyDown(
     event: ReactKeyboardEvent<HTMLTableCellElement>,
@@ -6545,11 +6560,53 @@ export function SheetShell(props: SheetShellProps) {
                 }}
                 onClick={() => void selectCollection(collection.key)}>{name}</button>;
             })}
+            <button type="button" className="ts-tab" aria-label="Add sheet"
+              disabled={!onAddTable || !!interop?.metadata || columnChangesBlocked || commitPending || modalInteractionOpen}
+              title={interop?.metadata ? "Adding sheets to imported work is not available yet." : "Add sheet (Shift+F11)"}
+              onClick={() => void addSheet()}>+</button>
           </div>
           <div className="ts-workbook-status">{renderStatusStrip()}</div>
         </footer>
       </div>
     );
+  }
+
+  async function addSheet(): Promise<void> {
+    if (interop?.metadata) {
+      setLocalError("Adding sheets to imported work is not available yet.");
+      return;
+    }
+    if (!view || !witness || !onAddTable || columnChangesBlocked || rowCommandPendingRef.current || editor || modalInteractionOpen || props.appearancePreference.getSnapshot().composing) return;
+    const used = new Set(view.collections.map(collection => (names.table(collection.id) ?? collection.display_name).toLowerCase()));
+    let number = view.collections.length + 1;
+    while (used.has(`sheet ${number}`)) number += 1;
+    const intent = { ...completionIntent(), occurrence: view.occurrence, source: view.table.collection.key };
+    rowCommandPendingRef.current = true;
+    setCommitPending(true);
+    setLocalError(null);
+    try {
+      const result = await onAddTable(witness, `Sheet ${number}`, [{ name: "A", field_type: "text", required: false }]);
+      if (result.kind === "confirmed") {
+        addSheetFocusRef.current = intent;
+        setTab("table");
+      } else if (result.kind === "refused") setLocalError(result.message);
+    } catch (cause) {
+      setLocalError(explain(cause, "The sheet could not be added. Refresh to check the current work."));
+    } finally {
+      rowCommandPendingRef.current = false;
+      setCommitPending(false);
+    }
+  }
+
+  function onAddSheetKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): boolean {
+    if (event.key !== "F11" || !event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented ||
+      isComposingEvent(event) || props.appearancePreference.getSnapshot().composing || editor || modalInteractionOpen) return false;
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"]') ||
+      !target.closest('[role="grid"], [role="tablist"][aria-label="Sheets"]')) return false;
+    event.preventDefault();
+    if (!event.repeat) void addSheet();
+    return true;
   }
 
   function tableTabId(key: string): string { return `ts-table-tab-${encodeURIComponent(key)}`; }
@@ -6570,6 +6627,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function onTableTabsKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (onAddSheetKeyDown(event)) return;
     if (!view || isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || event.ctrlKey || event.metaKey || event.altKey) return;
     const index = view.collections.findIndex(collection => tableTabId(collection.key) === (event.target as HTMLElement).id);
@@ -6581,6 +6639,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function onWorkspaceTableKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (onAddSheetKeyDown(event)) return;
     if (!view || !isTableSwitchShortcut(event) || event.defaultPrevented || isComposingEvent(event) ||
       props.appearancePreference.getSnapshot().composing || editor !== null || modalInteractionOpen) return;
     const target = event.target;

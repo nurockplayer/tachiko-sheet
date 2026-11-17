@@ -219,6 +219,81 @@ describe("keyboard history queue", () => {
     return { container, update, key, cell, view };
   }
 
+  it("adds immediately with + and Shift+F11 from the grid and tab bar, using the lowest unused displayed name", async () => {
+    const onAddTable = vi.fn<NonNullable<SheetShellProps["onAddTable"]>>(async () => ({ kind: "confirmed" }));
+    const view = makeView();
+    view.collections[0]!.display_name = "sHeEt 4";
+    view.collections.push({ id: "other", key: "other", display_name: "Sheet 5", entity_count: 0 }, { id: "third", key: "third", display_name: "Other", entity_count: 0 });
+    const ui = await mount({ view, onAddTable });
+    const add = ui.container.querySelector<HTMLButtonElement>('[aria-label="Add sheet"]')!;
+    await act(async () => add.click());
+    const shortcut = async (target: HTMLElement) => act(async () => {
+      target.dispatchEvent(new KeyboardEvent("keydown", { key: "F11", shiftKey: true, bubbles: true, cancelable: true }));
+    });
+    await shortcut(ui.cell());
+    await shortcut(ui.container.querySelector<HTMLElement>('[aria-label="Sheets"] [role="tab"]')!);
+    expect(onAddTable).toHaveBeenCalledTimes(3);
+    for (const args of onAddTable.mock.calls) expect(args).toEqual([
+      { occurrence: view.occurrence, revision: view.revision }, "Sheet 6", [{ name: "A", field_type: "text", required: false }],
+    ]);
+    expect(ui.container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("lands in the first cell only after Work confirms the new sheet", async () => {
+    let confirm!: (result: { kind: "confirmed" }) => void;
+    const ui = await mount({ onAddTable: () => new Promise(resolve => { confirm = resolve; }) });
+    await act(async () => ui.container.querySelector<HTMLButtonElement>('[aria-label="Add sheet"]')!.click());
+    expect(ui.container.querySelector('[aria-label="Sheets"] [aria-selected="true"]')?.textContent).toBe("release_items");
+    const collection = { id: "new", key: "new", display_name: "Sheet 2", entity_count: 0 };
+    const view = { ...ui.view, revision: "rev-2", collections: [collection, ...ui.view.collections], table: { ...ui.view.table, revision: "rev-2", collection, rows: [], columns: [{ id: "a", key: "a", display_name: "A", field_type: "text" as const, required: false }] } };
+    await act(async () => confirm({ kind: "confirmed" }));
+    await ui.update({ view });
+    await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+    expect(ui.container.querySelector('[aria-label="Sheets"] [aria-selected="true"]')?.textContent).toBe("Sheet 2");
+    expect(document.activeElement).toBe(ui.container.querySelector('.ts-entry-row [data-entry-field="a"]'));
+  });
+
+  it("disables imported addition and refuses Shift+F11 with the exact hint", async () => {
+    const onAddTable = vi.fn<NonNullable<SheetShellProps["onAddTable"]>>(async () => ({ kind: "confirmed" }));
+    const ui = await mount({ onAddTable, interop: { importInspection: null, cleanupPreview: null, ledger: [], downloadStatus: "idle", downloadError: null, metadata: { version: 1, sheets: [] } } });
+    const add = ui.container.querySelector<HTMLButtonElement>('[aria-label="Add sheet"]')!;
+    expect(add.disabled).toBe(true);
+    expect(add.title).toBe("Adding sheets to imported work is not available yet.");
+    await act(async () => { add.click(); ui.cell().dispatchEvent(new KeyboardEvent("keydown", { key: "F11", shiftKey: true, bubbles: true, cancelable: true })); });
+    expect(onAddTable).not.toHaveBeenCalled();
+    expect(ui.container.textContent).toContain("Adding sheets to imported work is not available yet.");
+  });
+
+  it("keeps Work's refusal visible without changing tabs", async () => {
+    const ui = await mount({ onAddTable: async () => ({ kind: "refused", message: "At most 32 collections are supported." }) });
+    await act(async () => ui.container.querySelector<HTMLButtonElement>('[aria-label="Add sheet"]')!.click());
+    expect(ui.container.textContent).toContain("At most 32 collections are supported.");
+    expect(ui.container.querySelectorAll('[aria-label="Sheets"] [role="tab"]')).toHaveLength(1);
+  });
+
+  it("does not add from a cell editor, Name Box, dialog, or locked work", async () => {
+    const onAddTable = vi.fn<NonNullable<SheetShellProps["onAddTable"]>>(async () => ({ kind: "confirmed" }));
+    const ui = await mount({ onAddTable, onRenameTable: async () => ({ kind: "confirmed" }) });
+    const shortcut = async (target: HTMLElement) => act(async () => {
+      target.dispatchEvent(new KeyboardEvent("keydown", { key: "F11", shiftKey: true, bubbles: true, cancelable: true }));
+    });
+    const nameBox = ui.container.querySelector<HTMLInputElement>('[aria-label="Name Box"]')!;
+    expect(nameBox).not.toBeNull();
+    await shortcut(nameBox);
+    await act(async () => ui.cell().dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true })));
+    const editor = ui.container.querySelector<HTMLElement>('[data-testid="cell-editor"]')!;
+    expect(editor).not.toBeNull();
+    await shortcut(editor);
+    await act(async () => editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    const tab = ui.container.querySelector<HTMLElement>('[aria-label="Sheets"] [role="tab"]')!;
+    await act(async () => tab.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    expect(ui.container.querySelector('[role="dialog"]')).not.toBeNull();
+    await shortcut(tab);
+    expect(onAddTable).not.toHaveBeenCalled();
+    await ui.update({ busy: true });
+    expect(ui.container.querySelector<HTMLButtonElement>('[aria-label="Add sheet"]')!.disabled).toBe(true);
+  });
+
   it.each([["su", false], ["s", false], ["su", true]] as const)("Tab handles field prefix %s (suggestion explicitly selected: %s)", async (token, navigated) => {
     const view = makeView();
     view.table.native_table_profile = true;

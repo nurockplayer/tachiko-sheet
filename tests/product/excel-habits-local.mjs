@@ -826,16 +826,82 @@ const cases = [
     await settle(page);
     assert.equal((await projection(page)).rows.length, 4, "Ctrl+= inserted no record between existing records");
   } },
-  { id: "24", name: "Workbook sheets", tier: "A", run: async (page) => {
-    await example(page);
-    await duplicate(page, "Habits 24");
-    const tabs = page.locator(".ts-table-tab");
-    assert.equal(await tabs.count(), 2, "duplicating a table did not give a second tab");
-    await tabs.nth(0).click();
-    await settle(page);
-    await page.keyboard.press("Shift+F11");
-    await settle(page);
-    assert.equal(await tabs.count(), 3, "Shift+F11 added no worksheet tab; tabs cannot be renamed or deleted either");
+  { id: "24", name: "Workbook sheets", tier: "A", note: "Native work only; imported lifecycle remains Work #859 and row 24 stays a gap.", budgetMs: 60_000, run: async () => {
+    const profile = await mkdtemp(path.join(tmpdir(), "habits-24-"));
+    let context;
+    const open = async () => {
+      context = await chromium.launchPersistentContext(profile, { ...launchOptions, viewport: { width: 1440, height: 900 } });
+      await installDistRoutes(context, dist);
+      await context.addInitScript(evidence);
+      const page = context.pages()[0] ?? await context.newPage();
+      page.setDefaultTimeout(4000);
+      return page;
+    };
+    try {
+      const page = await open();
+      await newTable(page, "Habits 24", [{ name: "A" }]);
+      const tabs = page.locator(".ts-table-tab");
+      const namedTab = name => tabs.filter({ hasText: new RegExp(`^${name}$`) });
+      const tabNames = () => tabs.allTextContents();
+      await page.getByRole("button", { name: "Add sheet", exact: true }).click();
+      await settle(page);
+      assert.equal(await tabs.count(), 2, "+ did not add a worksheet tab");
+      assert.equal(await namedTab("Sheet 2").getAttribute("aria-selected"), "true", "+ did not select Sheet 2");
+      await page.waitForFunction(() => document.activeElement === document.querySelector('.ts-entry-row [data-entry-field]'));
+      assert.deepEqual((await projection(page)).columns.map(({ display_name, field_type, required }) => ({ display_name, field_type, required })),
+        [{ display_name: "A", field_type: "text", required: false }], "the new sheet did not use the default starter column");
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      await settle(page);
+      assert.equal(await tabs.count(), 1, "one Undo did not remove the added sheet");
+      await page.getByRole("button", { name: "Redo", exact: true }).click();
+      await settle(page);
+      assert.equal(await tabs.count(), 2, "Redo did not restore the added sheet");
+      await namedTab("Habits 24").click();
+      await settle(page);
+      await page.keyboard.press("Shift+F11");
+      await settle(page);
+      assert.equal(await tabs.count(), 3, "Shift+F11 did not add a worksheet tab");
+      assert.equal(await namedTab("Sheet 3").getAttribute("aria-selected"), "true", "Shift+F11 did not select Sheet 3");
+      await page.waitForFunction(() => document.activeElement === document.querySelector('.ts-entry-row [data-entry-field]'));
+      await namedTab("Sheet 2").dblclick();
+      const rename = page.getByRole("dialog", { name: "Rename sheet", exact: true });
+      await rename.getByLabel("Sheet name", { exact: true }).fill("Notes");
+      await rename.getByRole("button", { name: "Rename", exact: true }).click();
+      await rename.waitFor({ state: "detached" });
+      await settle(page);
+      assert.equal(await namedTab("Notes").count(), 1, "double-click rename did not change the tab name");
+      await namedTab("Notes").click();
+      await settle(page);
+      assert.equal(await namedTab("Notes").getAttribute("aria-selected"), "true", "switching did not select Notes");
+      await namedTab("Sheet 3").click();
+      await settle(page);
+      await namedTab("Sheet 3").click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Delete sheet…", exact: true }).click();
+      const deletion = page.getByRole("dialog", { name: "Delete sheet", exact: true });
+      await deletion.getByRole("button", { name: "Delete sheet", exact: true }).click();
+      await deletion.waitFor({ state: "detached" });
+      await settle(page);
+      assert.equal(await tabs.count(), 2, "Delete sheet did not remove the tab");
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      await settle(page);
+      assert.equal(await namedTab("Sheet 3").count(), 1, "Undo did not restore the deleted sheet and name");
+      await page.getByRole("button", { name: "Redo", exact: true }).click();
+      await settle(page);
+      assert.equal(await tabs.count(), 2, "Redo did not delete the sheet again");
+      const expectedNames = await tabNames();
+      assert.deepEqual([...expectedNames].sort(), ["Habits 24", "Notes"], "the surviving tab names changed");
+      await saveCopy(page, "habits-24");
+      await context.close();
+      const reopened = await open();
+      await home(reopened);
+      await reopened.getByRole("button", { name: "Open saved habits-24", exact: true }).click();
+      await ready(reopened);
+      assert.deepEqual(await reopened.locator(".ts-table-tab").allTextContents(), expectedNames,
+        "worksheet names or Work's order changed after save, browser restart and reopen");
+    } finally {
+      await context?.close().catch(() => {});
+      await rm(profile, { recursive: true, force: true });
+    }
   } },
   { id: "25", name: "Save and reopen", tier: "A", note: "Values and formulas compared; cell styles do not exist yet.", run: async () => {
     // A real browser restart on one profile: a reload could keep session state alive.
