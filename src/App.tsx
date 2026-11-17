@@ -997,8 +997,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     acceptPublication: (publication) => {
       const metadata = publication.import_metadata;
       if (!metadata || !importedSourceRef.current) return;
-      importedSourceRef.current = { ...importedSourceRef.current, metadata };
-      setInterop((current) => current ? { ...current, metadata } : current);
+      importedSourceRef.current = { ...importedSourceRef.current, metadata: structuredClone(metadata) };
+      setInterop((current) => current ? { ...current, metadata: structuredClone(metadata) } : current);
+      preparedDownloadRef.current = null;
     },
     clearResults: clearJ4Results, readResults: readJ4Results, readView: () => runtime.read(),
     installResults: installJ4Results,
