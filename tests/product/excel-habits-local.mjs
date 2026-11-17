@@ -863,6 +863,9 @@ const cases = [
       assert.equal(await tabs.count(), 3, "Shift+F11 did not add a worksheet tab");
       assert.equal(await namedTab("Sheet 3").getAttribute("aria-selected"), "true", "Shift+F11 did not select Sheet 3");
       await page.waitForFunction(() => document.activeElement === document.querySelector('.ts-entry-row [data-entry-field]'));
+      // Settle the asynchronous collection switch before opening its rename dialog.
+      await namedTab("Sheet 2").click();
+      await settle(page);
       await namedTab("Sheet 2").dblclick();
       const rename = page.getByRole("dialog", { name: "Rename sheet", exact: true });
       await rename.getByLabel("Sheet name", { exact: true }).fill("Notes");
