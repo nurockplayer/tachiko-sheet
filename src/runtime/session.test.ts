@@ -1663,6 +1663,20 @@ describe("Work file adapter admission and export", () => {
     expect(await runtime.read()).toEqual(view);
   });
 
+  it.each([false, true])("retains import recovery when the working-size reopen fails (unknown=%s)", async unknown => {
+    const { runtime, client } = await opened();
+    const cause = unknown ? new Error("lost reopen acknowledgement") : new FakeDesignerRuntimeError("unsupported_project", client.currentRevision);
+    Object.assign(client, { importSpreadsheet: async () => ({
+      opened: await client.openProject(new ArrayBuffer(4)), metadata: { version: 1, sheets: [] }, ledger: [],
+    }) });
+    vi.spyOn(client, "openImportedProjectWorkingSize").mockRejectedValueOnce(cause);
+    const error = await failure(runtime.importSpreadsheet(new ArrayBuffer(4), "csv", { delimiter: ",", header: true },
+      { column_types: [], extra_columns: [] }));
+    expect(error).toBeInstanceOf(OpenedProjectionRecoveryError);
+    expect(error).toMatchObject({ operationOutcome: unknown ? "unknown" : "opened" });
+    expect(client.calls.exportProjectV3).toHaveLength(1);
+  });
+
   it.each(["close", "replacement", "import"])("clears work-file origin at %s after a lost replacement reply", async (boundary) => {
     const { runtime, client } = await opened();
     Object.assign(client, {

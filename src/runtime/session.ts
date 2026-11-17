@@ -1535,9 +1535,22 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         ? MAX_PROJECT_TRANSFER_BYTES : MAX_WIRE_REQUEST_BYTES;
       let read: CoherentRead;
       try {
+        if (!("profile" in imported.opened && imported.opened.profile === "working_size")) {
+          // Keep the full-fidelity import and its producer metadata. Reopen its
+          // opaque v3 snapshot through Work's supported working-size boundary
+          // so edits reach Work's value checks instead of the 64 KiB wire cap.
+          const revision = imported.opened.bootstrap.revision;
+          const project = await afterNotReplaced(requestedAt,
+            dispatch(kit, () => client.exportProjectV3(revision)));
+          requireCurrentProjectionRevision(revision, project.revision, "imported project export");
+          const open = capability(client.openImportedProjectWorkingSize, "working-size imported-project open");
+          const opened = await afterNotReplaced(requestedAt,
+            dispatch(kit, () => open.call(client, project.bytes.slice(0), imported.metadata)));
+          requestByteLimit = opened.profile === "working_size" ? MAX_PROJECT_TRANSFER_BYTES : MAX_WIRE_REQUEST_BYTES;
+        }
         read = await loadCoherentView(kit, client, requestedAt, null);
       } catch (error) {
-        throw new OpenedProjectionRecoveryError(error);
+        throw new OpenedProjectionRecoveryError(error, error instanceof UnknownOperationOutcomeError ? "unknown" : "opened");
       }
       active = { scope: read.view.occurrence, revision: read.view.revision, collection: read.collection };
       residentCollection = read.collection;

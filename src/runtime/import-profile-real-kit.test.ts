@@ -37,6 +37,30 @@ const options = { delimiter: ",", header: true };
 const selection = { column_types: [["text", "number", "number"]] as ("text" | "number")[][], extra_columns: [[]] };
 
 describe("working-size imported sessions with the vendored kit", () => {
+  it("keeps full-fidelity metadata while imported edits reach Work's stored-text bound", async () => {
+    const client = await realClient();
+    const runtime = createSheetRuntime(async () => ({ ...kit, createExperimentalDesignerClient: () => client }));
+    try {
+      const bytes = new TextEncoder().encode("Name,Qty,Total\nCoffee,2,20\nBus,3,40\n").buffer;
+      const imported = await runtime.importSpreadsheet(bytes, "csv", options, selection);
+      expect(imported.metadata.version).toBe(1);
+      expect(imported.metadata.sheets[0]!.columns[0]).toHaveProperty("width", null);
+      expect(imported.metadata.sheets[0]!).toHaveProperty("rows");
+      expect(runtime.requestByteLimit).toBeGreaterThan(69_000);
+      const before = await runtime.read();
+      const occurrence = await client.observeOccurrence();
+      await expect(runtime.editCells(before, [{
+        target: { entity: before.table.rows[0]!.id, field: before.table.columns[0]!.id },
+        input: { kind: "text", value: "雪".repeat(23_000) },
+      }])).rejects.toThrow("stored text exceeds the bounded 65536-byte projection maximum");
+      expect(await runtime.read()).toEqual(before);
+      expect(await client.observeOccurrence()).toEqual(occurrence);
+      // Original producer metadata remains usable for export after reopening.
+      await expect(client.exportSpreadsheet(before.revision, imported.metadata, "xlsx", before.table.collection.id))
+        .resolves.toHaveProperty("bytes");
+    } finally { client.close(); }
+  }, 30_000);
+
   it("admits a 129-row XLSX with a formula through application inspection and import", async () => {
     const client = await realClient();
     const runtime = createSheetRuntime(async () => ({ ...kit, createExperimentalDesignerClient: () => client }));
