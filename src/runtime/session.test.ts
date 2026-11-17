@@ -24,6 +24,7 @@ import {
   UnknownOperationOutcomeError,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
   type CoreKit,
+  type NewTableColumn,
   type ViewWitness,
   type WorkbookView,
 } from "../contracts.js";
@@ -65,6 +66,7 @@ interface Hooks {
   updateFormula?: () => Promise<PublicationProjection>;
   trackerCommand?: () => Promise<PublicationProjection>;
   duplicateCollection?: () => Promise<DuplicateCollectionProjection>;
+  addTable?: () => Promise<DuplicateCollectionProjection>;
   setColumnConstraint?: () => Promise<PublicationProjection>;
   setColumnNumberFormat?: () => Promise<PublicationProjection>;
   setColumnDateFormat?: () => Promise<PublicationProjection>;
@@ -98,6 +100,7 @@ function scalarField(
 class FakeClient {
   readonly calls = {
     newTable: [] as Array<{ name: string; columns: NewTableColumnInput[] }>,
+    addTable: [] as Array<{ revision: string; name: string; columns: NewTableColumnInput[] }>,
     openProject: [] as ArrayBuffer[],
     openImportedProjectWorkingSize: [] as Array<{ bytes: ArrayBuffer; metadata: unknown }>,
     inspectImportedProjectWorkingSize: [] as Array<{ bytes: ArrayBuffer; metadata: unknown }>,
@@ -246,6 +249,25 @@ class FakeClient {
     const hook = this.hooks.duplicateCollection;
     if (hook !== undefined) {
       this.hooks.duplicateCollection = undefined;
+      return hook();
+    }
+    this.#requireRevision(revision);
+    const base = this.#revision;
+    this.#bump();
+    this.#undoCount = Math.min(64, this.#undoCount + 1);
+    this.#redoCount = 0;
+    return {
+      publication: { base_revision: base, resulting_revision: this.#revision, entities: [], fields: [], affected_calculations: [], schemas: [], schema_fields: [] },
+      collection: COPY,
+    };
+  }
+
+  async addTable(revision: string, name: string, columns: NewTableColumnInput[]): Promise<DuplicateCollectionProjection> {
+    this.calls.addTable.push({ revision, name, columns });
+    this.#requireOpen();
+    const hook = this.hooks.addTable;
+    if (hook !== undefined) {
+      this.hooks.addTable = undefined;
       return hook();
     }
     this.#requireRevision(revision);
@@ -2537,6 +2559,64 @@ describe("whole-table reads above Work's 1,000-row query", () => {
       ({ ...windowOf(revision, start, count), columns_revision: start === 0 ? "c1" : "c2" });
 
     await expect(runtime.read()).rejects.toMatchObject({ code: "incoherent-reply" });
+  });
+});
+
+describe("table addition adapter", () => {
+  const columns: NewTableColumn[] = [{ name: "A", field_type: "text", required: false }];
+  function addedTable(client: FakeClient): void {
+    client.hooks.bootstrap = async () => ({
+      title: TITLE, revision: client.currentRevision, default_collection: COLLECTION.key,
+      collections: [COPY, COLLECTION],
+    });
+    client.hooks.queryTable = async key => ({
+      revision: client.currentRevision, collection: key === COPY.key ? COPY : COLLECTION,
+      columns: [{ id: "f1", key: "a", display_name: "A", field_type: "text", required: false }], rows: [],
+    });
+  }
+
+  it("passes the witnessed revision, name and starter columns, selecting Work's new table without reordering", async () => {
+    const { runtime, client, view } = await opened();
+    addedTable(client);
+    const confirmed = await runtime.addTable(witnessOf(view), "Sheet 2", columns);
+    expect(client.calls.addTable).toEqual([{ revision: view.revision, name: "Sheet 2", columns }]);
+    expect(confirmed.publication.base_revision).toBe(view.revision);
+    expect(confirmed.publication.resulting_revision).toBe(confirmed.view.revision);
+    expect(confirmed.view.occurrence).toBe(view.occurrence);
+    expect(confirmed.view.table.collection.key).toBe(COPY.key);
+    expect(confirmed.view.collections).toEqual([COPY, COLLECTION]);
+    expect(confirmed.view.requiresPortableSave).toBe(true);
+    expect((await runtime.read()).table.collection.key).toBe(COPY.key);
+  });
+
+  it("preserves Work's capacity refusal and the current witness", async () => {
+    const { runtime, client, view } = await opened();
+    const refusal = new FakeDesignerRuntimeError("collection_limit", view.revision);
+    client.hooks.addTable = async () => { throw refusal; };
+    await expect(runtime.addTable(witnessOf(view), "Sheet 2", columns)).rejects.toBe(refusal);
+    expect(await runtime.read()).toEqual(view);
+  });
+
+  it("requires refresh after a lost reply without replay and keeps portable saving required", async () => {
+    const { runtime, client, view } = await opened();
+    client.hooks.addTable = async () => { throw new Error("lost reply"); };
+    await expect(runtime.addTable(witnessOf(view), "Sheet 2", columns)).rejects.toBeInstanceOf(UnknownOperationOutcomeError);
+    await expect(runtime.addTable(witnessOf(view), "Sheet 2", columns)).rejects.toMatchObject({ code: "not-open" });
+    expect(client.calls.addTable).toHaveLength(1);
+    expect((await runtime.read()).requiresPortableSave).toBe(true);
+  });
+
+  it("recovers to the confirmed new table when its projection read is lost", async () => {
+    const { runtime, client, view } = await opened();
+    addedTable(client);
+    const query = client.hooks.queryTable!;
+    let fail = true;
+    client.hooks.queryTable = async key => {
+      if (key === COPY.key && fail) { fail = false; throw new Error("lost read"); }
+      return query(key);
+    };
+    await expect(runtime.addTable(witnessOf(view), "Sheet 2", columns)).rejects.toHaveProperty("name", "PublishedProjectionRecoveryError");
+    expect((await runtime.read()).table.collection.key).toBe(COPY.key);
   });
 });
 

@@ -1691,12 +1691,12 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   function changeRows(
     witness: ViewWitness,
     command: () => ReturnType<SheetRuntime["insertRow"]>,
-    saveCheck: "column" | "duplicate" | null = null,
+    saveCheck: "column" | "duplicate" | "add" | null = null,
     /** Typed input the command would otherwise lose when its dialog closes. */
     retainedInput?: string,
   ): Promise<RowCommandOutcome> {
     if (saveCheck && !copies.createWorkFile) {
-      return Promise.resolve({ kind: "refused", message: saveCheck === "duplicate" ? DUPLICATE_SAVE_UNAVAILABLE : COLUMN_SAVE_UNAVAILABLE });
+      return Promise.resolve({ kind: "refused", message: saveCheck === "add" ? "Adding sheets is unavailable because this work could not then be saved. Nothing was changed." : saveCheck === "duplicate" ? DUPLICATE_SAVE_UNAVAILABLE : COLUMN_SAVE_UNAVAILABLE });
     }
     if (blockUnknownOpenRecovery() || !begin()) return Promise.resolve({ kind: "refused", message: "Wait for the current work before making this change." });
     const live = viewRef.current;
@@ -1726,7 +1726,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       if (!decision.allowed) {
         setOutcome("idle");
         end();
-        return { kind: "refused", message: decision.message };
+        return { kind: "refused", message: saveCheck === "add"
+          ? exportedRevision === null ? "Adding sheets is unavailable because this work could not then be saved. Nothing was changed." : "The work changed before adding a sheet. Try again from the current view."
+          : decision.message };
       }
       // The adapter rechecks the witness inside its serialized mutation queue.
       return apply();
@@ -1804,6 +1806,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   function duplicateTable(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>) {
     // The dialog closes on a recovery, so the recovery message carries the name.
     return changeRows(witness, () => runtime.duplicateCollection(witness, collection, name, columnNames), "duplicate", name);
+  }
+
+  function addTable(witness: ViewWitness, name: string, columns: NewTableColumn[]) {
+    return changeRows(witness, () => runtime.addTable(witness, name, columns), "add", name);
   }
 
   function querySelectionStatistics(witness: ViewWitness, targets: FieldTarget[]) {
@@ -2338,6 +2344,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onSetColumnDateFormat={copies.createWorkFile ? setColumnDateFormat : undefined}
           onSetColumnNumberFormat={copies.createWorkFile ? setColumnNumberFormat : undefined}
           onRenameTable={copies.createWorkFile ? renameTable : undefined}
+          onAddTable={copies.createWorkFile ? addTable : undefined}
           onDeleteTable={deleteTable}
           onRenameColumn={copies.createWorkFile ? renameColumn : undefined}
           onRemoveColumn={copies.createWorkFile ? removeColumn : undefined}

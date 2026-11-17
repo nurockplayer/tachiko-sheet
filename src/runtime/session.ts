@@ -1262,6 +1262,69 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
+  function addTable(witness: ViewWitness, name: string, columns: NewTableColumn[]): Promise<ConfirmedPublication> {
+    return enqueue(async () => {
+      const live = requireWitness(witness);
+      const expected = epoch;
+      const { kit, client } = await loadKitOnce();
+      assertUsable(expected);
+      const add = capability(client.addTable, "table addition");
+      let added: DuplicateCollectionProjection;
+      try {
+        added = await afterUsable(
+          expected,
+          dispatch(kit, () => add.call(client, live.revision, name, columns)),
+        );
+      } catch (error) {
+        if (error instanceof UnknownOperationOutcomeError) {
+          // A lost addition acknowledgement may already have introduced a
+          // table with an authored display name.
+          requiresPortableSave = true;
+          active = null;
+          residentCollection = live.collection;
+        }
+        throw error;
+      }
+      // The new table carries an authored display name, like New table and columns.
+      requiresPortableSave = true;
+      const publication = added.publication;
+      if (publication.base_revision !== live.revision) {
+        active = null;
+        residentCollection = live.collection;
+        throw new UnknownOperationOutcomeError(
+          "The addition returned a publication receipt for a different base revision; Refresh is required to confirm the resident work.",
+          { cause: new SheetSessionError("incoherent-reply", "The publication base revision does not match the expected revision.") },
+        );
+      }
+      let result: CoherentRead;
+      try {
+        result = await loadCoherentView(kit, client, expected, added.collection.key);
+      } catch (error) {
+        active = null;
+        // Work acknowledged the new table, so Refresh must land on it, not the source.
+        residentCollection = added.collection.key;
+        throw new PublishedProjectionRecoveryError(publication, error);
+      }
+      assertUsable(expected);
+      if (publication.resulting_revision !== result.view.revision ||
+        result.view.occurrence !== live.scope) {
+        active = null;
+        residentCollection = added.collection.key;
+        throw new PublishedProjectionRecoveryError(
+          publication,
+          new SheetSessionError("incoherent-reply", "The addition publication and replacement view do not share one coherent occurrence/revision."),
+        );
+      }
+      active = {
+        scope: result.view.occurrence,
+        revision: result.view.revision,
+        collection: result.collection,
+      };
+      residentCollection = result.collection;
+      return { view: result.view, publication };
+    });
+  }
+
   function edit(witness: ViewWitness, target: FieldTarget, change: ScalarEdit): Promise<WorkbookView> {
     return editConfirmed(witness, target, change).then((confirmed) => confirmed.view);
   }
@@ -1713,7 +1776,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   return {
     get requestByteLimit() { return requestByteLimit; },
     prepare,
-    newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setColumnWidth, queryCapacity, querySelectionStatistics, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    addTable, newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setColumnWidth, queryCapacity, querySelectionStatistics, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };
