@@ -5,23 +5,37 @@ export async function installPublishedTablePatcher(context) {
     window.__patchObservedTable = (last, publication, display) => {
       if (publication.many || !Array.isArray(publication.changed)) return undefined;
       if (!last) return undefined;
-      const table = structuredClone(last);
+      const table = { ...last, rows: [...last.rows] };
+      const rowIndices = new Map(table.rows.map((row, index) => [row.id, index]));
+      const columnIds = new Set(table.columns.map(column => column.id));
+      const changesByEntity = new Map();
       for (const change of publication.changed) {
-        const row = table.rows.find(row => row.id === change.target.entity);
-        const fieldId = change.target.field;
-        if (!row || !table.columns.some(column => column.id === fieldId) ||
-          (!row.fields.some(field => field.target.field === fieldId) && !row.blank_fields?.includes(fieldId))) return null;
+        const entity = change.target.entity;
+        if (!rowIndices.has(entity) || !columnIds.has(change.target.field)) return null;
+        if (!changesByEntity.has(entity)) changesByEntity.set(entity, []);
+        changesByEntity.get(entity).push(change);
+      }
+      for (const [entity, changes] of changesByEntity) {
+        const index = rowIndices.get(entity);
+        const row = { ...table.rows[index] };
         const fields = new Map(row.fields.map(field => [field.target.field, field]));
-        if (change.blank === true) fields.delete(fieldId);
-        else {
-          const field = structuredClone(change);
-          if (!display) delete field.display;
-          fields.set(fieldId, field);
+        const firstField = changes[0].target.field;
+        if (!fields.has(firstField) && !row.blank_fields?.includes(firstField)) return null;
+        // After the first change, every absent column is an observed blank.
+        for (const change of changes) {
+          const fieldId = change.target.field;
+          if (change.blank === true) fields.delete(fieldId);
+          else {
+            const field = structuredClone(change);
+            if (!display) delete field.display;
+            fields.set(fieldId, field);
+          }
         }
         row.fields = table.columns.flatMap(column => fields.has(column.id) ? [fields.get(column.id)] : []);
         const blanks = table.columns.filter(column => !fields.has(column.id)).map(column => column.id);
         if (blanks.length) row.blank_fields = blanks;
         else delete row.blank_fields;
+        table.rows[index] = row;
       }
       table.revision = publication.resulting_revision;
       return table;
@@ -29,12 +43,15 @@ export async function installPublishedTablePatcher(context) {
     window.__trackObservedTable = (record, table, display = false) => {
       record.lastTable = table;
       record.tableDisplay = display;
-      for (const gap of record.gaps ?? []) {
-        if (gap.resolved || gap.publication.resulting_revision !== table.revision) continue;
+      const gaps = (record.gaps ?? []).filter(gap => !gap.resolved && gap.publication.resulting_revision === table.revision);
+      if (!gaps.length) return table;
+      const columnIds = new Set(table.columns.map(column => column.id));
+      const rowFields = new Map(table.rows.map(row => [row.id,
+        new Set([...row.fields.map(field => field.target.field), ...(row.blank_fields ?? [])]),
+      ]));
+      for (const gap of gaps) {
         if (!gap.publication.changed.every(change => {
-          const row = table.rows.find(row => row.id === change.target.entity);
-          return row && table.columns.some(column => column.id === change.target.field) &&
-            (row.fields.some(field => field.target.field === change.target.field) || row.blank_fields?.includes(change.target.field));
+          return columnIds.has(change.target.field) && rowFields.get(change.target.entity)?.has(change.target.field);
         })) continue;
         gap.resolved = true;
         window.__observerGaps--;
