@@ -799,7 +799,10 @@ export function SheetShell(props: SheetShellProps) {
     setCellMenu(null);
     setFilterDraft(null);
     setCellOptionsUi(null);
-    document.querySelectorAll<HTMLDetailsElement>(".ts-command-overflow[open], .ts-column-overflow[open]").forEach(menu => { menu.open = false; });
+    document.querySelectorAll<HTMLDetailsElement>(".ts-command-overflow[open], .ts-column-overflow[open]").forEach(menu => {
+      if (origin && menu.contains(origin)) shortcutHelpOriginRef.current = menu.querySelector("summary");
+      menu.open = false;
+    });
     setShortcutHelp(true);
   }
   function closeShortcutHelp() { setShortcutHelp(false); requestAnimationFrame(() => shortcutHelpOriginRef.current?.focus()); }
@@ -5855,7 +5858,7 @@ export function SheetShell(props: SheetShellProps) {
         const modified = event.altKey || event.ctrlKey || event.metaKey || event.shiftKey;
         const pickIndex = formulaOptionIndex(optionsUi.index, cellOptions.length);
         const exactField = suggestions && editor && columns.some(column => column.key === editor.value.slice(suggestions.start, suggestions.end));
-        if (!composing && !modified && event.key === "Tab" && exactField) { onEditorKeyDown(event); return; }
+        if (!composing && !modified && event.key === "Tab" && exactField && optionsUi.index < 0) { onEditorKeyDown(event); return; }
         const action = composing || modified ? null : formulaMode && optionsOpen && event.key === "Tab" && pickIndex !== null ? { kind: "pick" as const, index: pickIndex } : cellOptionsKeyAction(event.key, formulaMode && optionsUi.index >= 0 && pickIndex !== null ? { ...optionsUi, index: pickIndex } : optionsUi, cellOptions.length);
         if (!action) { onEditorKeyDown(event); return; }
         // The open list owns this key; Enter picks without committing, so a second Enter commits.
