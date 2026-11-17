@@ -862,6 +862,14 @@ async function namedTableJourney() {
     window.print = () => { window.__menuPrints += 1; };
     return true;
   `);
+  // Print waits for two real animation frames; background WebKit can suspend
+  // those indefinitely. Establish the native foreground before this command.
+  execFileSync("osascript", ["-e", `tell application id "${bundleId}" to activate`]);
+  await evaluate(`
+    await waitFor(() => document.visibilityState === "visible" && document.hasFocus(), "foreground WebKit before File > Print");
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return true;
+  `);
   await menuCommand("print");
   await evaluate(`
     await waitFor(() => window.__menuPrints === 1, "File > Print");
@@ -1160,11 +1168,15 @@ try {
     await quit(pid);
     pid = undefined;
   } else {
-  await timed("named-table journey", namedTableJourney);
   pid = await timed("launch", launch);
   await coldHome();
   await nativeCoverage();
   await closeToHome();
+  await quit(pid);
+  pid = undefined;
+  await timed("named-table journey", namedTableJourney);
+  pid = await timed("launch", launch);
+  await coldHome();
   await formulaPersistence({
     evaluate, downloads,
     coldOpen: async (file) => {
