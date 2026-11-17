@@ -973,6 +973,166 @@ async function macShortcutLabels() {
   assert.ok(labels.every(label => !label.includes("Ctrl+")), `macOS help must not render Ctrl+: ${JSON.stringify(labels)}`);
 }
 
+// R6 complements G6's synthetic paste events and overridden delayed read.
+// This runs before any clipboard override, against packaged WebKit/native Work.
+async function nativeCoverage() {
+  const host = await coldHome();
+  assert.equal(host.protocol, "tauri:", "R6 runs in the packaged app");
+  assert.deepEqual(host.wasm, [], "R6 uses native Work without Worker/WASM fallback");
+  const original = [["Red apple", "keep-1"], ["red pear", "keep-2"], ["Red plum", "keep-3"]];
+  await evaluate(`
+    const input = await waitFor(() => document.querySelector('input[type="file"][accept*=".csv"]'), "R6 import input");
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(["Item,Note\\nRed apple,keep-1\\nred pear,keep-2\\nRed plum,keep-3\\n"], "native-coverage.csv", { type: "text/csv" }));
+    input.files = transfer.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    const review = await waitFor(() => dialog("Review import preview"), "R6 import review");
+    click(await waitFor(() => button("Import file", review), "R6 Import file"));
+    await waitFor(() => current() && cellAt(2, 1), "R6 imported table");
+    return true;
+  `);
+  const snapshot = () => evaluate(`
+    await waitFor(current, "R6 current table");
+    return [...grid().querySelectorAll("tbody tr.ts-row")].map(row => [...row.querySelectorAll("td")].map(cell => ({
+      text: cell.textContent, entity: cell.dataset.workEntity, field: cell.dataset.workField,
+    })));
+  `);
+  const texts = cells => cells.map(row => row.map(cell => cell.text));
+  const before = await snapshot();
+  assert.deepEqual(texts(before), original, "R6 fixture values");
+  const noUndo = () => evaluate(`return !button("Undo");`);
+  assert.equal(await noUndo(), true, "import starts with no edit history");
+  const undoOnce = async () => {
+    await evaluate(`
+      click(await waitFor(() => button("Undo"), "R6 Undo"));
+      await waitFor(() => current() && cellAt(0, 0)?.textContent === "Red apple", "R6 Undo restored first cell");
+      return true;
+    `);
+    assert.deepEqual(await snapshot(), before, "one Undo restores all cells and identities");
+    assert.equal(await noUndo(), true, "exactly one edit history entry");
+  };
+
+  await timed("real system clipboard Paste values and one Undo", async () => {
+    const previousText = execFileSync("pbpaste");
+    const pasted = [["雪 clipboard", "0012"], ["native value", "second"]];
+    const expected = structuredClone(before);
+    for (let row = 0; row < 2; row++) for (let col = 0; col < 2; col++) expected[row][col].text = pasted[row][col];
+    // Falsifier: an absent/no-op paste must fail this exact full-table oracle.
+    assert.throws(() => assert.deepEqual(before, expected), assert.AssertionError);
+    try {
+      execFileSync("pbcopy", { input: pasted.map(row => row.join("\t")).join("\n") });
+      await evaluate(`
+        if (Object.hasOwn(navigator, "clipboard")) throw new Error("R6 must use WebKit's own clipboard");
+        click(cellAt(0, 0));
+        await waitFor(() => document.activeElement === cellAt(0, 0) && cellAt(0, 0).getAttribute("aria-selected") === "true", "R6 paste selection");
+        return true;
+      `);
+      // A real OS key supplies WebKit's user gesture; no navigator.clipboard override.
+      execFileSync("osascript", ["-e", `tell application id "${bundleId}" to activate`, "-e",
+        'tell application "System Events" to keystroke "v" using {command down, shift down}']);
+      await evaluate(`
+        await waitFor(() => current() && cellAt(0, 0)?.textContent === "雪 clipboard", "real clipboard Paste values");
+        return true;
+      `);
+      assert.deepEqual(await snapshot(), expected, "real WKWebView read changes only the four clipboard cells");
+      await undoOnce();
+    } finally {
+      execFileSync("pbcopy", { input: previousText });
+    }
+  });
+
+  await timed("native Replace preview Cancel commit and one Undo", async () => {
+    await evaluate(`
+      click(cellAt(0, 0));
+      cellAt(0, 0).dispatchEvent(new KeyboardEvent("keydown", { key: "f", metaKey: true, bubbles: true, cancelable: true }));
+      fill(await waitFor(() => textbox("Find in table"), "R6 Find"), "Red");
+      click(button("Replace…"));
+      fill(await waitFor(() => textbox("Replace with"), "R6 replacement"), "Green");
+      return true;
+    `);
+    const preview = () => evaluate(`
+      click(await waitFor(() => button("Preview replace"), "R6 Preview replace"));
+      const table = await waitFor(() => document.querySelector('table[aria-label="Replace preview"]'), "R6 native preview");
+      await waitFor(() => document.querySelector(".ts-replace-preview strong")?.textContent === "2 cells would change", "R6 preview count");
+      return [...table.querySelectorAll("tbody tr")].map(row => [...row.querySelectorAll("td")].map(cell => cell.textContent));
+    `);
+    const previewed = await preview();
+    assert.equal(previewed.length, 2, "preview contains exactly two targets");
+    assert.deepEqual(previewed.map(row => row.slice(1)), [["Red apple", "Green apple"], ["Red plum", "Green plum"]]);
+    assert.notEqual(previewed[0][0], previewed[1][0], "preview names distinct targets");
+    assert.deepEqual(await snapshot(), before, "preview changes no cell");
+    assert.equal(await noUndo(), true, "preview adds no history");
+    await evaluate(`
+      click(button("Cancel preview"));
+      await waitFor(() => !document.querySelector('table[aria-label="Replace preview"]'), "R6 Cancel preview");
+      return true;
+    `);
+    assert.deepEqual(await snapshot(), before, "Cancel changes nothing");
+    assert.equal(await noUndo(), true, "Cancel adds no history");
+    assert.deepEqual(await preview(), previewed, "commit uses the same previewed cells and values");
+    await evaluate(`
+      click(button("Replace 2 cells"));
+      await waitFor(() => current() && [...document.querySelectorAll(".ts-clipboard-status")].some(el => el.textContent.includes("Replaced 2 cells")), "R6 native Replace publication");
+      return true;
+    `);
+    const expected = structuredClone(before);
+    expected[0][0].text = "Green apple";
+    expected[2][0].text = "Green plum";
+    const committed = await snapshot();
+    assert.deepEqual(committed, expected, "commit changes exactly the previewed cells, preserving case-mismatched and other cells");
+    // Falsifiers use actual native results: a Cancel that commits, or a
+    // commit that does nothing, must be rejected by the journey's oracles.
+    assert.throws(() => assert.deepEqual(committed, before), assert.AssertionError);
+    assert.throws(() => assert.deepEqual(before, expected), assert.AssertionError);
+    await undoOnce();
+    await evaluate(`click(button("Close", document.querySelector('[data-testid="find-bar"]'))); return true;`);
+  });
+
+  await timed("Name Box dispatched-composition Enter and Escape", async () => {
+    const selectFirst = () => evaluate(`
+      click(cellAt(0, 0));
+      await waitFor(() => textbox("Name Box")?.value === "A1", "R6 A1 selected");
+      return true;
+    `);
+    const state = () => evaluate(`return {
+      text: textbox("Name Box").value, focused: document.activeElement === textbox("Name Box"),
+      selected: [...grid().querySelectorAll('td[aria-selected="true"]')].map(cell => cell.dataset.testid),
+    };`);
+    for (const key of ["Enter", "Escape"]) {
+      await selectFirst();
+      await evaluate(`fill(textbox("Name Box"), "B3"); return true;`);
+      const composing = await state();
+      assert.equal(composing.text, "B3");
+      assert.equal(composing.focused, true);
+      assert.equal(composing.selected.length, 1, "composition starts with one selected cell");
+      assert.ok(composing.selected[0], "composition selection has a stable test identity");
+      await evaluate(`
+        const box = textbox("Name Box");
+        box.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "B3" }));
+        for (const type of ["keydown", "keyup"]) box.dispatchEvent(new KeyboardEvent(type, {
+          key: ${JSON.stringify(key)}, isComposing: true, bubbles: true, cancelable: true,
+        }));
+        await sleep(50);
+        return true;
+      `);
+      assert.deepEqual(await state(), composing, `dispatched-composition ${key} preserves text, focus and selection`);
+      await evaluate(`textbox("Name Box").dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "B3" })); return true;`);
+      assert.deepEqual(await state(), composing, "compositionend alone neither navigates nor cancels");
+      // Same key without the composition flag exercises the branch that
+      // removing the guard would enter; the unchanged-state oracle must fail.
+      await evaluate(`press(textbox("Name Box"), ${JSON.stringify(key)}); await sleep(50); return true;`);
+      const ordinary = await state();
+      assert.throws(() => assert.deepEqual(ordinary, composing), assert.AssertionError,
+        `unguarded ${key} must fail the composition oracle`);
+      assert.equal(ordinary.text, key === "Enter" ? "B3" : "A1", `ordinary ${key} control`);
+      assert.equal(ordinary.focused, false, `ordinary ${key} returns to grid`);
+      if (key === "Enter") assert.notDeepEqual(ordinary.selected, composing.selected, "ordinary Enter navigates");
+    }
+    assert.deepEqual(await snapshot(), before, "Name Box never edits cells");
+    assert.equal(await noUndo(), true, "Name Box adds no history");
+  });
+}
+
 // ---- run ---------------------------------------------------------------------
 
 const webkitData = [
@@ -1002,6 +1162,8 @@ try {
   await timed("named-table journey", namedTableJourney);
   pid = await timed("launch", launch);
   await coldHome();
+  await nativeCoverage();
+  await closeToHome();
   await formulaPersistence({
     evaluate, downloads,
     coldOpen: async (file) => {
@@ -1100,7 +1262,7 @@ try {
   }
   directResult = {
     case: process.env.DESKTOP_NATIVE_ONLY === "1" ? "desktop native subcases" : "desktop packaged lifecycle (native runtime)",
-    journeys: process.env.DESKTOP_NATIVE_ONLY === "1" ? { nativeSubcases: true } : { namedTablePortableLocalCopy: true, sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats, mixed320x2and1000x16: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
+    journeys: process.env.DESKTOP_NATIVE_ONLY === "1" ? { nativeSubcases: true } : { realClipboardReplaceDispatchedComposition: true, namedTablePortableLocalCopy: true, sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats, mixed320x2and1000x16: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
     status: "PASS",
     app,
     machine: execFileSync("uname", ["-mrs"], { encoding: "utf8" }).trim(),
