@@ -39,28 +39,36 @@ export async function runImportedClipboardCases({ page, work, ready, close, disp
     }, index);
     await cell(baseline, index, 0).waitFor();
   }
-  const samples = [0, 4203, 8405, start - 1, start, start + 1, start + 2];
-  async function readSamples() {
-    const rows = [];
+  async function readAllRows() {
+    const rows = new Map();
+    const step = await page.evaluate(() => {
+      const scroller = document.querySelector(".ts-grid-scroll");
+      const pitch = document.querySelector('table[aria-label="Table"] tbody tr.ts-row').offsetHeight;
+      return Math.max(1, Math.floor(scroller.clientHeight / pitch / 2));
+    });
     let revision;
-    for (const index of samples) {
+    for (let index = 0; ; index = Math.min(index + step, baseline.rows.length - 1)) {
       await scrollTo(index);
       const grid = await displayed();
       revision ??= grid.revision;
       assert.equal(grid.revision, revision, "scrolling preserves the displayed revision");
-      const row = grid.rows.find(row => row.id === baseline.rows[index].id);
-      assert.ok(row, `sample row ${index + 1} displays its original identity`);
-      assert.deepEqual(row.cells.map(cell => cell.field), baseline.columns.map(column => column.id));
-      rows.push(row);
+      for (const row of grid.rows) {
+        assert.deepEqual(row.cells.map(cell => cell.field), baseline.columns.map(column => column.id));
+        rows.set(row.id, row);
+      }
+      if (index === baseline.rows.length - 1) break;
     }
-    return { revision, rows };
+    assert.equal(rows.size, 8406, "all 8,406 row identities are displayed");
+    return { revision, rows: baseline.rows.map((row, index) => {
+      assert.ok(rows.has(row.id), `row ${index + 1} displays its original identity`);
+      return rows.get(row.id);
+    }) };
   }
-  const before = await readSamples();
+  const before = await readAllRows();
   assert.equal(before.revision, baseline.revision, "imported fixture and grid start at the same revision");
-  for (const [i, index] of samples.entries()) {
-    assert.deepEqual(values(before)[i], baseline.columns.map(column =>
-      String(baseline.rows[index].fields.find(field => field.target.field === column.id).stored.value)));
-  }
+  const beforeValues = values(before);
+  assert.deepEqual(beforeValues, baseline.rows.map(row => baseline.columns.map(column =>
+    String(row.fields.find(field => field.target.field === column.id).stored.value))));
   await scrollTo(start);
   const anchor = cell(baseline, start, 0);
   await anchor.waitFor();
@@ -72,22 +80,21 @@ export async function runImportedClipboardCases({ page, work, ready, close, disp
   const beforeCount = (await commands()).length;
   await paste(anchor, block.map(row => row.join("\t")).join("\n"));
   await status().filter({ hasText: "Updated 2 rows" }).waitFor();
-  const after = await readSamples();
+  const after = await readAllRows();
   assert.notEqual(after.revision, before.revision, "paste advances the application revision");
   assert.equal((await commands()).length, beforeCount + 1);
   assert.deepEqual((await commands()).at(-1), {
     type: "edit_cells", expected_revision: baseline.revision, edits: editsFor(baseline, start, block),
   }, "one command addresses exactly the six original stable targets at rows 8001–8002");
-  for (const [i, index] of samples.entries()) {
-    assert.deepEqual(after.rows[i].id, before.rows[i].id);
-    assert.deepEqual(values(after)[i], index === start || index === start + 1 ? block[index - start] : values(before)[i],
-      `displayed sample row ${index + 1}: pasted targets change and untouched samples stay intact`);
-  }
+  assert.deepEqual(after.rows.map(row => row.id), before.rows.map(row => row.id));
+  assert.deepEqual(values(after), beforeValues.map((row, index) =>
+    index === start || index === start + 1 ? block[index - start] : row),
+  "every identity and all 25,218 displayed values checked; only six change");
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
-  assert.deepEqual((await readSamples()).rows, before.rows, "one Undo restores every sampled displayed value and identity");
+  assert.deepEqual((await readAllRows()).rows, before.rows, "one Undo restores every displayed value and identity");
   await page.getByRole("button", { name: "Redo", exact: true }).click(); await ready();
-  assert.deepEqual((await readSamples()).rows, after.rows, "one Redo restores the pasted display and untouched samples");
-  checks.push("221.a real capacity-8406 import; windowed far-scroll 2x3 paste; exact six stable targets; DOM values/revisions at both pasted rows and first/middle/last/adjacent untouched samples; one Undo/Redo");
+  assert.deepEqual((await readAllRows()).rows, after.rows, "one Redo restores the pasted display and all untouched rows");
+  checks.push("221.a real capacity-8406 import; windowed far-scroll 2x3 paste; exact six stable targets; all 8,406 row identities and 25,218 DOM values/revisions; one Undo/Redo of all rows");
   await close(); page.setDefaultTimeout(10000);
 
   const typedCsv = path.join(work, "imported-paste-types.csv");
