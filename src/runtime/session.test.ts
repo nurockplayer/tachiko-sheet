@@ -24,6 +24,7 @@ import {
   UnknownOperationOutcomeError,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
   type CoreKit,
+  type NewTableColumn,
   type ViewWitness,
   type WorkbookView,
 } from "../contracts.js";
@@ -2562,7 +2563,7 @@ describe("whole-table reads above Work's 1,000-row query", () => {
 });
 
 describe("table addition adapter", () => {
-  const columns: NewTableColumnInput[] = [{ name: "A", field_type: "text", required: false }];
+  const columns: NewTableColumn[] = [{ name: "A", field_type: "text", required: false }];
   function addedTable(client: FakeClient): void {
     client.hooks.bootstrap = async () => ({
       title: TITLE, revision: client.currentRevision, default_collection: COLLECTION.key,
