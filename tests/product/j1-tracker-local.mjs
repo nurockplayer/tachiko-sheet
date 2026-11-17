@@ -41,21 +41,35 @@ async function start() {
     window.Worker = class extends Original {
       constructor(...args) {
         super(...args);
-        this.record = { requests: [], replies: [], tables: [] };
+        this.record = { requests: [], replies: [], tables: [], gaps: [] };
         window.__j1Evidence.records.push(this.record);
         window.__j1Evidence.worker = this;
         this.addEventListener("message", event => {
           this.record.replies.push(structuredClone(event.data));
+          let completeTable = null;
           // Tables above 1,000 rows arrive as unfiltered windows; assemble them.
           if (event.data.response?.type === "table") {
-            this.record.tables.push(structuredClone(event.data.response.payload));
+            completeTable = structuredClone(event.data.response.payload);
+            this.record.tables.push(completeTable);
             this.__tableDisplay = false;
           }
           if (event.data.response?.type === "table_window") {
             const w = structuredClone(event.data.response.payload);
             if (w.start === 0 || !this.__windowTable || this.__windowTable.revision !== w.revision) this.__windowTable = { ...(w.tracker_profile ? { tracker_profile: true } : {}), ...(w.native_table_profile ? { native_table_profile: true } : {}), revision: w.revision, collection: w.collection, columns: w.columns, rows: [] };
             this.__windowTable.rows.push(...w.rows);
-            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(assembled); this.__tableDisplay = true; }
+            if (this.__windowTable.rows.length >= w.total_rows) { const assembled = this.__windowTable; this.__windowTable = null; this.record.tables.push(assembled); this.__tableDisplay = true; completeTable = assembled; }
+          }
+          if (completeTable) {
+            for (const gap of this.record.gaps) {
+              if (gap.resolved || gap.publication.resulting_revision !== completeTable.revision) continue;
+              if (!gap.publication.changed.every(change => {
+                const row = completeTable.rows.find(row => row.id === change.target.entity);
+                return row && completeTable.columns.some(column => column.id === change.target.field) &&
+                  (row.fields.some(field => field.target.field === change.target.field) || row.blank_fields?.includes(change.target.field));
+              })) continue;
+              gap.resolved = true;
+              window.__j1Evidence.observerGaps--;
+            }
           }
           if (event.data.response?.type === "published") {
             const publication = event.data.response.payload;
@@ -68,6 +82,7 @@ async function start() {
               if (!row || !table.columns.some(column => column.id === fieldId) ||
                 (!row.fields.some(field => field.target.field === fieldId) && !row.blank_fields?.includes(fieldId))) {
                 window.__j1Evidence.observerGaps++;
+                this.record.gaps.push({ publication: structuredClone(publication), resolved: false });
                 return;
               }
               const fields = new Map(row.fields.map(field => [field.target.field, field]));
