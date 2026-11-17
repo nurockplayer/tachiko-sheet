@@ -2898,7 +2898,7 @@ describe("confirmed changed-cell patches", () => {
     expect(result.view.revision).toBe(result.publication.resulting_revision);
   });
 
-  it("reloads when a queryTable publication carries display", async () => {
+  it("patches without a whole-table read and drops display from a queryTable publication", async () => {
     const { client, runtime, view, fullTable } = await queryTableSession();
     const edit = client.hooks.editNumber!;
     client.hooks.editNumber = async () => {
@@ -2907,7 +2907,10 @@ describe("confirmed changed-cell patches", () => {
     };
     const before = client.calls.queryTable.length;
     const result = await runtime.editConfirmed(view, IMPACT, { kind: "number", input: "12" });
-    expect(client.calls.queryTable).toHaveLength(before + 1);
+    expect(client.calls.queryTable).toHaveLength(before);
+    const { display, ...field } = result.publication.changed![0]!;
+    expect(display).toBe("12.00");
+    expect(result.view.table.rows[0]!.fields[0]).toEqual(field);
     expect(result.view.table).toEqual(fullTable());
     expect(result.view.revision).toBe(result.publication.resulting_revision);
   });
