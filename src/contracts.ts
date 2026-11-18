@@ -141,7 +141,7 @@ export interface SheetRuntime {
   /** Work's read-only Excel A1 translation; null when the kit lacks it or the revision moved. */
   translateA1Formula(witness: ViewWitness, input: A1TranslationRequest): Promise<A1TranslationOutcome | null>;
   openFiles(files: FileList): Promise<WorkbookView>;
-  openCanonical(files: readonly CanonicalProjectFile[]): Promise<WorkbookView>;
+  openCanonical(files: readonly CanonicalProjectFile[], importedMetadata?: InteropMetadata): Promise<WorkbookView>;
   /**
    * Opens an unparsed core-produced format-2 export. When it descends from an
    * imported source, the public kit first validates the retained producer

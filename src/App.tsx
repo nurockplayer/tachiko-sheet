@@ -441,6 +441,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   // encoding re-read) cannot reopen the preview it was cancelled from.
   const inspectGenerationRef = useRef(0);
   const importedSourceRef = useRef<ImportedSourceAttachment | null>(null);
+  const [importMappingUntrusted, setImportMappingUntrusted] = useState(false);
   // An ephemeral, user-consented delivery candidate; never canonical state.
   const preparedDownloadRef = useRef<PreparedDownload | null>(null);
 
@@ -882,6 +883,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       markNotSaved();
     }
     importedSourceRef.current = provenance.importedSource ?? null;
+    setImportMappingUntrusted(false);
     importBytesRef.current = null;
     preparedDownloadRef.current = null;
     setInterop(provenance.interop ?? null);
@@ -969,6 +971,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   /** React/ref adapter for the seam's recovery decision. Replacement/Open
    * retains its separate checkpoint policy: an unknown source is not an edit. */
   function installMutationRecovery(recovery: MutationRecovery): void {
+    if (recovery.kind === "unknown-outcome" && importedSourceRef.current) {
+      setImportMappingUntrusted(true);
+      preparedDownloadRef.current = null;
+    }
     viewRef.current = null;
     installView(null);
     clearJ4Results();
@@ -1360,7 +1366,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       } : null;
       if ((await replaceWork(
         () => copy.kind === "work-file" ? runtime.openWorkFile(copy.bytes)
-          : copy.kind === "opaque" ? runtime.openOpaque(copy.bytes, copy.importedSource?.metadata) : runtime.openCanonical(copy.files),
+          : copy.kind === "opaque" ? runtime.openOpaque(copy.bytes, copy.importedSource?.metadata) : runtime.openCanonical(copy.files, copy.importedSource?.metadata),
         { importedSource: copy.importedSource ?? null, interop: candidateInterop, savedRevision: copy.revision, presentation, boundCopy: copy },
       )).kind !== "confirmed") return;
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
@@ -1503,6 +1509,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       setInterop({ importInspection: null, metadata: imported.metadata, ledger: imported.ledger, cleanupPreview: null, downloadStatus: "idle", downloadError: null });
       cleanupPreviewContextRef.current = null;
       // The preserved source is the user's file as chosen, not the UTF-8 text Work read.
+      setImportMappingUntrusted(false);
       importedSourceRef.current = { name: pending.name, format: pending.format, bytes: (pending.csv?.sourceBytes ?? bytes).slice(0), metadata: imported.metadata, ledger: imported.ledger };
       setCurrentness("current");
       setOutcome("idle");
@@ -1596,6 +1603,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   async function prepareDownload(format: "csv" | "xlsx" | "ro"): Promise<boolean> {
+    if (format !== "ro" && importMappingUntrusted && importedSourceRef.current) {
+      setMessage("Reopen or Refresh this workbook before exporting");
+      return false;
+    }
     if (blockUnknownOpenRecovery()) return false;
     const live = viewRef.current;
     const metadata = interop?.metadata;
@@ -1635,6 +1646,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   async function download(format: "csv" | "xlsx" | "ro"): Promise<boolean> {
+    if (format !== "ro" && importMappingUntrusted && importedSourceRef.current) {
+      setMessage("Reopen or Refresh this workbook before exporting");
+      return false;
+    }
     if (blockUnknownOpenRecovery()) return false;
     const live = viewRef.current;
     const prepared = preparedDownloadRef.current;
@@ -1787,7 +1802,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   function renameTable(witness: ViewWitness, collection: string, name: string) {
-    return changeRows(witness, () => runtime.renameTable(witness, collection, name), "column", name);
+    return changeRows(witness, () => runtime.renameTable(witness, collection, name), importedSourceRef.current?.format === "xlsx" ? null : "column", name);
   }
 
   function deleteTable(witness: ViewWitness, collection: string) {
@@ -1816,7 +1831,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   function addTable(witness: ViewWitness, name: string, columns: NewTableColumn[]) {
-    return changeRows(witness, () => runtime.addTable(witness, name, columns), "add", name);
+    return changeRows(witness, () => runtime.addTable(witness, name, columns), importedSourceRef.current?.format === "xlsx" ? null : "add", name);
   }
 
   function querySelectionStatistics(witness: ViewWitness, targets: FieldTarget[]) {
@@ -1854,7 +1869,12 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   async function createCopy(name: string, expected?: SavedCopySummary): Promise<CreateCopyOutcome> {
     if (blockUnknownOpenRecovery()) return { saved: false, reason: "The copy was not created. Refresh to confirm the open work, or close it, then try again." };
-    if ((viewRef.current?.openedFromWorkFile || viewRef.current?.requiresPortableSave) && !copies.createWorkFile) {
+    if (importMappingUntrusted && importedSourceRef.current) {
+      const reason = "Reopen or Refresh this workbook before exporting";
+      setMessage(reason);
+      return { saved: false, reason };
+    }
+    if (!importedSourceRef.current && (viewRef.current?.openedFromWorkFile || viewRef.current?.requiresPortableSave) && !copies.createWorkFile) {
       setMessage(WORK_FILE_SAVE_UNAVAILABLE);
       return { saved: false, reason: WORK_FILE_SAVE_UNAVAILABLE };
     }
@@ -1878,7 +1898,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       // Every local copy is a native v3 snapshot: portable `.ro` bytes for
       // work-file origin or authored schema, the explicit v3 project export
       // otherwise. There is no legacy writer or writer-selection branch.
-      const portableSave = live.openedFromWorkFile || live.requiresPortableSave;
+      const portableSave = !importedSourceRef.current && (live.openedFromWorkFile || live.requiresPortableSave);
       const snapshot = portableSave
         ? await runtime.exportWorkFile(witnessOf(live))
         : await runtime.exportOpaque(witnessOf(live));
@@ -2229,6 +2249,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         // path that clears them.
         unknownOpenRecoveryRef.current = true;
       }
+      setImportMappingUntrusted(false);
       syncDirty();
       if (savedRevisionRef.current !== next.revision) markNotSaved();
       setCurrentness("current");
@@ -2350,8 +2371,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onSetColumnAlignment={copies.createWorkFile ? setColumnAlignment : undefined}
           onSetColumnDateFormat={copies.createWorkFile ? setColumnDateFormat : undefined}
           onSetColumnNumberFormat={copies.createWorkFile ? setColumnNumberFormat : undefined}
-          onRenameTable={copies.createWorkFile ? renameTable : undefined}
-          onAddTable={copies.createWorkFile ? addTable : undefined}
+          onRenameTable={importedSourceRef.current?.format === "xlsx" || copies.createWorkFile ? renameTable : undefined}
+          onAddTable={importedSourceRef.current?.format === "xlsx" || copies.createWorkFile ? addTable : undefined}
           onDeleteTable={deleteTable}
           onRenameColumn={copies.createWorkFile ? renameColumn : undefined}
           onRemoveColumn={copies.createWorkFile ? removeColumn : undefined}

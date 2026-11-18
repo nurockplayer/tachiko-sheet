@@ -1157,6 +1157,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const table = view?.table ?? null;
   const renameAvailable = Boolean(onRenameColumn && canRenameColumns(table, interop?.metadata ?? null));
+  const importedXlsx = /\.xlsx$/i.test(importedSourceName ?? "");
   const names = useMemo(() => sourceNames(interop?.metadata ?? null, importedSourceName, table), [interop?.metadata, importedSourceName, table]);
   const ledgerColumns = useMemo(() => interop?.ledgerColumns ? bindingCatalogNames(interop.ledgerColumns, interop.metadata, importedSourceName) : null, [interop?.ledgerColumns, interop?.metadata, importedSourceName]);
   // Resolve labels once for every consumer. IDs, keys and canonical projections
@@ -6556,17 +6557,17 @@ export function SheetShell(props: SheetShellProps) {
                 aria-label={tableTabName(name, index, view.collections.length)} aria-selected={active} aria-controls="ts-table-workspace"
                 tabIndex={active ? 0 : -1} className={active ? "ts-tab ts-table-tab ts-tab--active" : "ts-tab ts-table-tab"} title={name}
                 onContextMenu={event => { event.preventDefault(); if ((!onRenameTable && !onDeleteTable) || !witness || columnChangesBlocked) return; setTableMenu({ key: collection.key, id: collection.id, name, x: event.clientX, y: event.clientY, witness }); }}
-                onDoubleClick={() => { if (onRenameTable && witness && !columnChangesBlocked && !names.table(collection.id)) setRenameTable({ key: collection.key, name, witness }); }}
+                onDoubleClick={() => { if (onRenameTable && witness && !columnChangesBlocked && (!names.table(collection.id) || importedXlsx)) setRenameTable({ key: collection.key, name, witness }); }}
                 onKeyDown={event => {
                   if (!onRenameTable || !witness || columnChangesBlocked || isComposingEvent(event)) return;
-                  if (event.key === "F2" && !names.table(collection.id)) { event.preventDefault(); setRenameTable({ key: collection.key, name, witness }); }
+                  if (event.key === "F2" && (!names.table(collection.id) || importedXlsx)) { event.preventDefault(); setRenameTable({ key: collection.key, name, witness }); }
                   else if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setTableMenu({ key: collection.key, id: collection.id, name, x: rect.left, y: rect.top, witness }); }
                 }}
                 onClick={() => void selectCollection(collection.key)}>{name}</button>;
             })}
             <button type="button" className="ts-tab" aria-label="Add sheet"
-              disabled={!onAddTable || !!interop?.metadata || columnChangesBlocked || commitPending || modalInteractionOpen}
-              title={interop?.metadata ? "Adding sheets to imported work is not available yet." : "Add sheet (Shift+F11)"}
+              disabled={!onAddTable || (!!interop?.metadata && !importedXlsx) || columnChangesBlocked || commitPending || modalInteractionOpen}
+              title={interop?.metadata && !importedXlsx ? "Adding sheets to imported work is not available yet." : "Add sheet (Shift+F11)"}
               onClick={() => void addSheet()}>+</button>
           </div>
           <div className="ts-workbook-status">{renderStatusStrip()}</div>
@@ -6576,7 +6577,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function addSheet(): Promise<void> {
-    if (interop?.metadata) {
+    if (interop?.metadata && !importedXlsx) {
       setLocalError("Adding sheets to imported work is not available yet.");
       return;
     }
@@ -6792,10 +6793,10 @@ export function SheetShell(props: SheetShellProps) {
       ) : null}
       {view ? renderWorkbook() : renderHome()}
       {tableMenu && witness && tableMenu.witness.occurrence === witness.occurrence ? <div ref={tableMenuRef} role="menu" aria-label="Sheet actions" tabIndex={-1} autoFocus className="ts-cell-menu" style={{ left: Math.max(8, Math.min(tableMenu.x, window.innerWidth - 240)), top: Math.max(8, Math.min(tableMenu.y, window.innerHeight - 100)), zIndex: 1000 }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); const key = tableMenu.key; setTableMenu(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); } }}>
-        <button type="button" role="menuitem" className="ts-cell-menu-item" autoFocus={!!onRenameTable && !names.table(tableMenu.id)} disabled={!onRenameTable || !!names.table(tableMenu.id)} title={!onRenameTable ? "Renaming sheets is not available." : names.table(tableMenu.id) ? "Renaming imported sheets is not available yet." : undefined} onClick={() => { setTableMenu(null); if (onRenameTable && !columnChangesBlocked) setRenameTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); }}>Rename sheet…</button>
+        <button type="button" role="menuitem" className="ts-cell-menu-item" autoFocus={!!onRenameTable && (!names.table(tableMenu.id) || importedXlsx)} disabled={!onRenameTable || (!!names.table(tableMenu.id) && !importedXlsx)} title={!onRenameTable ? "Renaming sheets is not available." : names.table(tableMenu.id) && !importedXlsx ? "Renaming imported sheets is not available yet." : undefined} onClick={() => { setTableMenu(null); if (onRenameTable && !columnChangesBlocked) setRenameTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); }}>Rename sheet…</button>
         {onDeleteTable ? <button type="button" role="menuitem" className="ts-cell-menu-item" disabled={(view?.collections.length ?? 0) <= 1} title={(view?.collections.length ?? 0) <= 1 ? "Keep at least one sheet in this work." : undefined} onClick={() => { setTableMenu(null); if (!columnChangesBlocked) setDeleteTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); }}>Delete sheet…</button> : null}
         {(view?.collections.length ?? 0) <= 1 ? <span className="ts-hint">Keep at least one sheet in this work.</span> : null}
-        {names.table(tableMenu.id) ? <span className="ts-hint">Renaming imported sheets is not available yet.</span> : null}
+        {names.table(tableMenu.id) && !importedXlsx ? <span className="ts-hint">Renaming imported sheets is not available yet.</span> : null}
       </div> : null}
       {renameTable && onRenameTable ? <RenameTableDialog onDraftChange={setRenameTableDraftActive} initialName={renameTable.name} composing={() => props.appearancePreference.getSnapshot().composing} onRename={name => onRenameTable(renameTable.witness, renameTable.key, name)} onClose={() => { const key = renameTable.key; setRenameTable(null); setRenameTableDraftActive(false); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); }} /> : null}
       {shortcutHelp ? <ShortcutHelpDialog mac={isMacPlatform()} desktop={import.meta.env.MODE === "desktop"} onClose={closeShortcutHelp} /> : null}

@@ -273,3 +273,22 @@ it("passes an absent mapping through to the publication port", async () => {
   await createMutationCompletion(port).run({ kind: "rows", witness, dispatch: async () => { throw new PublishedProjectionRecoveryError(publication, new Error("read failed")); } });
   expect(accepted).toEqual([undefined]);
 });
+
+
+it("Undo and Redo carry Work's restored mapping; a trusted refusal retains it", async () => {
+  const { port } = harness();
+  const before = { version: 1 as const, sheets: [] };
+  const restored = { version: 1 as const, sheets: [{ schema_id: "s1", name: "Restored", has_header: true, columns: [], rows: [] }] };
+  let held: import("../contracts.js").InteropMetadata = before;
+  port.acceptPublication = publication => { if (publication.import_metadata) held = publication.import_metadata; };
+  port.readResults = async () => [];
+  const completion = createMutationCompletion(port);
+  for (const [direction, metadata] of [["undo", restored], ["redo", before]] as const) {
+    await completion.run({ kind: "history", witness, direction, dispatch: async () => ({
+      view, publication: { base_revision: "rev-1", resulting_revision: "rev-1", entities: [], fields: [], affected_calculations: [], schemas: [], schema_fields: [], import_metadata: metadata },
+    }) });
+    expect(held).toBe(metadata);
+  }
+  await completion.run({ kind: "rows", witness, dispatch: async () => { throw refusal({ code: "invalid_value", message: "Name refused" }); } });
+  expect(held).toBe(before);
+});
