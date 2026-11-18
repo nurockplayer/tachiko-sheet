@@ -1395,11 +1395,11 @@ describe("createSheetRuntime", () => {
     expect(client.calls.inspectImportedProjectWorkingSize).toHaveLength(1);
     expect(client.calls.openImportedProjectWorkingSize).toHaveLength(1);
     const inspected = client.calls.inspectImportedProjectWorkingSize[0]!;
-    const opened = client.calls.openImportedProjectWorkingSize[0]!;
+    const importedOpen = client.calls.openImportedProjectWorkingSize[0]!;
     expect(inspected.metadata).toBe(metadata);
-    expect(opened.metadata).toBe(metadata);
-    expect(inspected.bytes).not.toBe(opened.bytes);
-    expect(new Uint8Array(inspected.bytes)).toEqual(new Uint8Array(opened.bytes));
+    expect(importedOpen.metadata).toBe(metadata);
+    expect(inspected.bytes).not.toBe(importedOpen.bytes);
+    expect(new Uint8Array(inspected.bytes)).toEqual(new Uint8Array(importedOpen.bytes));
     expect(next.collections).toEqual([other, COLLECTION]);
     client.hooks.inspectImportedProjectWorkingSize = async () => { throw new FakeDesignerRuntimeError("invalid_value", client.currentRevision); };
     await expect(runtime.openCanonical(CANONICAL_FILES, metadata)).rejects.toBeInstanceOf(FakeDesignerRuntimeError);
