@@ -1381,6 +1381,31 @@ describe("createSheetRuntime", () => {
     expect(inspect).toHaveBeenCalledTimes(1);
   });
 
+  it("canonical imported reopen forwards metadata and preserves Work's collection order", async () => {
+    const { client, runtime } = await opened();
+    const metadata = { version: 1 as const, sheets: [] };
+    const other = { ...COLLECTION, id: "other", key: "other", display_name: "Other" };
+    const open = client.openImportedProjectWorkingSize.bind(client);
+    vi.spyOn(client, "openImportedProjectWorkingSize").mockImplementation(async (bytes, md) => {
+      const result = await open(bytes, md);
+      client.hooks.bootstrap = async () => ({ ...result.bootstrap, collections: [other, COLLECTION] });
+      return result;
+    });
+    const next = await runtime.openCanonical(CANONICAL_FILES, metadata);
+    expect(client.calls.inspectImportedProjectWorkingSize).toHaveLength(1);
+    expect(client.calls.openImportedProjectWorkingSize).toHaveLength(1);
+    const inspected = client.calls.inspectImportedProjectWorkingSize[0]!;
+    const importedOpen = client.calls.openImportedProjectWorkingSize[0]!;
+    expect(inspected.metadata).toBe(metadata);
+    expect(importedOpen.metadata).toBe(metadata);
+    expect(inspected.bytes).not.toBe(importedOpen.bytes);
+    expect(new Uint8Array(inspected.bytes)).toEqual(new Uint8Array(importedOpen.bytes));
+    expect(next.collections).toEqual([other, COLLECTION]);
+    client.hooks.inspectImportedProjectWorkingSize = async () => { throw new FakeDesignerRuntimeError("invalid_value", client.currentRevision); };
+    await expect(runtime.openCanonical(CANONICAL_FILES, metadata)).rejects.toBeInstanceOf(FakeDesignerRuntimeError);
+    expect(client.calls.openImportedProjectWorkingSize).toHaveLength(1);
+  });
+
   it("validates a retained imported-source attachment before reopening opaque bytes", async () => {
     const { client, runtime, view } = await opened();
     const bytes = new Uint8Array([7, 8, 9]).buffer;

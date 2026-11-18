@@ -682,7 +682,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
-  function openCanonical(files: readonly CanonicalProjectFile[]): Promise<WorkbookView> {
+  function openCanonical(files: readonly CanonicalProjectFile[], importedMetadata?: InteropMetadata): Promise<WorkbookView> {
     const requestedAt = epoch;
     return enqueue(async () => {
       assertNotReplaced(requestedAt);
@@ -692,6 +692,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       // refusal is pre-dispatch and must preserve the resident occurrence.
       kit.preflightCanonicalProjectEntries(files);
       const transfer = kit.projectTransferFromEntries(files);
+      if (importedMetadata) {
+        const inspect = capability(client.inspectImportedProjectWorkingSize, "working-size imported-project inspection");
+        await dispatch(kit, () => inspect.call(client, transfer.slice(0), importedMetadata));
+        assertNotReplaced(requestedAt);
+        const open = capability(client.openImportedProjectWorkingSize, "working-size imported-project open");
+        return openSession(kit, client, requestedAt, () => open.call(client, transfer, importedMetadata));
+      }
       const open = capability(client.openProjectWorkingSize, "working-size project open");
       return openSession(kit, client, requestedAt, () => open.call(client, transfer));
     });

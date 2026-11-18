@@ -734,6 +734,35 @@ test("opaque copies preserve an optional imported-source attachment outside the 
   });
 }));
 
+test("latest XLSX mapping survives opaque create, replace and legacy read without changing source bytes", async () => withBrowser(async browser => {
+  const result = await withPage(browser, page => page.evaluate(async () => {
+    const host = window.createLocalCopiesUnderTest();
+    const sourceBytes = new Uint8Array([8, 7, 6]).buffer;
+    const original = {version: 1, sheets: [{schema_id: "a", name: "Original", has_header: true, columns: [], rows: []}]};
+    const latest = {version: 1, sheets: [{schema_id: "b", name: "Added", has_header: true, columns: [], rows: []}, {schema_id: "a", name: "Renamed", has_header: true, columns: [], rows: []}]};
+    const snapshot = metadata => ({revision: "r1", bytes: new Uint8Array([1, 2]).buffer,
+      importedSource: {name: "book.xlsx", format: "xlsx", bytes: sourceBytes, metadata, ledger: []}});
+    const receipt = await host.createOpaque("Lifecycle", snapshot(original));
+    const created = await host.readAny("Lifecycle");
+    await host.replaceOpaque(receipt, {...snapshot(latest), revision: "r2"});
+    latest.sheets[0].name = "mutated caller";
+    const read = await host.readAny("Lifecycle");
+    read.importedSource.metadata.sheets.reverse();
+    const persisted = await host.readAny("Lifecycle");
+    const previous = (await import("/base-reader.js")).createLocalCopies();
+    const legacy = await previous.readAny("Lifecycle");
+    await previous.close();
+    return {created: created.importedSource.metadata, metadata: persisted.importedSource.metadata,
+      source: [...new Uint8Array(persisted.importedSource.bytes)], legacyMetadata: legacy.importedSource.metadata,
+      legacySource: [...new Uint8Array(legacy.importedSource.bytes)]};
+  }));
+  assert.equal(result.created.sheets[0].name, "Original");
+  assert.deepEqual(result.metadata.sheets.map(s => [s.schema_id, s.name]), [["b", "Added"], ["a", "Renamed"]]);
+  assert.deepEqual(result.source, [8, 7, 6]);
+  assert.deepEqual(result.legacyMetadata, result.metadata);
+  assert.deepEqual(result.legacySource, result.source);
+}));
+
 test("canonical and opaque names are create-only across both stores", async () => withBrowser(async (browser) => {
   const result = await withPage(browser, (page) => page.evaluate(async () => {
     const host = window.createLocalCopiesUnderTest();

@@ -106,3 +106,14 @@ describe("copy column names", () => {
     expect(copyColumnNames(columns, field => shown[field] ?? null)).toEqual({ f2: "é".repeat(2_048) });
   });
 });
+
+
+it("shows the latest published names after add, delete and Undo", () => {
+  const original = metadata(sheet("a", "Catalog", true, ["item"]), sheet("b", "Sales", true, ["amount"]));
+  const added = metadata(sheet("a", "Catalog", true, ["item"]), sheet("b", "Sales", true, ["amount"]), sheet("c", "New", true, ["A"]));
+  const deleted = metadata(sheet("a", "Renamed", true, ["item"]), sheet("c", "New", true, ["A"]));
+  for (const [published, expected] of [[added, ["Catalog", "Sales", "New"]], [deleted, ["Renamed", null, "New"]], [original, ["Catalog", "Sales", null]]] as const) {
+    const names = sourceNames(published, "book.xlsx");
+    expect(["a", "b", "c"].map(id => names.table(id))).toEqual(expected);
+  }
+});

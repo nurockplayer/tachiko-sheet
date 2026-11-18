@@ -11,7 +11,7 @@ import { confirmHistoryCommand, confirmScalarHistory, emptyLocalHistory, type Lo
 type ResultSnapshot = { definitionIds: string[]; results: KeyedGroupedSumResult[] };
 type TrackedCommand = { witness: ViewWitness; dispatch(): Promise<ConfirmedPublication> } & (
   | { kind: "scalar"; edit: ScalarEdit }
-  | { kind: "rows"; retainedInput?: string }
+  | { kind: "rows"; retainedInput?: string; worksheetLifecycle?: true }
   | { kind: "history"; direction: "undo" | "redo" }
 );
 export type MutationCommand = TrackedCommand
@@ -24,12 +24,13 @@ export type MutationCompletion =
 type RecoveryContext =
   | { kind: "scalar"; witness: ViewWitness; edit: ScalarEdit }
   | { kind: "history"; witness: ViewWitness; direction: "undo" | "redo" }
-  | { kind: "rows"; witness: ViewWitness; retainedInput?: string }
+  | { kind: "rows"; witness: ViewWitness; retainedInput?: string; worksheetLifecycle?: true }
   | { kind: "cleanup"; witness: ViewWitness }
   | { kind: "summary"; witness?: ViewWitness };
 export interface MutationRecovery {
   kind: "known-publication-recovery" | "unknown-outcome";
   resetPreview: boolean;
+  mappingUncertain: boolean;
   retainedInput?: string;
   message: string;
 }
@@ -116,7 +117,8 @@ export function createMutationCompletion(port: MutationCompletionPort) {
       : command === "summary" ? "The cross-table summary request was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried."
       : submittedName !== undefined ? `The duplicate request for “${submittedName}” was dispatched but its outcome is unknown. Refresh to re-read the work; it was not retried. Input retained for review: ${submittedName}`
       : `The ${context.kind === "history" ? context.direction : "row change"} request was dispatched but could not be confirmed. Refresh to re-read the work; it was not retried.`;
-    port.recover({ kind, resetPreview: kind === "known-publication-recovery" || command === "cleanup", retainedInput, message });
+    const mappingUncertain = context.kind === "history" || (context.kind === "rows" && context.worksheetLifecycle === true);
+    port.recover({ kind, resetPreview: kind === "known-publication-recovery" || command === "cleanup", mappingUncertain, retainedInput, message });
     return { kind };
   }
 

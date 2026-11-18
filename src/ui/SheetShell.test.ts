@@ -259,7 +259,7 @@ describe("keyboard history queue", () => {
     expect(document.activeElement).toBe(firstCell);
   });
 
-  it("disables imported addition and refuses Shift+F11 with the exact hint", async () => {
+  it("keeps CSV addition disabled and refuses Shift+F11 with the exact hint", async () => {
     const onAddTable = vi.fn<NonNullable<SheetShellProps["onAddTable"]>>(async () => ({ kind: "confirmed" }));
     const ui = await mount({ onAddTable, interop: { importInspection: null, cleanupPreview: null, ledger: [], downloadStatus: "idle", downloadError: null, metadata: { version: 1, sheets: [] } } });
     const add = ui.container.querySelector<HTMLButtonElement>('[aria-label="Add sheet"]')!;
@@ -268,6 +268,55 @@ describe("keyboard history queue", () => {
     await act(async () => { add.click(); ui.cell().dispatchEvent(new KeyboardEvent("keydown", { key: "F11", shiftKey: true, bubbles: true, cancelable: true })); });
     expect(onAddTable).not.toHaveBeenCalled();
     expect(ui.container.textContent).toContain("Adding sheets to imported work is not available yet.");
+  });
+
+  it("offers XLSX addition with the existing starter column", async () => {
+    const onAddTable = vi.fn<NonNullable<SheetShellProps["onAddTable"]>>(async () => ({ kind: "confirmed" }));
+    const ui = await mount({ onAddTable, importedSourceName: "book.xlsx", interop: { importInspection: null, cleanupPreview: null, ledger: [], downloadStatus: "idle", downloadError: null, metadata: { version: 1, sheets: [] } } });
+    const add = ui.container.querySelector<HTMLButtonElement>('[aria-label="Add sheet"]')!;
+    expect(add.disabled).toBe(false);
+    await act(async () => add.click());
+    expect(onAddTable).toHaveBeenCalledWith({ occurrence: ui.view.occurrence, revision: ui.view.revision }, "Sheet 2", [{ name: "A", field_type: "text", required: false }]);
+    await ui.update({ busy: true });
+    expect(ui.container.querySelector<HTMLButtonElement>('[aria-label="Add sheet"]')!.disabled).toBe(true);
+  });
+
+  it.each(["double-click", "F2", "menu"])("offers imported XLSX rename through %s and retains last-sheet/pending/draft guards", async method => {
+    const onRenameTable = vi.fn<NonNullable<SheetShellProps["onRenameTable"]>>(async () => ({ kind: "confirmed" }));
+    const view = makeView();
+    const ui = await mount({ view, onRenameTable, onDeleteTable: async () => ({ kind: "confirmed" }), importedSourceName: "book.xlsx", interop: { importInspection: null, cleanupPreview: null, ledger: [], downloadStatus: "idle", downloadError: null, metadata: { version: 1, sheets: [{ schema_id: view.table.collection.id, name: "Imported", has_header: true, columns: [], rows: [] }] } } });
+    const tab = ui.container.querySelector<HTMLElement>('[aria-label="Sheets"] [role="tab"]')!;
+    const open = async () => {
+      await act(async () => {
+        tab.dispatchEvent(method === "double-click" ? new MouseEvent("dblclick", { bubbles: true }) : method === "F2" ? new KeyboardEvent("keydown", { key: "F2", bubbles: true }) : new MouseEvent("contextmenu", { bubbles: true }));
+      });
+      if (method === "menu") await act(async () => ui.container.querySelector<HTMLButtonElement>('[role="menuitem"]')?.click());
+    };
+    if (method === "menu") {
+      await act(async () => tab.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
+      const items = ui.container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
+      expect(items[0]!.disabled).toBe(false);
+      expect(items[1]!.disabled).toBe(true);
+      await act(async () => items[0]!.click());
+    } else await open();
+    const renameDialog = ui.container.querySelector<HTMLElement>('[role="dialog"][aria-label="Rename sheet"]')!;
+    expect(renameDialog.querySelector<HTMLInputElement>("input")?.value).toBe("Imported");
+    const cancel = Array.from(renameDialog.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "Cancel")!;
+    await act(async () => cancel.click());
+    await ui.update({ busy: true });
+    await open();
+    expect(ui.container.querySelector('[role="dialog"][aria-label="Rename sheet"]')).toBeNull();
+    await ui.update({ busy: false });
+    await act(async () => ui.cell().dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true })));
+    const editor = ui.container.querySelector<HTMLTextAreaElement>('[data-testid="cell-editor"]')!;
+    expect(editor).not.toBeNull();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(editor, "Kept draft");
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await open();
+    expect(ui.container.querySelector('[role="dialog"][aria-label="Rename sheet"]')).toBeNull();
+    expect(onRenameTable).not.toHaveBeenCalled();
   });
 
   it("keeps Work's refusal visible without changing tabs", async () => {

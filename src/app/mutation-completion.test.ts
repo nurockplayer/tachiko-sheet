@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { UnknownOperationOutcomeError, type WorkbookView } from "../contracts.js";
 import { emptyLocalHistory } from "../application/local-history.js";
 import { PublishedProjectionRecoveryError } from "../runtime/session.js";
-import { createMutationCompletion, type MutationCompletionPort, type MutationRecovery } from "./mutation-completion.js";
+import { createMutationCompletion, type MutationCommand, type MutationCompletionPort, type MutationRecovery } from "./mutation-completion.js";
 
 const view = {
   title: "Plan",
@@ -272,4 +272,41 @@ it("passes an absent mapping through to the publication port", async () => {
   const publication = { base_revision: "rev-1", resulting_revision: "rev-2", entities: [], fields: [], affected_calculations: [], schemas: [], schema_fields: [] };
   await createMutationCompletion(port).run({ kind: "rows", witness, dispatch: async () => { throw new PublishedProjectionRecoveryError(publication, new Error("read failed")); } });
   expect(accepted).toEqual([undefined]);
+});
+
+
+it("Undo and Redo carry Work's restored mapping; a trusted refusal retains it", async () => {
+  const { port } = harness();
+  const before = { version: 1 as const, sheets: [] };
+  const restored = { version: 1 as const, sheets: [{ schema_id: "s1", name: "Restored", has_header: true, columns: [], rows: [] }] };
+  let held: import("../contracts.js").InteropMetadata = before;
+  port.acceptPublication = publication => { if (publication.import_metadata) held = publication.import_metadata; };
+  port.readResults = async () => [];
+  const completion = createMutationCompletion(port);
+  for (const [direction, metadata] of [["undo", restored], ["redo", before]] as const) {
+    await completion.run({ kind: "history", witness, direction, dispatch: async () => ({
+      view, publication: { base_revision: "rev-1", resulting_revision: "rev-1", entities: [], fields: [], affected_calculations: [], schemas: [], schema_fields: [], import_metadata: metadata },
+    }) });
+    expect(held).toBe(metadata);
+  }
+  await completion.run({ kind: "rows", witness, dispatch: async () => { throw refusal({ code: "invalid_value", message: "Name refused" }); } });
+  expect(held).toBe(before);
+});
+
+describe("mapping uncertainty after a lost command reply", () => {
+  const commands: Array<{ name: string; command: MutationCommand; mappingUncertain: boolean }> = [
+    { name: "cleanup", command: { kind: "cleanup", witness, recordHistory: false, dispatch: lostReply }, mappingUncertain: false },
+    { name: "cell edit", command: { kind: "scalar", witness, edit: { kind: "text", value: "changed" }, dispatch: lostReply }, mappingUncertain: false },
+    { name: "ordinary row change", command: { kind: "rows", witness, dispatch: lostReply }, mappingUncertain: false },
+    { name: "worksheet lifecycle", command: { kind: "rows", witness, worksheetLifecycle: true, dispatch: lostReply }, mappingUncertain: true },
+    { name: "Undo", command: { kind: "history", witness, direction: "undo", dispatch: lostReply }, mappingUncertain: true },
+    { name: "Redo", command: { kind: "history", witness, direction: "redo", dispatch: lostReply }, mappingUncertain: true },
+  ];
+  async function lostReply(): Promise<never> { throw new UnknownOperationOutcomeError("reply lost"); }
+  it.each(commands)("classifies $name without changing recovery", async ({ command, mappingUncertain }) => {
+    const { port, recoveries } = harness();
+    expect(await createMutationCompletion(port).run(command)).toEqual({ kind: "unknown-outcome" });
+    expect(recoveries).toHaveLength(1);
+    expect(recoveries[0]).toMatchObject({ kind: "unknown-outcome", mappingUncertain, resetPreview: command.kind === "cleanup" });
+  });
 });
