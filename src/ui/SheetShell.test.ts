@@ -308,10 +308,10 @@ describe("keyboard history queue", () => {
     expect(ui.container.querySelector('[role="dialog"][aria-label="Rename sheet"]')).toBeNull();
     await ui.update({ busy: false });
     await act(async () => ui.cell().dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true })));
-    const editor = ui.container.querySelector<HTMLInputElement>('[data-testid="cell-editor"]')!;
+    const editor = ui.container.querySelector<HTMLTextAreaElement>('[data-testid="cell-editor"]')!;
     expect(editor).not.toBeNull();
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(editor, "Kept draft");
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(editor, "Kept draft");
       editor.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await open();
