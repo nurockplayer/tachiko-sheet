@@ -299,8 +299,9 @@ describe("keyboard history queue", () => {
       expect(items[1]!.disabled).toBe(true);
       await act(async () => items[0]!.click());
     } else await open();
-    expect(ui.container.querySelector<HTMLInputElement>('[role="dialog"] input')?.value).toBe("Imported");
-    const cancel = Array.from(ui.container.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent === "Cancel")!;
+    const renameDialog = ui.container.querySelector<HTMLElement>('[role="dialog"][aria-label="Rename sheet"]')!;
+    expect(renameDialog.querySelector<HTMLInputElement>("input")?.value).toBe("Imported");
+    const cancel = Array.from(renameDialog.querySelectorAll<HTMLButtonElement>("button")).find(button => button.textContent === "Cancel")!;
     await act(async () => cancel.click());
     await ui.update({ busy: true });
     await open();

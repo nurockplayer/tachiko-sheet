@@ -41,7 +41,7 @@ it("refuses metadata-dependent exports and Save after unknown outcome, then admi
     await act(async () => { await current().onRenameTable!({ occurrence: "o1", revision: "r1" }, "s1", "New"); });
     for (const format of ["xlsx", "csv"] as const) {
       await act(async () => { expect(await current().onPrepareDownload!(format)).toBe(false); });
-      expect(container.textContent).toBe("Reopen or Refresh this workbook before exporting");
+      expect(container.querySelector('[role="alert"]')?.textContent).toBe("Reopen or Refresh this workbook before exporting");
     }
     await act(async () => { expect(await current().onCreateCopy("Saved")).toMatchObject({ saved: false }); });
     expect(runtime.exportSpreadsheet).not.toHaveBeenCalled();
