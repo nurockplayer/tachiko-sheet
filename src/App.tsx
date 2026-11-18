@@ -971,7 +971,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   /** React/ref adapter for the seam's recovery decision. Replacement/Open
    * retains its separate checkpoint policy: an unknown source is not an edit. */
   function installMutationRecovery(recovery: MutationRecovery): void {
-    if (recovery.kind === "unknown-outcome" && importedSourceRef.current) {
+    if (recovery.kind === "unknown-outcome" && recovery.mappingUncertain && importedSourceRef.current) {
       setImportMappingUntrusted(true);
       preparedDownloadRef.current = null;
     }
@@ -1717,6 +1717,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     saveCheck: "column" | "duplicate" | "add" | null = null,
     /** Typed input the command would otherwise lose when its dialog closes. */
     retainedInput?: string,
+    worksheetLifecycle?: true,
   ): Promise<RowCommandOutcome> {
     if (saveCheck && !copies.createWorkFile) {
       return Promise.resolve({ kind: "refused", message: saveCheck === "add" ? "Adding sheets is unavailable because this work could not then be saved. Nothing was changed." : saveCheck === "duplicate" ? DUPLICATE_SAVE_UNAVAILABLE : COLUMN_SAVE_UNAVAILABLE });
@@ -1730,6 +1731,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     }
     const apply = () => mutationCompletion.run<RowCommandOutcome>({
       kind: "rows", witness, dispatch: command,
+      ...(worksheetLifecycle ? { worksheetLifecycle } : {}),
       ...(retainedInput !== undefined ? { retainedInput } : {}),
     }, result => {
       if (result.kind === "published") return { kind: "confirmed", addedEntities: result.addedEntities };
@@ -1803,11 +1805,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   function renameTable(witness: ViewWitness, collection: string, name: string) {
-    return changeRows(witness, () => runtime.renameTable(witness, collection, name), importedSourceRef.current?.format === "xlsx" ? null : "column", name);
+    return changeRows(witness, () => runtime.renameTable(witness, collection, name), importedSourceRef.current?.format === "xlsx" ? null : "column", name, true);
   }
 
   function deleteTable(witness: ViewWitness, collection: string) {
-    return changeRows(witness, () => runtime.deleteTable(witness, collection));
+    return changeRows(witness, () => runtime.deleteTable(witness, collection), null, undefined, true);
   }
 
   function renameColumn(witness: ViewWitness, collection: string, field: string, name: string) {
@@ -1828,11 +1830,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   function duplicateTable(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>) {
     // The dialog closes on a recovery, so the recovery message carries the name.
-    return changeRows(witness, () => runtime.duplicateCollection(witness, collection, name, columnNames), "duplicate", name);
+    return changeRows(witness, () => runtime.duplicateCollection(witness, collection, name, columnNames), "duplicate", name, true);
   }
 
   function addTable(witness: ViewWitness, name: string, columns: NewTableColumn[]) {
-    return changeRows(witness, () => runtime.addTable(witness, name, columns), importedSourceRef.current?.format === "xlsx" ? null : "add", name);
+    return changeRows(witness, () => runtime.addTable(witness, name, columns), importedSourceRef.current?.format === "xlsx" ? null : "add", name, true);
   }
 
   function querySelectionStatistics(witness: ViewWitness, targets: FieldTarget[]) {

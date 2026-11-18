@@ -14,7 +14,9 @@ vi.mock("../ui/SheetShell.js", () => ({ SheetShell: (props: SheetShellProps) => 
   return createElement("div", { role: "alert" }, props.message);
 } }));
 
-it.each(["publication", "reopen"])("keeps exports and Save refused after Refresh until authoritative %s", async recovery => {
+it.each([
+  ["rename", "publication"], ["rename", "reopen"], ["add", "publication"], ["delete", "publication"],
+])("keeps exports and Save refused after unknown %s and Refresh until authoritative %s", async (command, recovery) => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const collection = { id: "s1", key: "s1", display_name: "Original", entity_count: 0 };
   const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1", requiresPortableSave: true,
@@ -26,6 +28,8 @@ it.each(["publication", "reopen"])("keeps exports and Save refused after Refresh
     prepare: vi.fn(async () => {}), close: vi.fn(async () => {}), queryCapacity: vi.fn(async () => null),
     discoverKeyedGroupedSums: vi.fn(async () => []), openOpaque: vi.fn(async () => view), read: vi.fn(async () => view),
     renameTable: vi.fn(async (): Promise<ConfirmedPublication> => { throw new UnknownOperationOutcomeError("reply lost"); }),
+    addTable: vi.fn(async () => { throw new UnknownOperationOutcomeError("reply lost"); }),
+    deleteTable: vi.fn(async () => { throw new UnknownOperationOutcomeError("reply lost"); }),
     exportSpreadsheet: vi.fn(async () => exported), exportOpaque: vi.fn(async () => exported), exportWorkFile: vi.fn(async () => exported),
   };
   const copies = { list: vi.fn(async () => []), readAny: vi.fn(async () => ({ kind: "opaque", revision: "r1", bytes: new ArrayBuffer(1), importedSource: source })),
@@ -40,7 +44,12 @@ it.each(["publication", "reopen"])("keeps exports and Save refused after Refresh
     await act(async () => current().onOpenSaved("Imported"));
     expect(current().onRenameTable).toBeTypeOf("function");
     expect(current().onAddTable).toBeTypeOf("function");
-    await act(async () => { await current().onRenameTable!({ occurrence: "o1", revision: "r1" }, "s1", "New"); });
+    await act(async () => {
+      const witness = { occurrence: "o1", revision: "r1" };
+      if (command === "add") await current().onAddTable!(witness, "Added", []);
+      else if (command === "delete") await current().onDeleteTable!(witness, "s1");
+      else await current().onRenameTable!(witness, "s1", "New");
+    });
     const assertRefused = async () => {
       for (const format of ["xlsx", "csv"] as const) {
         await act(async () => { expect(await current().onPrepareDownload!(format)).toBe(false); });
@@ -119,6 +128,41 @@ it("offers Save a copy on a reader-only host after imported XLSX addTable and sa
     await act(async () => { expect(await current().onCreateCopy("Saved")).toMatchObject({ saved: true }); });
     expect(runtime.exportWorkFile).not.toHaveBeenCalled();
     expect(copies.createOpaque).toHaveBeenCalledWith("Saved", expect.objectContaining({ revision: "r2", importedSource: { ...source, metadata: latest } }));
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("allows imported exports and Save after an unknown cell edit and Refresh", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const collection = { id: "s1", key: "s1", display_name: "Original", entity_count: 0 };
+  const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1",
+    collections: [collection], table: { revision: "r1", collection, columns: [], rows: [] } };
+  const metadata = { version: 1 as const, sheets: [{ schema_id: "s1", name: "Original", has_header: true, columns: [], rows: [] }] };
+  const source = { name: "book.xlsx", format: "xlsx", bytes: new Uint8Array([8, 7]).buffer, metadata, ledger: [] };
+  const exported = { revision: "r1", bytes: new ArrayBuffer(1), ledger: [] };
+  const runtime = {
+    prepare: vi.fn(async () => {}), queryCapacity: vi.fn(async () => null), discoverKeyedGroupedSums: vi.fn(async () => []),
+    openOpaque: vi.fn(async () => view), read: vi.fn(async () => view),
+    editConfirmed: vi.fn(async () => { throw new UnknownOperationOutcomeError("reply lost"); }),
+    exportSpreadsheet: vi.fn(async () => exported), exportOpaque: vi.fn(async () => exported),
+  };
+  const copies = { list: vi.fn(async () => []), readAny: vi.fn(async () => ({ kind: "opaque", revision: "r1", bytes: new ArrayBuffer(1), importedSource: source })),
+    createOpaque: vi.fn(async () => ({ name: "Saved", kind: "opaque", revision: "r1", savedAt: "2026-11-18T00:00:00Z", saveToken: "saved" })) };
+  const root = createRoot(document.createElement("div"));
+  const current = () => shell.props!;
+  try {
+    await act(async () => root.render(createElement(App, { runtime, copies, appearancePreference: {} } as unknown as AppProps)));
+    await act(async () => current().onOpenSaved("Imported"));
+    await act(async () => { await current().onCommit({ occurrence: "o1", revision: "r1" }, { entity: "e1", field: "f1" }, { kind: "text", value: "changed" }); });
+    expect(current().currentness).toBe("unknown");
+    await act(async () => current().onRefresh());
+    for (const format of ["csv", "xlsx"] as const) {
+      await act(async () => { expect(await current().onPrepareDownload!(format)).toBe(true); });
+      await act(async () => { expect(await current().onDownload!(format)).toBe(true); });
+      expect(runtime.exportSpreadsheet).toHaveBeenCalledWith({ occurrence: "o1", revision: "r1" }, metadata, format);
+    }
+    await act(async () => { expect(await current().onCreateCopy("Saved")).toMatchObject({ saved: true }); });
   } finally {
     await act(async () => root.unmount());
   }
