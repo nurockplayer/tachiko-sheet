@@ -1004,6 +1004,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       const metadata = publication.import_metadata;
       if (!metadata || !importedSourceRef.current) return;
       importedSourceRef.current = { ...importedSourceRef.current, metadata: structuredClone(metadata) };
+      setImportMappingUntrusted(false);
       setInterop((current) => current ? { ...current, metadata: structuredClone(metadata) } : current);
       preparedDownloadRef.current = null;
     },
@@ -1604,7 +1605,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   async function prepareDownload(format: "csv" | "xlsx" | "ro"): Promise<boolean> {
     if (format !== "ro" && importMappingUntrusted && importedSourceRef.current) {
-      setMessage("Reopen or Refresh this workbook before exporting");
+      setMessage("The sheet names could not be confirmed. Download as .ro to keep your changes, or reopen the workbook.");
       return false;
     }
     if (blockUnknownOpenRecovery()) return false;
@@ -1647,7 +1648,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   async function download(format: "csv" | "xlsx" | "ro"): Promise<boolean> {
     if (format !== "ro" && importMappingUntrusted && importedSourceRef.current) {
-      setMessage("Reopen or Refresh this workbook before exporting");
+      setMessage("The sheet names could not be confirmed. Download as .ro to keep your changes, or reopen the workbook.");
       return false;
     }
     if (blockUnknownOpenRecovery()) return false;
@@ -1870,7 +1871,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   async function createCopy(name: string, expected?: SavedCopySummary): Promise<CreateCopyOutcome> {
     if (blockUnknownOpenRecovery()) return { saved: false, reason: "The copy was not created. Refresh to confirm the open work, or close it, then try again." };
     if (importMappingUntrusted && importedSourceRef.current) {
-      const reason = "Reopen or Refresh this workbook before exporting";
+      const reason = "The sheet names could not be confirmed. Download as .ro to keep your changes, or reopen the workbook.";
       setMessage(reason);
       return { saved: false, reason };
     }
@@ -2149,6 +2150,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
             (pendingReplacement.occurrence === next.occurrence && pendingReplacement.revision === next.revision));
         if (sameReplacement) {
           importedSourceRef.current = pendingReplacement.importedSource;
+          if (pendingReplacement.importedSource) setImportMappingUntrusted(false);
           setInterop(pendingReplacement.interop
             ? { ...pendingReplacement.interop, cleanupPreview: null, downloadStatus: "idle", downloadError: null }
             : null);
@@ -2249,7 +2251,6 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         // path that clears them.
         unknownOpenRecoveryRef.current = true;
       }
-      setImportMappingUntrusted(false);
       syncDirty();
       if (savedRevisionRef.current !== next.revision) markNotSaved();
       setCurrentness("current");
@@ -2354,7 +2355,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onRetryCopies={refreshCopies}
           onOpenWorkFile={openWorkFile}
           takeOpenedFile={hostFiles.takeOpenedFile}
-          workFileSaveUnavailableReason={copies.createWorkFile ? null : WORK_FILE_SAVE_UNAVAILABLE}
+          workFileSaveUnavailableReason={!importedSourceRef.current && !copies.createWorkFile ? WORK_FILE_SAVE_UNAVAILABLE : null}
           workFileOmissions={currentWorkFileOmissions()}
           onOpenFiles={openFiles}
           onNewTable={newTable}
