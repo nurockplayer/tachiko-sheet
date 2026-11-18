@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "e434dc383db3d7ca819f9b8009fb00139fadcfca",
+  "sourceCommit": "38696aa013c03b8d28e732c7d1214daafc7e418e",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "1161383c79fa2b606647dca3d5f0e4a8994e3ef5de780c20957d3b81fb5f7f84",
+  "artifactManifestSha256": "e58a5dcb3abdf6359fd5dca151da1030dbbde209626d3cbbf0cababc688b2807",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6928949395",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-6964160940",
   "qualificationArtifactReview": {
-    "sourceCommit": "e434dc383db3d7ca819f9b8009fb00139fadcfca",
-    "artifactManifestSha256": "1161383c79fa2b606647dca3d5f0e4a8994e3ef5de780c20957d3b81fb5f7f84",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/pull/476"
+    "sourceCommit": "38696aa013c03b8d28e732c7d1214daafc7e418e",
+    "artifactManifestSha256": "e58a5dcb3abdf6359fd5dca151da1030dbbde209626d3cbbf0cababc688b2807",
+    "url": "https://github.com/nurockplayer/tachiko-sheet/pull/507"
   },
-  "notes": "Re-pin to Work e434dc38: move cells, import fidelity, resident edits, secondary sort ties and traversal bounds. Two clean detached exports match byte for byte; receipt on issue #246. move_cells is not adopted in the UI. Product acceptance remains separate."
+  "notes": "Re-pin to Work 38696aa0: calculated outcome tag and imported worksheet lifecycle mapping. Two clean detached exports match byte for byte; receipt on issue #246. Sheet retains published import_metadata for worksheet lifecycle; result is not adopted. Product acceptance remains separate."
 }
