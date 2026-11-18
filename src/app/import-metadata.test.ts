@@ -23,7 +23,7 @@ it.each(["publication", "reopen"])("keeps exports and Save refused after Refresh
   const source = { name: "book.xlsx", format: "xlsx", bytes: new Uint8Array([8, 7]).buffer, metadata, ledger: [] };
   const exported = { revision: "r1", bytes: new ArrayBuffer(1), ledger: [] };
   const runtime = {
-    prepare: vi.fn(async () => {}), queryCapacity: vi.fn(async () => null),
+    prepare: vi.fn(async () => {}), close: vi.fn(async () => {}), queryCapacity: vi.fn(async () => null),
     discoverKeyedGroupedSums: vi.fn(async () => []), openOpaque: vi.fn(async () => view), read: vi.fn(async () => view),
     renameTable: vi.fn(async (): Promise<ConfirmedPublication> => { throw new UnknownOperationOutcomeError("reply lost"); }),
     exportSpreadsheet: vi.fn(async () => exported), exportOpaque: vi.fn(async () => exported), exportWorkFile: vi.fn(async () => exported),
@@ -70,6 +70,7 @@ it.each(["publication", "reopen"])("keeps exports and Save refused after Refresh
       runtime.renameTable.mockImplementation(async () => ({ view, publication: { ...publication, import_metadata: metadata } }));
       await act(async () => { await current().onRenameTable!({ occurrence: "o1", revision: "r1" }, "s1", "New"); });
     } else {
+      await act(async () => current().onClose());
       await act(async () => current().onOpenSaved("Imported"));
     }
     for (const format of ["xlsx", "csv"] as const) {
