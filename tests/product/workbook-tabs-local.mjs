@@ -223,8 +223,8 @@ try {
   assert.equal(await tabs().first().textContent(), original);
   checks.push("active rename, name refusals, unchanged name, keyboard, cancel, Undo and Redo");
   await assertPanelReachability();
-  const labels = await picker().locator("option").allTextContents();
-  assert.deepEqual(await tabs().allTextContents(), labels, "tab order follows workbook/select order");
+  const optionLabels = await picker().locator("option").allTextContents();
+  assert.deepEqual(await tabs().allTextContents(), optionLabels, "tab order follows workbook/select order");
   await capture("few-tables");
   await tabs().nth(1).click(); await selected(1);
   await tabs().nth(1).press("ArrowLeft"); await selected(0);
