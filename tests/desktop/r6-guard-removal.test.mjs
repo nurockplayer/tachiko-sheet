@@ -1,4 +1,4 @@
-// Run under orb-test --heavy --host after the unmodified packaged lifecycle.
+// Run under tachi-run --heavy --host after the unmodified packaged lifecycle.
 // Product mutations exist only in a disposable detached worktree, never this PR.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";

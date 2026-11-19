@@ -12,11 +12,11 @@
 // changes the work-file format fails here rather than in the product.
 //
 // Re-run after a Work re-pin that changes the work-file format. Delete the
-// committed files first: with .ro files already in public/templates, orb-test's
+// committed files first: with .ro files already in public/templates, tachi-run's
 // worktree copy and its --out bind mount write that same directory, and GNU tar
 // refuses the copy ("file changed as we read it"). Then:
 //   rm -f public/templates/*.ro
-//   orb-test --local --image mcr.microsoft.com/playwright:v1.64.1-noble \
+//   tachi-run --local --image mcr.microsoft.com/playwright:v1.64.1-noble \
 //     --out public/templates -- node scripts/generate-templates.mjs
 import assert from 'node:assert/strict';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
