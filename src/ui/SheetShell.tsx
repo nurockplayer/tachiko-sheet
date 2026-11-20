@@ -287,15 +287,17 @@ export function rowViewStatusText(
 export function scrollCellIntoGridNearest(cell: HTMLElement, scrollport: HTMLElement): boolean {
   const before = cell.getBoundingClientRect();
   const port = scrollport.getBoundingClientRect();
+  const bodyTop = port.top + scrollport.clientTop + (scrollport.querySelector<HTMLElement>("thead")?.getBoundingClientRect().height ?? 0);
+  const bodyBottom = port.top + scrollport.clientTop + scrollport.clientHeight;
   const frozen = scrollport.querySelector<HTMLElement>("thead .ts-frozen-first-column");
   const gutter = scrollport.querySelector<HTMLElement>(".ts-gutter-head");
   const left = cell.classList.contains("ts-frozen-first-column") ? port.left
     : frozen?.getBoundingClientRect().right ?? (port.left + (gutter?.getBoundingClientRect().width ?? 0));
-  const visible = (rect: DOMRect) => rect.left >= left && rect.right <= port.right && rect.top >= port.top && rect.bottom <= port.bottom;
+  const visible = (rect: DOMRect) => rect.left >= left && rect.right <= port.right && rect.top >= bodyTop && rect.bottom <= bodyBottom;
   if (before.left < left) scrollport.scrollLeft -= left - before.left;
   else if (before.right > port.right) scrollport.scrollLeft += before.right - port.right;
-  if (before.top < port.top) scrollport.scrollTop -= port.top - before.top;
-  else if (before.bottom > port.bottom) scrollport.scrollTop += before.bottom - port.bottom;
+  if (before.top < bodyTop) scrollport.scrollTop -= bodyTop - before.top;
+  else if (before.bottom > bodyBottom) scrollport.scrollTop += before.bottom - bodyBottom;
   return visible(cell.getBoundingClientRect());
 }
 

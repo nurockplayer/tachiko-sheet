@@ -98,6 +98,9 @@ export async function pasteRaces({ evaluate, work, extraChecks = [], receipt = a
           liveTarget: cell(8000)?.dataset.testid, liveText: cell(8000)?.textContent,
           defaultPrevented: event.defaultPrevented, clipboardTypes: Array.from(event.clipboardData?.types ?? []),
           current: current(), inView: Boolean(inView(8000)), scrollTop: scroller().scrollTop,
+          cellBox: cell(8000)?.getBoundingClientRect().toJSON(), portBox: scroller().getBoundingClientRect().toJSON(),
+          clientTop: scroller().clientTop, clientHeight: scroller().clientHeight,
+          headerHeight: grid().querySelector("thead").getBoundingClientRect().height,
           feedback: [...document.querySelectorAll(".ts-clipboard-status")].map(el => el.innerText),
         }));
       }
