@@ -225,8 +225,8 @@ describe("keyboard history queue", () => {
     if (direction === "upward") {
       view.table.columns = view.table.columns.slice(0, 1);
       view.table.rows = Array.from({ length: 8001 }, (_, index) => ({
-        id: `row-${index}`, key: `row-${index}`,
-        fields: [projected(`row-${index}`, "c-title", { kind: "text", value: `Row ${index}` })],
+        id: index === 0 ? entityA : `row-${index}`, key: `row-${index}`,
+        fields: [projected(index === 0 ? entityA : `row-${index}`, "c-title", { kind: "text", value: `Row ${index}` })],
       }));
     }
     const onEditCells = vi.fn<NonNullable<SheetShellProps["onEditCells"]>>(async () => ({ kind: "confirmed" }));
@@ -249,7 +249,7 @@ describe("keyboard history queue", () => {
       await flushFrames();
       const nameBox = ui.container.querySelector<HTMLInputElement>('[aria-label="Name Box"]')!;
       const selection = nameBox.value;
-      const first = ui.container.querySelector<HTMLElement>(`[data-testid="cell:${direction === "upward" ? "row-0" : entityB}:c-title"]`)!;
+      const first = ui.container.querySelector<HTMLElement>(`[data-testid="cell:${direction === "upward" ? entityA : entityB}:c-title"]`)!;
       first.getBoundingClientRect = () => ({
         top: 32 - scroller.scrollTop, bottom: 64 - scroller.scrollTop,
         left: 40 - scroller.scrollLeft, right: 200 - scroller.scrollLeft,
@@ -261,7 +261,7 @@ describe("keyboard history queue", () => {
       await act(async () => anchor.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data })));
       await flushFrames();
       expect(onEditCells).toHaveBeenCalledOnce();
-      expect(onEditCells.mock.calls[0]![1][0]).toMatchObject({ entity: direction === "upward" ? "row-0" : entityB, field: "c-title" });
+      expect(onEditCells.mock.calls[0]![1][0]!.target).toMatchObject({ entity: direction === "upward" ? entityA : entityB, field: "c-title" });
       expect(scroller.scrollTop).toBe(0);
       expect(scroller.scrollLeft).toBe(0);
       expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
