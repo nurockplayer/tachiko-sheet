@@ -220,6 +220,62 @@ describe("keyboard history queue", () => {
     return { container, update, key, cell, view };
   }
 
+  it.each(["upward", "leftward"])("reveals the pasted start of a %s selection without moving its anchor", async direction => {
+    const view = makeView();
+    if (direction === "upward") {
+      view.table.columns = view.table.columns.slice(0, 1);
+      view.table.rows = Array.from({ length: 8001 }, (_, index) => ({
+        id: index === 0 ? entityA : `row-${index}`, key: `row-${index}`,
+        fields: [projected(index === 0 ? entityA : `row-${index}`, "c-title", { kind: "text", value: `Row ${index}` })],
+      }));
+    }
+    const onEditCells = vi.fn<NonNullable<SheetShellProps["onEditCells"]>>(async () => ({ kind: "confirmed" }));
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
+    const flushFrames = async () => { await act(async () => { while (frames.length) frames.shift()!(0); }); };
+    try {
+      const ui = await mount({ view, onEditCells });
+      const scroller = ui.container.querySelector<HTMLElement>(".ts-grid-scroll")!;
+      Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 100 });
+      scroller.getBoundingClientRect = () => ({ top: 0, bottom: 100, left: 0, right: 200 } as DOMRect);
+      await act(async () => ui.cell().dispatchEvent(new KeyboardEvent("keydown", { key: "End", ctrlKey: true, bubbles: true })));
+      await flushFrames();
+      const anchor = document.activeElement as HTMLElement;
+      expect(anchor.dataset.workEntity).toBe(direction === "upward" ? "row-8000" : entityB);
+      expect(anchor.dataset.workField).toBe(direction === "upward" ? "c-title" : "c-notes");
+      await act(async () => anchor.dispatchEvent(new KeyboardEvent("keydown", {
+        key: direction === "upward" ? "Home" : "ArrowLeft", ctrlKey: true, shiftKey: true, bubbles: true,
+      })));
+      await flushFrames();
+      const nameBox = ui.container.querySelector<HTMLInputElement>('[aria-label="Name Box"]')!;
+      const selection = nameBox.value;
+      const first = ui.container.querySelector<HTMLElement>(`[data-testid="cell:${direction === "upward" ? entityA : entityB}:c-title"]`)!;
+      first.getBoundingClientRect = () => ({
+        top: 32 - scroller.scrollTop, bottom: 64 - scroller.scrollTop,
+        left: 40 - scroller.scrollLeft, right: 200 - scroller.scrollLeft,
+      } as DOMRect);
+      scroller.scrollTop = direction === "upward" ? 8000 * 32 : 0;
+      scroller.scrollLeft = direction === "leftward" ? 480 : 0;
+      const data = new DataTransfer();
+      data.setData("text/plain", "pasted");
+      await act(async () => anchor.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data })));
+      await flushFrames();
+      expect(onEditCells).toHaveBeenCalledOnce();
+      expect(onEditCells.mock.calls[0]![1][0]!.target).toMatchObject({ entity: direction === "upward" ? entityA : entityB, field: "c-title" });
+      expect(scroller.scrollTop).toBe(0);
+      expect(first.getBoundingClientRect().left).toBeGreaterThanOrEqual(0);
+      expect(first.getBoundingClientRect().right).toBeLessThanOrEqual(200);
+      expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
+      expect(first.getBoundingClientRect().bottom).toBeLessThanOrEqual(100);
+      expect(document.activeElement).toBe(anchor);
+      expect(nameBox.value).toBe(selection);
+      expect(first.getAttribute("aria-selected")).toBe("true");
+      expect(anchor.getAttribute("aria-selected")).toBe("true");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("adds immediately with + and Shift+F11 from the grid and tab bar, using the lowest unused displayed name", async () => {
     const onAddTable = vi.fn<NonNullable<SheetShellProps["onAddTable"]>>(async () => ({ kind: "confirmed" }));
     const view = makeView();
