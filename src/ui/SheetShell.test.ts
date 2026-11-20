@@ -620,7 +620,7 @@ describe("paste completion reveal", () => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
     const scrollport = {
-      scrollTop: 0, scrollLeft: 0, clientHeight: 100,
+      scrollTop: 0, scrollLeft: 0, clientTop: 0, clientHeight: 83,
       querySelector: () => null,
       getBoundingClientRect: () => ({ top: 0, bottom: 100, left: 0, right: 400 }),
     };
@@ -666,7 +666,7 @@ describe("paste completion reveal", () => {
       await Promise.resolve();
       while (frames.length) frames.shift()!(0);
       if (outcome === "confirmed") {
-        expect(target.getBoundingClientRect().bottom).toBeLessThanOrEqual(100);
+        expect(target.getBoundingClientRect().bottom).toBeLessThanOrEqual(83);
         expect(target.getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
       } else {
         expect(scrollport.scrollTop).toBe(0);
@@ -2082,8 +2082,9 @@ describe("session-only frozen first column", () => {
   it("reveals a target behind the frozen strip", () => {
     let scrollLeft = 200;
     const scrollport = {
+      clientTop: 0, clientHeight: 400,
       getBoundingClientRect: () => ({ left: 0, right: 600, top: 0, bottom: 400 }),
-      querySelector: () => ({ getBoundingClientRect: () => ({ right: 208, width: 48 }) }),
+      querySelector: (selector: string) => selector === "thead" ? null : ({ getBoundingClientRect: () => ({ right: 208, width: 48 }) }),
       get scrollLeft() { return scrollLeft; },
       set scrollLeft(value) { scrollLeft = value; },
     };
