@@ -1728,6 +1728,7 @@ export function SheetShell(props: SheetShellProps) {
     const draft = position.entity === DRAFT_ROW;
     const at = address(position);
     const start = draft ? { row: displayRows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at;
+    const pastedPosition = draft ? position : { entity: rowEntity(displayRows[start.row]!), field: columns[start.column]!.id };
     const pasteBlocked = controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen;
     const copied = copiedFormulaRef.current;
     if (!valuesOnly && !draft && onCopyFormula && copied && copied.identity === collectionIdentity && Boolean(table.native_table_profile)
@@ -1743,7 +1744,7 @@ export function SheetShell(props: SheetShellProps) {
           const intent = completionIntent();
           void publishCells(() => onCopyFormula!(witness, plan.request), plan.count, "Updated", "paste").then(confirmed => {
             if (confirmed && pasteSource) setPasteRebind(pasteSource);
-            if (confirmed) revealPastedCell(position, intent);
+            if (confirmed) revealPastedCell(pastedPosition, intent);
           });
           return;
         }
@@ -1815,7 +1816,7 @@ export function SheetShell(props: SheetShellProps) {
       // Appended rows stay visible under the active filter, as Add row does.
       if (result.kind === "confirmed") {
         keepGridRows(result.addedEntities ?? []);
-        revealPastedCell(position, intent);
+        revealPastedCell(pastedPosition, intent);
       }
       announceClipboard(result.kind === "confirmed" ? `${draft ? "Added" : "Updated"} ${route.rows.length} row${route.rows.length === 1 ? "" : "s"}. Save to keep these changes.`
         : result.kind === "refused" ? pasteRefusal(result.message, result.fieldType, result.refusalCode)
