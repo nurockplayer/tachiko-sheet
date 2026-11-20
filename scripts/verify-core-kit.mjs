@@ -13,6 +13,14 @@ import { fileURLToPath } from 'node:url';
 // tuple for an explicit rollback, never mix receipts between qualified kits.
 const qualifiedArtifacts = [
   {
+    // Re-pin: two clean detached exports match; producer receipt on #246.
+    // PR #514 owns the review gate; row ranks and InsertRow position are not adopted.
+    sourceCommit: '348d6f766e553fff5bc9de6f045e13d24b89098c',
+    artifactManifestSha256: 'a3972e56235482a3ef9bb56a6572c50b6a8844eb4a55b5676ede09b0fc90f017',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/pull/514',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7046992039',
+  },
+  {
     // Re-pin: #246 records the producer handback; PR #507 carries the independent review.
     // Sheet retains lifecycle import_metadata; result is not adopted.
     sourceCommit: '38696aa013c03b8d28e732c7d1214daafc7e418e',
