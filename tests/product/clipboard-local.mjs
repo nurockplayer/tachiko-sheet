@@ -13,9 +13,6 @@ import { waitForColdHome, homeImportInput, openReleasePlanExample } from "./home
 
 const dist = process.env.WORK_DIST;
 if (!dist) { console.error("BLOCKED: WORK_DIST must name a built product."); process.exit(78); }
-// Standalone runs need the same Home fixtures as run-product-acceptance's prebuild step.
-execFileSync(process.execPath, [new URL("../../scripts/copy-example-fixture.mjs", import.meta.url).pathname,
-  path.join(dist, "examples")], { stdio: "inherit" });
 const work = await mkdtemp(path.join(tmpdir(), "sheet210-"));
 const evidence = process.env.CLIPBOARD_OUT ?? work;
 const screens = path.join(evidence, "screens");
