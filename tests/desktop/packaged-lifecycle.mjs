@@ -410,7 +410,14 @@ async function edit(row, column, value) {
   `);
   await timed("edit", () => evaluate(`
     press(${formula ? "document.querySelector('[data-testid=\"formula-bar-input\"]')" : 'textbox("Edit cell")'}, "Enter");
-    await waitFor(() => !textbox("Edit cell") && current() && cellAt(${row}, ${column})?.textContent === ${JSON.stringify(value)}, "published edit");
+    await waitFor(() => !textbox("Edit cell") && current(), "edit publication");
+    // Enter can move focus to the next row, including the entry row. The
+    // rendered window is disposable; reveal the edited row again before
+    // checking its published value, as cellText() and history() already do.
+    const beforeReveal = cellAt(${row}, ${column})?.textContent ?? null;
+    await reveal(${row});
+    await waitFor(() => current() && cellAt(${row}, ${column})?.textContent === ${JSON.stringify(value)}, "published edit (before reveal: " + JSON.stringify(beforeReveal) + ")");
+    if (beforeReveal !== ${JSON.stringify(value)}) console.log("Published edit required reveal: " + JSON.stringify({ row: ${row}, column: ${column}, beforeReveal, published: cellAt(${row}, ${column}).textContent }));
     return true;
   `));
 }
