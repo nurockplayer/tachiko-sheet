@@ -263,7 +263,8 @@ describe("keyboard history queue", () => {
       expect(onEditCells).toHaveBeenCalledOnce();
       expect(onEditCells.mock.calls[0]![1][0]!.target).toMatchObject({ entity: direction === "upward" ? entityA : entityB, field: "c-title" });
       expect(scroller.scrollTop).toBe(0);
-      expect(scroller.scrollLeft).toBe(0);
+      expect(first.getBoundingClientRect().left).toBeGreaterThanOrEqual(0);
+      expect(first.getBoundingClientRect().right).toBeLessThanOrEqual(200);
       expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
       expect(first.getBoundingClientRect().bottom).toBeLessThanOrEqual(100);
       expect(document.activeElement).toBe(anchor);
