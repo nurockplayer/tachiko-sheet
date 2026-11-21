@@ -198,9 +198,7 @@ async function duplicate(page, name) {
 
 async function filledColumn(page, table, column, rows) {
   const later = await projection(page);
-  const values = Array.from({ length: rows }, (_, index) => fieldAt(later, index, column)?.stored?.value);
-  for (const [row, value] of values.entries()) await waitForCellText(page, cellIdFor(later, row, column), String(value));
-  return values;
+  return Array.from({ length: rows }, (_, index) => fieldAt(later, index, column)?.stored?.value);
 }
 
 function sheetXml(file) {
@@ -1253,6 +1251,7 @@ const cases = [
     await settle(page);
     const filled = await filledColumn(page, table, 0, 4);
     assert.deepEqual(filled.map(String), ["1", "1", "1", "4"], `Ctrl+D did not fill the selected range from its top cell: ${JSON.stringify(filled)}`);
+    for (const [row, text] of ["1", "1", "1", "4"].entries()) await waitForCellText(page, cellIdFor(table, row, 0), text);
   } },
   { id: "40", name: "Paste Special", tier: "B", budgetMs: 60_000, waitMs: 10_000, note: "Values and formulas only: no formats exist to paste yet.", run: async (page) => {
     await example(page);
