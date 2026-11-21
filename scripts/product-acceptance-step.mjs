@@ -51,7 +51,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
     if (process.platform === 'darwin') {
       processScannerDirectory = mkdtempSync(path.join(tmpdir(), 'sheet-process-table-'));
       processScanner = path.join(processScannerDirectory, 'process-table');
-      const compiled = spawnSync('/usr/bin/clang', ['-O2', '-o', processScanner,
+      const compiled = spawnSync('/usr/bin/clang', ['-O2', '-lproc', '-o', processScanner,
         fileURLToPath(new URL('./product-acceptance-process-table.c', import.meta.url))], {
         encoding: 'utf8', timeout: PROCESS_SCAN_TIMEOUT_MS,
       });
