@@ -9,7 +9,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../public/core-kit/experimental-client.js";
-import type { A1Geometry, CapacityProjection, SelectionStatisticsProjection, ColumnTotalsProjection, DistinctValuesProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, KeyedGroupedSumProjection, NameFailure, DateFormat, NumberFormat, CellAlignment } from "../public/core-kit/runtime/protocol.js";
+import type { A1Geometry, CapacityProjection, SelectionStatisticsProjection, SelectionStatisticsRange, ColumnTotalsProjection, DistinctValuesProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, KeyedGroupedSumProjection, NameFailure, DateFormat, NumberFormat, CellAlignment } from "../public/core-kit/runtime/protocol.js";
 import type { A1TranslationOutcome, GroupTotalsOutcome } from "./runtime/session.js";
 import type {
   CleanupOperation,
@@ -132,7 +132,7 @@ export interface SheetRuntime {
   /** `columnNames` names the copy's columns by source field id (imported headings Work does not hold). */
   duplicateCollection(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>): Promise<ConfirmedPublication>;
   /** Work's Number totals over exactly these entities; null when the kit lacks it or the revision moved. */
-  querySelectionStatistics(witness: ViewWitness, targets: FieldTarget[]): Promise<SelectionStatisticsProjection | "too-large" | null>;
+  querySelectionStatistics(witness: ViewWitness, selection: FieldTarget[] | SelectionStatisticsRange): Promise<SelectionStatisticsProjection | "too-large" | null>;
   queryColumnTotals(witness: ViewWitness, collection: string, entities: string[]): Promise<ColumnTotalsProjection | null>;
   /** Work's distinct column texts; null when unavailable or the revision moved. */
   queryDistinctValues(witness: ViewWitness, collection: string, field: string): Promise<DistinctValuesProjection | null>;
@@ -413,7 +413,7 @@ export interface SheetShellProps {
   onMoveColumn?(witness: ViewWitness, collection: string, field: string, toIndex: number): Promise<RowCommandOutcome>;
   onRemoveRows?(witness: ViewWitness, collection: string, entities: string[]): Promise<RowCommandOutcome>;
   onDuplicateTable?(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>): Promise<RowCommandOutcome>;
-  onQuerySelectionStatistics?(witness: ViewWitness, targets: FieldTarget[]): Promise<SelectionStatisticsProjection | "too-large" | null>;
+  onQuerySelectionStatistics?(witness: ViewWitness, selection: FieldTarget[] | SelectionStatisticsRange): Promise<SelectionStatisticsProjection | "too-large" | null>;
   /** Totals of the rows a filter shows; arithmetic stays in Work. */
   onQueryShownTotals?(witness: ViewWitness, collection: string, entities: string[]): Promise<ColumnTotalsProjection | null>;
   /** Existing column texts for in-cell completion; Work owns the values. */

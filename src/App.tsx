@@ -6,7 +6,7 @@ import { DetachedReportPresentations } from "./application/detached-report-prese
 import { readWorkFile, requireWorkFileName, sameWorkFileOmissions, workFileOmissions, WORK_FILE_SAVE_UNAVAILABLE } from "./application/work-file.js";
 import { createMutationCompletion, settledSaveStatus, salesRevisionHasChanged, type MutationRecovery } from "./app/mutation-completion.js";
 import { preparedDownloadIsCurrent, type PreparedDownload } from "./application/prepared-download.js";
-import type { FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope } from "../public/core-kit/runtime/protocol.js";
+import type { FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, SelectionStatisticsRange } from "../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   type AnySavedCopy,
@@ -1837,8 +1837,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.addTable(witness, name, columns), importedSourceRef.current?.format === "xlsx" ? null : "add", name, true);
   }
 
-  function querySelectionStatistics(witness: ViewWitness, targets: FieldTarget[]) {
-    return runtime.querySelectionStatistics(witness, targets);
+  function querySelectionStatistics(witness: ViewWitness, selection: FieldTarget[] | SelectionStatisticsRange) {
+    return runtime.querySelectionStatistics(witness, selection);
   }
 
   function queryShownTotals(witness: ViewWitness, collection: string, entities: string[]) {
