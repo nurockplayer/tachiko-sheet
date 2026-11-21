@@ -353,18 +353,39 @@ try {
     await button(direction).click();
     await labels(expected);
   };
-  await button("Add sheet").click();
-  await labels(["Table", "Report", "Sheet 3"]);
-  await selected(2);
-  await history("Undo", ["Table", "Report"]);
-  await history("Redo", ["Table", "Report", "Sheet 3"]);
+  // #508: inspect real downloads before any Save or process restart can
+  // refresh App's imported metadata and hide a missed publication update.
+  const immediateExport = async (stage, expected) => {
+    await ready();
+    await mode("Import & export").click();
+    await button("Prepare XLSX").click();
+    const dialog = page.getByRole("dialog", { name: "Confirm download", exact: true });
+    await dialog.waitFor();
+    const downloaded = page.waitForEvent("download");
+    await dialog.getByRole("button", { name: "Download", exact: true }).click();
+    const file = path.join(work, `immediate-${stage}.xlsx`);
+    await (await downloaded).saveAs(file);
+    const xml = execFileSync("python3", ["-c", "import sys, zipfile; sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read('xl/workbook.xml').decode('utf-8'))", file], { encoding: "utf8" });
+    assert.deepEqual([...xml.matchAll(/<sheet\s[^>]*name="([^"]+)"/g)].map(match => match[1]), expected,
+      `#508 same-session XLSX sheet names after ${stage}, without Save or restart`);
+    await mode("Table").click();
+  };
   await tabs().first().click({ button: "right" });
   await page.getByRole("menuitem", { name: "Rename sheet…" }).click();
   const importedRename = page.getByRole("dialog", { name: "Rename sheet" });
   await importedRename.getByLabel("Sheet name").fill("Renamed original");
   await importedRename.getByRole("button", { name: "Rename", exact: true }).click();
+  await immediateExport("rename", ["Renamed original", "Report"]);
+  await labels(["Renamed original", "Report"]);
+  await history("Undo", ["Table", "Report"]);
+  await immediateExport("undo", ["Table", "Report"]);
+  await history("Redo", ["Renamed original", "Report"]);
+  await immediateExport("redo", ["Renamed original", "Report"]);
+  checks.push("#508 same-session XLSX downloads after imported rename, Undo and Redo, without Save or restart");
+  await button("Add sheet").click();
   await labels(["Renamed original", "Report", "Sheet 3"]);
-  await history("Undo", ["Table", "Report", "Sheet 3"]);
+  await selected(2);
+  await history("Undo", ["Renamed original", "Report"]);
   await history("Redo", ["Renamed original", "Report", "Sheet 3"]);
   await tabs().nth(1).click({ button: "right" });
   await page.getByRole("menuitem", { name: "Delete sheet…" }).click();
