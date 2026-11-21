@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { formulaPersistence } from "./formula-persistence.mjs";
 import { pasteRaces } from "./paste-races.mjs";
+import { windowsAltGr } from "./windows-altgr.mjs";
 
 const platform = process.platform;
 assert.ok(
@@ -335,6 +336,8 @@ async function main() {
   `);
   assert.deepEqual(rows, [["Alpha", "1"], ["Beta", "2"], ["Gamma", "3"]], `the imported grid shows the CSV rows: ${JSON.stringify(rows)}`);
   pass("a CSV imports through the native runtime and shows its three rows");
+
+  if (platform === "win32") await windowsAltGr({ evaluate, appPid: appSession.child.pid });
 
   // 3. An edit is published and visible.
   await editCell(0, 0, EDITED);

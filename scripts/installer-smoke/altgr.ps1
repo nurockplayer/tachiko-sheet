@@ -1,9 +1,8 @@
 param(
-    [Parameter(Mandatory=$true)][int]$AppPid,
-    [ValidateSet('V','Q')][string]$Key = 'V'
+    [Parameter(Mandatory=$true)][int]$AppPid
 )
 $ErrorActionPreference = 'Stop'
-trap { Write-Error "AltGr native input: $_"; exit 1 }
+trap { Write-Error "AltGr native input NOT DELIVERED: $_"; exit 1 }
 Add-Type @'
 using System;
 using System.ComponentModel;
@@ -17,8 +16,26 @@ public static class AltGrInput {
     [DllImport("user32.dll", SetLastError=true)] public static extern bool PostMessageW(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent, IntPtr window);
     [DllImport("user32.dll", SetLastError=true)] public static extern bool AttachThreadInput(uint from, uint to, bool attach);
     [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+    public static void Activate(IntPtr target) {
+        if (GetForegroundWindow() == target) return;
+        uint owner;
+        uint foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out owner);
+        uint helperThread = GetCurrentThreadId();
+        bool attached = foregroundThread != 0 && foregroundThread != helperThread;
+        if (attached && !AttachThreadInput(helperThread, foregroundThread, true))
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "AttachThreadInput failed");
+        try {
+            bool activated = SetForegroundWindow(target);
+            if (!activated || GetForegroundWindow() != target)
+                throw new InvalidOperationException("foreground transfer refused: target=" + target + ", actual=" + GetForegroundWindow());
+        } finally {
+            if (attached && !AttachThreadInput(helperThread, foregroundThread, false))
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "AttachThreadInput detach failed");
+        }
+    }
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int left, top, right, bottom; }
     [StructLayout(LayoutKind.Sequential)] public struct GUITHREADINFO {
         public int cbSize; public uint flags; public IntPtr active, focus, capture, menu, move, caret; public RECT caretRect;
@@ -56,7 +73,11 @@ public static class AltGrInput {
     static INPUT Key(ushort scan, uint flags) {
         return new INPUT { type = 1, data = new UNION { keyboard = new KEYBDINPUT { scan = scan, flags = flags | 8 } } };
     }
-    public static void Send(ushort scan) {
+    public static void Send(IntPtr target, ushort scan) {
+        var info = new GUITHREADINFO { cbSize = Marshal.SizeOf(typeof(GUITHREADINFO)) };
+        if (GetForegroundWindow() != target || !GetGUIThreadInfo(0, ref info) ||
+            info.focus == IntPtr.Zero || (info.focus != target && !IsChild(target, info.focus)))
+            throw new InvalidOperationException("app lost foreground/keyboard focus before SendInput");
         var keys = new[] { Key(0x38, 1), Key(scan, 0), Key(scan, 2), Key(0x38, 3) };
         uint sent = SendInput((uint)keys.Length, keys, Marshal.SizeOf(typeof(INPUT)));
         if (sent != keys.Length) throw new Win32Exception(Marshal.GetLastWin32Error(), "SendInput delivered " + sent + "/4 events");
@@ -76,21 +97,16 @@ $loader.ShowInTaskbar = $false
 $loader.Show()
 $layout = [IntPtr]::Zero
 try {
-    # The loader must own keyboard focus when LoadKeyboardLayoutW is called.
-    [uint32]$foregroundOwner = 0
-    $foregroundThread = [AltGrInput]::GetWindowThreadProcessId([AltGrInput]::GetForegroundWindow(), [ref]$foregroundOwner)
-    $helperThread = [AltGrInput]::GetCurrentThreadId()
-    $attached = $false
-    if ($foregroundThread -and $foregroundThread -ne $helperThread) {
-        $attached = [AltGrInput]::AttachThreadInput($helperThread, $foregroundThread, $true)
-        if (-not $attached) { throw "AttachThreadInput failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }
-    }
-    try { [void][AltGrInput]::SetForegroundWindow($loader.Handle) }
-    finally { if ($attached) { [void][AltGrInput]::AttachThreadInput($helperThread, $foregroundThread, $false) } }
-    if ([AltGrInput]::GetForegroundWindow() -ne $loader.Handle) { throw 'Could not focus AltGr layout loader' }
+    # Load once while this helper owns focus; keep it alive for both chords.
+    [AltGrInput]::Activate($loader.Handle)
     $layout = [AltGrInput]::LoadKeyboardLayoutW('00000407', 0)
-    if ($layout -eq [IntPtr]::Zero -or ($layout.ToInt64() -band 0xFFFF) -ne 0x0407) { throw "German keyboard layout unavailable; install German keyboard layout for this user (returned $($layout.ToInt64().ToString('X')))" }
-[void][AltGrInput]::SetForegroundWindow($window)
+    if ($layout -eq [IntPtr]::Zero -or ($layout.ToInt64() -band 0xFFFF) -ne 0x0407) { throw 'German keyboard layout unavailable' }
+    [AltGrInput]::Activate($window)
+    Write-Host 'AltGr native input ready'
+    $previous = [IntPtr]::Zero
+    while ($null -ne ($Key = [Console]::ReadLine())) {
+    if ($Key -notin @('V', 'Q')) { throw "Unknown AltGr input request: $Key" }
+[AltGrInput]::Activate($window)
 Start-Sleep -Milliseconds 200
 $info = New-Object AltGrInput+GUITHREADINFO
 $info.cbSize = [Runtime.InteropServices.Marshal]::SizeOf($info)
@@ -98,11 +114,14 @@ $gotInfo = [AltGrInput]::GetGUIThreadInfo($thread, [ref]$info)
 $focus = $info.focus
 [uint32]$focusOwner = 0
 $focusedThread = if ($focus -ne [IntPtr]::Zero) { [AltGrInput]::GetWindowThreadProcessId($focus, [ref]$focusOwner) } else { 0 }
-$previous = if ($focusedThread) { [AltGrInput]::GetKeyboardLayout($focusedThread) } else { [IntPtr]::Zero }
+$focusedLayout = if ($focusedThread) { [AltGrInput]::GetKeyboardLayout($focusedThread) } else { [IntPtr]::Zero }
+if ($previous -eq [IntPtr]::Zero) { $previous = $focusedLayout }
 $layouts = [AltGrInput]::Layouts()
-Write-Host "AltGr diagnostics: focusedHWND=$($focus.ToInt64().ToString('X')) focusedThread=$focusedThread focusedHKL=$($previous.ToInt64().ToString('X')) appSession=$($process.SessionId) helperSession=$((Get-Process -Id $PID).SessionId) inputDesktop=$([AltGrInput]::InputDesktopName()) layouts=$layouts"
+Write-Host "AltGr diagnostics: focusedHWND=$($focus.ToInt64().ToString('X')) focusedThread=$focusedThread focusedHKL=$($focusedLayout.ToInt64().ToString('X')) appSession=$($process.SessionId) helperSession=$((Get-Process -Id $PID).SessionId) inputDesktop=$([AltGrInput]::InputDesktopName()) layouts=$layouts"
 if ([AltGrInput]::GetForegroundWindow() -ne $window) { throw "SetForegroundWindow could not focus app PID $AppPid" }
 if (-not $gotInfo -or -not $focusedThread) { throw "GetGUIThreadInfo could not resolve the focused input window for app thread $thread" }
+# WebView2's focused child HWND can belong to its separate browser process.
+if ($focus -ne $window -and -not [AltGrInput]::IsChild($window, $focus)) { throw "focused input HWND $focus (PID $focusOwner) is outside app HWND $window" }
     if (-not [AltGrInput]::PostMessageW($focus, 0x50, [IntPtr]::Zero, $layout)) {
         throw "WM_INPUTLANGCHANGEREQUEST failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
     }
@@ -110,12 +129,12 @@ if (-not $gotInfo -or -not $focusedThread) { throw "GetGUIThreadInfo could not r
     $actual = [AltGrInput]::GetKeyboardLayout($focusedThread)
     Write-Host "AltGr focused layout: HWND=$($focus.ToInt64().ToString('X')) thread=$focusedThread requested=$($layout.ToInt64().ToString('X')) actual=$($actual.ToInt64().ToString('X'))"
     if ($actual -ne $layout) { throw "focused thread did not activate German AltGr layout: requested=$($layout.ToInt64().ToString('X')) actual=$($actual.ToInt64().ToString('X'))" }
-    [AltGrInput]::Send($(if ($Key -eq 'Q') { 0x10 } else { 0x2f }))
+    [AltGrInput]::Send($window, $(if ($Key -eq 'Q') { 0x10 } else { 0x2f }))
     Start-Sleep -Milliseconds 300
-    Write-Host "AltGr native input sent: PID $AppPid, layout 00000407, Right-Alt+$Key via SendInput"
+    Write-Host "AltGr native input queued: PID $AppPid, layout 00000407, Right-Alt+$Key via SendInput (4/4); foreground/focus verified; app receipt still required"
+    }
 } finally {
     if ($focus -and $previous) { [void][AltGrInput]::PostMessageW($focus, 0x50, [IntPtr]::Zero, $previous) }
-    # Give the app thread time to release the test layout before unloading it.
     Start-Sleep -Milliseconds 200
     if ($layout -ne [IntPtr]::Zero) { [void][AltGrInput]::UnloadKeyboardLayout($layout) }
     $loader.Dispose()
