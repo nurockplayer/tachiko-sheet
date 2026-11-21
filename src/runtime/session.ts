@@ -14,7 +14,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
-import type { A1Geometry, A1RefusalCode, A1Translation, A1TranslationNote, CapacityProjection, SelectionStatisticsProjection, ColumnTotalsProjection, DistinctValuesProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, GroupTotalsProjection, KeyedGroupedSumProjection, TableWindowProjection, DateFormat, NumberFormat, CellAlignment } from "../../public/core-kit/runtime/protocol.js";
+import type { A1Geometry, A1RefusalCode, A1Translation, A1TranslationNote, CapacityProjection, SelectionStatisticsProjection, SelectionStatisticsRange, ColumnTotalsProjection, DistinctValuesProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, GroupTotalsProjection, KeyedGroupedSumProjection, TableWindowProjection, DateFormat, NumberFormat, CellAlignment } from "../../public/core-kit/runtime/protocol.js";
 import { MAX_WIRE_REQUEST_BYTES, MAX_PROJECT_TRANSFER_BYTES } from "../host/native-runtime.js";
 import type {
   CleanupOperation,
@@ -804,20 +804,23 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
-  function querySelectionStatistics(witness: ViewWitness, targets: FieldTarget[]): Promise<SelectionStatisticsProjection | "too-large" | null> {
+  function querySelectionStatistics(witness: ViewWitness, selection: FieldTarget[] | SelectionStatisticsRange): Promise<SelectionStatisticsProjection | "too-large" | null> {
     return enqueue(async () => {
       const expected = epoch;
       const { kit, client } = await loadKitOnce();
       assertUsable(expected);
-      const query = client.querySelectionStatistics;
-      if (typeof query !== "function") return null;
+      const query = Array.isArray(selection)
+        ? client.querySelectionStatistics?.bind(client, witness.revision, selection)
+        : client.querySelectionRangeStatistics?.bind(client, witness.revision, selection);
+      if (!query) return null;
       const live = session();
       if (witness.occurrence !== live.scope || witness.revision !== live.revision) return null;
-      const request = { type: "query_selection_statistics", expected_revision: witness.revision, targets };
+      const request = { type: "query_selection_statistics", expected_revision: witness.revision,
+        ...(Array.isArray(selection) ? { targets: selection } : { range: selection }) };
       if (new TextEncoder().encode(JSON.stringify(request)).byteLength > requestByteLimit) return "too-large";
       let result;
       try {
-        result = await afterUsable(expected, dispatch(kit, () => query.call(client, witness.revision, targets)));
+        result = await afterUsable(expected, dispatch(kit, query));
       } catch (error) {
         if (hasFailureCode(kit, error, "request_too_large")) return "too-large";
         throw error;

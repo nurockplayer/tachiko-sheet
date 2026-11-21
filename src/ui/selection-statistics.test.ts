@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { rectangle } from "./clipboard.js";
-import { selectionStatisticsTargets } from "./selection-statistics.js";
+import { selectionStatisticsRange, selectionStatisticsTargets } from "./selection-statistics.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
 
 const row = (id: string): TableRow => ({ id, key: id, fields: [] });
@@ -40,5 +40,17 @@ describe("selection statistics targets", () => {
       { top: 0, bottom: 1, left: -1, right: 1 },
       { top: 0, bottom: 1, left: 0, right: 2 },
     ]) expect(selectionStatisticsTargets(rows, columns, area)).toEqual([]);
+  });
+});
+
+describe("selection statistics range", () => {
+  it("maps 10,000 stored rows to inclusive anchors and selected field IDs without reading values", () => {
+    const largeRows = Array.from({ length: 10_000 }, (_, index) => {
+      const projected = row(`e${index}`);
+      Object.defineProperty(projected, "fields", { get(): never { throw new Error("values must not be read"); } });
+      return projected;
+    });
+    expect(selectionStatisticsRange("table", largeRows, columns, { top: 0, bottom: 9_999, left: 1, right: 1 }))
+      .toEqual({ collection: "table", first: "e0", last: "e9999", fields: ["b"] });
   });
 });

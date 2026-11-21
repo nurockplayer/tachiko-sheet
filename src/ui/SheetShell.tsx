@@ -49,7 +49,7 @@ import type { InterfaceProfileV1 } from "../application/interface-profile-contra
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
 import { EDIT_CELLS_MAX, cutBlockRefusal, ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress, type CellRectangle } from "./clipboard.js";
 import { SelectionStatisticsBar } from "./SelectionStatisticsBar.js";
-import { selectionStatisticsTargets } from "./selection-statistics.js";
+import { selectionStatisticsRange, selectionStatisticsTargets } from "./selection-statistics.js";
 import type { SelectionStatisticsProjection } from "../../public/core-kit/runtime/protocol.js";
 import { copiedEdges } from "./copied-area.js";
 import { CSV_DELIMITER_LABELS, CSV_ENCODING_LABELS, type CsvDelimiter, type CsvEncoding } from "./csv-text.js";
@@ -2613,12 +2613,13 @@ export function SheetShell(props: SheetShellProps) {
   useEffect(() => { setTableMenu(null); }, [view?.occurrence]);
 
   const statisticsSelection = useMemo(() => {
-    if (!boundSelection || !witness || currentness !== "current" || tab !== "table") return null;
+    if (!boundSelection || !witness || !table || currentness !== "current" || tab !== "table") return null;
     const area = rectangle(address(boundSelection.anchor), address(boundSelection.end));
     if (area.top < 0 || area.left < 0 || area.bottom >= displayRows.length || area.right >= columns.length ||
       (area.bottom - area.top + 1) * (area.right - area.left + 1) < 2) return null;
-    return { witness, area, rows: displayRows, columns };
-  }, [boundSelection, witness, currentness, tab, displayRows, columns]);
+    return { witness, area, rows: displayRows, columns, collection: table.collection.key,
+      storedOrder: !gridSettings.sort && !gridSettings.filters?.length };
+  }, [boundSelection, witness, table, currentness, tab, displayRows, columns, gridSettings.sort, gridSettings.filters]);
   const [selectionStatistics, setSelectionStatistics] = useState<{
     selection: NonNullable<typeof statisticsSelection>; statistics: SelectionStatisticsProjection | "too-large";
   } | null>(null);
@@ -2642,7 +2643,10 @@ export function SheetShell(props: SheetShellProps) {
       void (async () => {
         try {
           const result = await statisticsQuery.current!(selection.witness,
-            selectionStatisticsTargets(selection.rows, selection.columns, selection.area));
+            // Range anchors use stored order; sorted/filtered views need exact displayed targets.
+            selection.storedOrder
+              ? selectionStatisticsRange(selection.collection, selection.rows, selection.columns, selection.area)
+              : selectionStatisticsTargets(selection.rows, selection.columns, selection.area));
           if (result && statisticsLive.current === selection) setSelectionStatistics({ selection, statistics: result });
         } catch { /* An advisory read never interrupts the grid. */ }
         finally {
