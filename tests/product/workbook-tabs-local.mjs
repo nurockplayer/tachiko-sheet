@@ -356,6 +356,7 @@ try {
   // #508: inspect real downloads before any Save or process restart can
   // refresh App's imported metadata and hide a missed publication update.
   const immediateExport = async (stage, expected) => {
+    await ready();
     await mode("Import & export").click();
     await button("Prepare XLSX").click();
     const dialog = page.getByRole("dialog", { name: "Confirm download", exact: true });
@@ -374,8 +375,8 @@ try {
   const importedRename = page.getByRole("dialog", { name: "Rename sheet" });
   await importedRename.getByLabel("Sheet name").fill("Renamed original");
   await importedRename.getByRole("button", { name: "Rename", exact: true }).click();
-  await labels(["Renamed original", "Report"]);
   await immediateExport("rename", ["Renamed original", "Report"]);
+  await labels(["Renamed original", "Report"]);
   await history("Undo", ["Table", "Report"]);
   await immediateExport("undo", ["Table", "Report"]);
   await history("Redo", ["Renamed original", "Report"]);
