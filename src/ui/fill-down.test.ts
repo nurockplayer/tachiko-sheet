@@ -93,3 +93,28 @@ describe("fill down request planning", () => {
       .toThrow("The fill range exceeds the 100,000-cell limit. Nothing was filled.");
   });
 });
+
+describe("directional fill planning", () => {
+  it("copies each value in a column horizontally in one batch", () => {
+    const rows = [row(0, { a: "x", b: "old" }), row(1, { a: "y", b: "old" })];
+    expect(fillDownPlan(rows, columns, { top: 0, left: 0, bottom: 1, right: 1 }, true, true, { top: 0, left: 0, bottom: 1, right: 0 })).toEqual({
+      kind: "values", count: 2, edits: [
+        { target: { entity: "entity-0", field: "b" }, input: { kind: "text", value: "x" } },
+        { target: { entity: "entity-1", field: "b" }, input: { kind: "text", value: "y" } },
+      ],
+    });
+  });
+
+  it.each([false, true])("delegates upward/leftward formula references to Work (horizontal=%s)", horizontal => {
+    const rows = [row(0, { a: "1", b: "2" }), row(1, { a: "3", b: "4" }, ["b"])];
+    const source = { top: 1, left: 1, bottom: 1, right: 1 };
+    const area = horizontal ? { ...source, left: 0 } : { ...source, top: 0 };
+    expect(fillDownPlan(rows, columns, area, true, true, source)).toEqual({
+      kind: "formula", count: 1, request: {
+        source: { entity: "entity-1", field: "b" },
+        destinations: [{ entity: horizontal ? "entity-1" : "entity-0", field: horizontal ? "a" : "b" }],
+        fixed_references: [], relative_rows: false, relative_columns: horizontal,
+      },
+    });
+  });
+});
