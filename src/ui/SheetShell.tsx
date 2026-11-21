@@ -858,7 +858,7 @@ export function SheetShell(props: SheetShellProps) {
   const requestPrint = () => setPrinting(printRequestRef.current += 1);
   const gridScrollFrameRef = useRef<number | null>(null);
   const pasteRevealFrameRef = useRef<number | null>(null);
-  const pendingPasteRevealRef = useRef<{ position: GridPosition; collectionIdentity: string; intent: { generation: number; occurrence: string | null } } | null>(null);
+  const pendingPasteRevealRef = useRef<{ position: GridPosition; collectionIdentity: string | null; intent: { generation: number; occurrence: string | null } } | null>(null);
   // A focus target waiting for its windowed row to mount, with the user-intent
   // generation at request time; any newer input cancels it.
   const pendingCellFocusRef = useRef<{ entity: string; field: string; generation: number } | null>(null);
