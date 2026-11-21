@@ -616,7 +616,7 @@ describe("keyboard history queue", () => {
 });
 
 describe("paste completion reveal", () => {
-  it.each(["confirmed", "refused", "cancelled"])("reveals an off-screen target only after confirmed paste (%s)", async outcome => {
+  it.each(["confirmed", "refused", "cancelled", "offset/window changes", "wheel", "touch"])("reveals an off-screen target only after confirmed paste (%s)", async outcome => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
     const scrollport = {
@@ -624,11 +624,12 @@ describe("paste completion reveal", () => {
       querySelector: () => null,
       getBoundingClientRect: () => ({ top: 0, bottom: 100, left: 0, right: 400 }),
     };
+    let cellTop = 400;
     class Cell {
       dataset = { workEntity: entityB, workField: "c-title" };
       classList = { contains: () => false };
       closest(selector: string) { return selector.startsWith("td[") ? this : null; }
-      getBoundingClientRect() { return { top: 400 - scrollport.scrollTop, bottom: 432 - scrollport.scrollTop, left: 20, right: 120 }; }
+      getBoundingClientRect() { return { top: cellTop - scrollport.scrollTop, bottom: cellTop + 32 - scrollport.scrollTop, left: 20, right: 120 }; }
     }
     const target = new Cell();
     const doc = { activeElement: target };
@@ -660,16 +661,35 @@ describe("paste completion reveal", () => {
         grid.props.onPaste({ target, preventDefault() {}, clipboardData: { types: ["text/plain"], getData: () => "pasted" } });
         expect(publish).toHaveBeenCalledOnce();
         expect(scrollport.scrollTop).toBe(0);
-        finish(outcome === "confirmed" ? { kind: "confirmed" } : { kind: "refused", message: "Refused" });
+        finish(outcome === "refused" ? { kind: "refused", message: "Refused" } : { kind: "confirmed" });
       }
       await Promise.resolve();
       await Promise.resolve();
-      while (frames.length) frames.shift()!(0);
-      if (outcome === "confirmed") {
+      if (outcome === "offset/window changes") {
+        // Publication's estimated scroll is clamped while the virtual window
+        // replaces its rows. The target mounts only after the first frame.
+        scrollport.scrollTop = 200;
+        cell.props.ref(null);
+        frames.shift()!(0);
+        cellTop = 700;
+        cell.props.ref(target);
+        frames.shift()!(0);
+        // A later measurement/commit changes both offsets and cell geometry.
+        cellTop = 1000;
+        scrollport.scrollTop = 850;
+        scroller.props.onScroll();
+      } else if (outcome === "wheel" || outcome === "touch") {
+        scroller.props[outcome === "wheel" ? "onWheelCapture" : "onTouchMoveCapture"]();
+        scrollport.scrollTop = 20;
+        scroller.props.onScroll();
+      }
+      for (let frame = 0; frames.length && frame < 10; frame++) frames.shift()!(0);
+      expect(frames).toHaveLength(0);
+      if (outcome === "confirmed" || outcome === "offset/window changes") {
         expect(target.getBoundingClientRect().bottom).toBeLessThanOrEqual(83);
         expect(target.getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
       } else {
-        expect(scrollport.scrollTop).toBe(0);
+        expect(scrollport.scrollTop).toBe(outcome === "wheel" || outcome === "touch" ? 20 : 0);
         if (outcome === "cancelled") expect(publish).not.toHaveBeenCalled();
       }
     } finally {

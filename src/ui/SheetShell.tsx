@@ -857,6 +857,8 @@ export function SheetShell(props: SheetShellProps) {
   const printRequestRef = useRef(0);
   const requestPrint = () => setPrinting(printRequestRef.current += 1);
   const gridScrollFrameRef = useRef<number | null>(null);
+  const pasteRevealFrameRef = useRef<number | null>(null);
+  const pendingPasteRevealRef = useRef<{ position: GridPosition; collectionIdentity: string; intent: { generation: number; occurrence: string | null } } | null>(null);
   // A focus target waiting for its windowed row to mount, with the user-intent
   // generation at request time; any newer input cancels it.
   const pendingCellFocusRef = useRef<{ entity: string; field: string; generation: number } | null>(null);
@@ -1830,20 +1832,51 @@ export function SheetShell(props: SheetShellProps) {
 
   function revealPastedCell(position: GridPosition, intent: ReturnType<typeof completionIntent>): void {
     if (!completionMayUpdateUi(intent)) return;
+    pendingPasteRevealRef.current = { position, collectionIdentity, intent };
     const rowIndex = rowIndexByEntity.get(position.entity);
     if (rowIndex !== undefined) revealGridRow(rowIndex);
-    const scroller = gridScrollRef.current;
-    const scrollTop = scroller?.scrollTop, scrollLeft = scroller?.scrollLeft;
-    // A windowed target may mount with the confirmed projection. Keep focus and selection intact.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (!completionMayUpdateUi(intent) || clipboardIdentityRef.current !== collectionIdentity) return;
-      // A scroll after publication is a newer viewport choice. The delayed
-      // reveal must not pull it back to the pasted row.
-      if (!scroller || gridScrollRef.current !== scroller || scroller.scrollTop !== scrollTop || scroller.scrollLeft !== scrollLeft) return;
-      const cell = cellRefs.current.get(cellKey(position.entity, position.field));
-      if (cell) scrollCellIntoGridNearest(cell, scroller);
-    }));
+    schedulePasteReveal();
   }
+
+  function schedulePasteReveal(): void {
+    if (!pendingPasteRevealRef.current || pasteRevealFrameRef.current !== null) return;
+    pasteRevealFrameRef.current = requestAnimationFrame(() => {
+      pasteRevealFrameRef.current = null;
+      correctPasteReveal();
+    });
+  }
+
+  function correctPasteReveal(): void {
+    const pending = pendingPasteRevealRef.current;
+    if (!pending) return;
+    if (!completionMayUpdateUi(pending.intent) || clipboardIdentityRef.current !== pending.collectionIdentity) {
+      pendingPasteRevealRef.current = null;
+      return;
+    }
+    const scroller = gridScrollRef.current;
+    if (!scroller) return;
+    const { position } = pending;
+    const cell = cellRefs.current.get(cellKey(position.entity, position.field));
+    if (!cell) {
+      const rowIndex = rowIndexByEntity.get(position.entity);
+      if (rowIndex === undefined) { pendingPasteRevealRef.current = null; return; }
+      revealGridRow(rowIndex);
+      schedulePasteReveal();
+      return;
+    }
+    const top = scroller.scrollTop, left = scroller.scrollLeft;
+    const visible = scrollCellIntoGridNearest(cell, scroller);
+    // Recheck after scrolling commits a new virtual window. Keep the request
+    // through later layout/offset changes until newer user intent cancels it.
+    if (!visible || top !== scroller.scrollTop || left !== scroller.scrollLeft) schedulePasteReveal();
+  }
+
+  function cancelPasteReveal(): void {
+    focusIntentRef.current += 1;
+    pendingPasteRevealRef.current = null;
+  }
+
+  useLayoutEffect(() => { correctPasteReveal(); });
 
   async function publishCells(run: () => Promise<RowCommandOutcome>, count: number, verb: "Cleared" | "Filled" | "Cut" | "Updated", noun: "clear" | "fill" | "cut" | "paste"): Promise<boolean> {
     const intent = completionIntent();
@@ -2189,6 +2222,7 @@ export function SheetShell(props: SheetShellProps) {
 
   useEffect(() => () => {
     if (gridScrollFrameRef.current !== null) window.cancelAnimationFrame(gridScrollFrameRef.current);
+    if (pasteRevealFrameRef.current !== null) window.cancelAnimationFrame(pasteRevealFrameRef.current);
   }, []);
 
   useEffect(() => {
@@ -5554,7 +5588,7 @@ export function SheetShell(props: SheetShellProps) {
               onChange={changeFormulaDraft}
               onKeyDown={onFormulaKeyDown}
             />
-            <div className="ts-grid-scroll" ref={gridScrollRef} onScroll={() => { if (gridWindowed) onGridScroll(); repositionOpenColumnMenu(); }}>
+            <div className="ts-grid-scroll" ref={gridScrollRef} onWheelCapture={cancelPasteReveal} onTouchMoveCapture={cancelPasteReveal} onScroll={() => { if (gridWindowed) onGridScroll(); schedulePasteReveal(); repositionOpenColumnMenu(); }}>
               {/* React removes old keyed rows/spacers before adding their replacements.
                   Reserve the full extent outside the table so WebKit cannot clamp
                   scrollTop against a temporarily shorter table during that commit.
