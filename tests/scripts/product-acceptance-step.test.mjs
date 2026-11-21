@@ -73,7 +73,11 @@ test('macOS process scanner reports native process identity and start time',
     const before = Date.now();
     const child = spawn(process.execPath, ['-e', 'console.log("ready"); setInterval(() => {}, 1000)'],
       { detached: true, stdio: ['ignore', 'pipe', 'inherit'] });
-    t.after(() => child.kill('SIGKILL'));
+    t.after(async () => {
+      const exited = once(child, 'exit');
+      child.kill('SIGKILL');
+      await exited;
+    });
     await once(child.stdout, 'data');
     const after = Date.now();
     const snapshot = childProcess.spawnSync(scanner, [], { encoding: 'utf8' });
@@ -386,17 +390,6 @@ for (const [label, detectOutputHolders, hangs, fd] of [
     const killGraceMs = 100;
     const closeGraceMs = 300;
     fixture = await setup(t, timeoutMs);
-    let compileMs = 0;
-    if (process.platform === 'darwin') {
-      const originalSpawnSync = childProcess.spawnSync;
-      t.mock.method(childProcess, 'spawnSync', (...args) => {
-        if (args[0] !== '/usr/bin/clang') return originalSpawnSync(...args);
-        const started = performance.now();
-        try { return originalSpawnSync(...args); } finally { compileMs += performance.now() - started; }
-      });
-      syncBuiltinESMExports();
-      t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
-    }
     const holder = `
       const fs = require('node:fs');
       setInterval(() => fs.writeFileSync('holder-heartbeat', String(Date.now())), 20);
@@ -416,8 +409,7 @@ for (const [label, detectOutputHolders, hangs, fd] of [
     const code = await runStep(label, ['-e', source], {}, {
       ...fixture.options, killGraceMs, closeGraceMs, detectOutputHolders,
     });
-    // Scanner compilation is setup, not time spent waiting for step output.
-    const elapsed = performance.now() - started - compileMs;
+    const elapsed = performance.now() - started;
     assert.ok(elapsed < timeoutMs + killGraceMs + closeGraceMs + 1000, `output wait took ${elapsed} ms`);
     const expectedStatus = hangs ? 'TIMEOUT' : detectOutputHolders ? 'PASS' : 'FAIL';
     assert.equal(code, detectOutputHolders ? 0 : 1);
