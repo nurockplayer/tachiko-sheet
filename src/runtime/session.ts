@@ -1558,8 +1558,10 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     try {
       source = await dispatch(kit, () => inspect.call(client, bytes.slice(0), format, options, "working_size"));
     } catch (error) {
-      // A lost read-only reply cannot change the definitively refused import.
-      if (error instanceof UnknownOperationOutcomeError) throw capacityRefusal;
+      // Inspection is read-only: a lost reply leaves resident work intact.
+      if (error instanceof UnknownOperationOutcomeError) {
+        throw new Error("Spreadsheet inspection is unavailable. Please try again.", { cause: error });
+      }
       throw error;
     }
     // Working-size metadata carries no presentation. Only use it when there
