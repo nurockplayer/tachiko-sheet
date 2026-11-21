@@ -5,8 +5,30 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { writeOsClipboard } from "./paste-races.mjs";
 
+const pasteSpecialDetector = `() => [...document.querySelectorAll('[role="menu"][aria-label="Cell actions"]')].some(menu => {
+  const items = [...menu.querySelectorAll('[role="menuitem"]')].map(item => item.textContent.trim());
+  return items.length === 2 && items[0] === "Paste" && items[1] === "Paste values";
+})`;
+
 export async function windowsAltGr({ evaluate, appPid }) {
   writeOsClipboard("AltGr must not paste this");
+  const control = await evaluate(`
+    const pasteSpecialOpen = ${pasteSpecialDetector};
+    if (pasteSpecialOpen()) throw new Error("Paste Special already open before control");
+    const cell = await waitFor(() => cellAt(0, 0), "Paste Special control cell");
+    click(cell);
+    cell.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "v", code: "KeyV", ctrlKey: true, altKey: true, bubbles: true, cancelable: true
+    }));
+    await waitFor(pasteSpecialOpen, "Ctrl+Alt+V opens the real Paste Special menu", 5000);
+    const open = pasteSpecialOpen();
+    press(document.activeElement, "Escape");
+    await waitFor(() => !pasteSpecialOpen(), "Paste Special control dismissed", 5000);
+    return open;
+  `);
+  assert.equal(control, true, "the AltGr closed-menu check must reject the Ctrl+Alt+V control");
+  assert.throws(() => assert.equal(control, false), assert.AssertionError);
+  console.log("PASS: Paste Special detector rejects open Ctrl+Alt+V control (Cell actions: Paste, Paste values)");
   const helper = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-File",
     fileURLToPath(new URL("../../scripts/installer-smoke/altgr.ps1", import.meta.url)),
     "-AppPid", String(appPid)], { stdio: ["pipe", "pipe", "inherit"], windowsHide: true, timeout: 60_000 });
@@ -27,7 +49,8 @@ export async function windowsAltGr({ evaluate, appPid }) {
   await waitForHelper("AltGr native input ready");
   for (const key of ["V", "Q"]) {
     await evaluate(`
-      if (dialog("Paste Special")) throw new Error("Paste Special already open before AltGr");
+      const pasteSpecialOpen = ${pasteSpecialDetector};
+      if (pasteSpecialOpen()) throw new Error("Paste Special already open before AltGr");
       const cell = await waitFor(() => cellAt(0, 0), "AltGr target cell");
       ${key === "Q" ? `dblclick(cell);
       const editor = await waitFor(() => textbox("Edit cell"), "AltGr editor");
@@ -44,10 +67,11 @@ export async function windowsAltGr({ evaluate, appPid }) {
       helper.stdin.write(`${key}\n`);
       await waitForHelper(`Right-Alt+${key} via SendInput (4/4)`);
       const receipt = await evaluate(`
+        const pasteSpecialOpen = ${pasteSpecialDetector};
         await waitFor(() => window.__altgrReceipt.some(e => e.type === "keyup" && e.code === "Key${key}" && e.trusted),
           "AltGr+${key} NOT DELIVERED: missing trusted app key receipt", 5000);
         await sleep(300);
-        return { events: window.__altgrReceipt, pasteSpecial: !!dialog("Paste Special"),
+        return { events: window.__altgrReceipt, pasteSpecial: pasteSpecialOpen(),
           value: textbox("Edit cell")?.value ?? null };
       `);
       assert.ok(receipt.events.some(e => e.type === "keydown" && e.code === "AltRight" && e.trusted),
