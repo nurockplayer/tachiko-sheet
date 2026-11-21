@@ -19,7 +19,7 @@ import type {
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
 import { preflightCanonicalProjectEntries as realPreflightCanonicalProjectEntries } from "../../public/core-kit/experimental-client.js";
-import type { A1Geometry, A1Translation, CapacityProjection, SelectionStatisticsProjection, ColumnTotalsProjection, GroupDimension, GroupScope, GroupTotalsProjection, TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, TableWindowProjection, NumberFormat, TranslateA1FormulaInput } from "../../public/core-kit/runtime/protocol.js";
+import type { A1Geometry, A1Translation, CapacityProjection, SelectionStatisticsProjection, SelectionStatisticsRange, ColumnTotalsProjection, GroupDimension, GroupScope, GroupTotalsProjection, TrackerCommand, NewTableColumnInput, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, TableWindowProjection, NumberFormat, TranslateA1FormulaInput } from "../../public/core-kit/runtime/protocol.js";
 import {
   UnknownOperationOutcomeError,
   DATE_SUMMARY_UNSUPPORTED_MESSAGE,
@@ -75,6 +75,7 @@ interface Hooks {
   queryTable?: (collection: string) => Promise<TableProjection>;
   queryTableWindow?: (revision: string, collection: string, start: number, count: number) => Promise<TableWindowProjection>;
   queryCapacity?: (revision: string) => Promise<CapacityProjection>;
+  querySelectionRangeStatistics?: (revision: string, range: SelectionStatisticsRange) => Promise<SelectionStatisticsProjection>;
   querySelectionStatistics?: (revision: string, targets: FieldTarget[]) => Promise<SelectionStatisticsProjection>;
   queryGroupTotals?: (revision: string, collection: string, dimensions: GroupDimension[], measures: string[], scope: GroupScope) => Promise<GroupTotalsProjection>;
   translateA1Formula?: (input: TranslateA1FormulaInput) => Promise<A1Translation>;
@@ -119,6 +120,7 @@ class FakeClient {
     trackerCommand: [] as TrackerCommand[],
     renameTable: [] as Array<{ revision: string; collection: string; name: string }>,
     duplicateCollection: [] as Array<{ revision: string; collection: string; name: string; columnNames?: Record<string, string> }>,
+    querySelectionRangeStatistics: [] as Array<{ revision: string; range: SelectionStatisticsRange }>,
     querySelectionStatistics: [] as Array<{ revision: string; targets: FieldTarget[] }>,
     queryColumnTotals: [] as Array<{ revision: string; collection: string; entities: string[] }>,
     queryGroupTotals: [] as Array<{ revision: string; collection: string; dimensions: GroupDimension[]; measures: string[]; scope: GroupScope }>,
@@ -422,6 +424,14 @@ class FakeClient {
       start,
       rows: table.rows.slice(start, start + count),
     };
+  }
+
+  async querySelectionRangeStatistics(revision: string, range: SelectionStatisticsRange): Promise<SelectionStatisticsProjection> {
+    this.calls.querySelectionRangeStatistics.push({ revision, range });
+    this.#requireOpen();
+    this.#requireRevision(revision);
+    if (this.hooks.querySelectionRangeStatistics) return this.hooks.querySelectionRangeStatistics(revision, range);
+    return { revision, count: 4, numerical_count: 2, sum: 6, average: 3, min: 2, max: 4, error_count: 0 };
   }
 
   async querySelectionStatistics(revision: string, targets: FieldTarget[]): Promise<SelectionStatisticsProjection> {
@@ -2209,6 +2219,26 @@ describe("queryCapacity", () => {
 });
 
 describe("querySelectionStatistics", () => {
+  const range: SelectionStatisticsRange = { collection: "table", first: "e1", last: "e2", fields: ["impact"] };
+  it("forwards a compact range through Work without publication or a view change", async () => {
+    const { runtime, client, view } = await opened();
+    await expect(runtime.querySelectionStatistics(witnessOf(view), range)).resolves.toEqual({
+      revision: view.revision, count: 4, numerical_count: 2, sum: 6, average: 3, min: 2, max: 4, error_count: 0,
+    });
+    expect(client.calls.querySelectionRangeStatistics).toEqual([{ revision: view.revision, range }]);
+    expect(client.calls.querySelectionStatistics).toEqual([]);
+    expect(client.calls.trackerCommand).toEqual([]);
+    expect(await runtime.read()).toEqual(view);
+  });
+  it("drops obsolete range witnesses and rejects a range reply at another revision", async () => {
+    const { runtime, client, view } = await opened();
+    await expect(runtime.querySelectionStatistics({ ...witnessOf(view), revision: "old" }, range)).resolves.toBeNull();
+    await expect(runtime.querySelectionStatistics({ ...witnessOf(view), occurrence: "other" }, range)).resolves.toBeNull();
+    expect(client.calls.querySelectionRangeStatistics).toEqual([]);
+    client.hooks.querySelectionRangeStatistics = async () => ({ revision: "other", count: 0, numerical_count: 0, sum: 0, average: null, min: null, max: null, error_count: 0 });
+    await expect(runtime.querySelectionStatistics(witnessOf(view), range)).rejects.toMatchObject({ code: "incoherent-reply" });
+  });
+
   const targets = [{ entity: "e1", field: "impact" }, { entity: "e2", field: "impact" }];
   it("forwards exact targets and revision without publication or a view change", async () => {
     const { runtime, client, view } = await opened();

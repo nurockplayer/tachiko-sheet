@@ -162,35 +162,40 @@ try {
   assert.equal(layout.withinViewport, true); assert.equal(layout.unclipped, true); assert.equal(layout.inFlow, true);
   console.log("PASS: 390px status strip scrolls horizontally with no overlay or vertical clipping");
 
-  await page.close(); page = await context.newPage();
-  await page.goto(LOCAL_ORIGIN); await waitForColdHome(page);
-  await (await homeImportInput(page)).setInputFiles({
-    name: "selection-8406.csv", mimeType: "text/csv", buffer: Buffer.from("Amount\n" + "2\n".repeat(8406)),
-  });
-  const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
-  await preview.locator(".ts-import-column select").first().selectOption("number");
-  await preview.getByRole("button", { name: "Import file", exact: true }).click();
-  await preview.waitFor({ state: "detached" }); await ready();
-  const largeTable = await projection();
-  assert.equal(largeTable.rows.length, 8406);
-  assert.ok(await page.locator("tbody tr.ts-row").count() < 400, "large selection spans the virtualized grid");
-  const largePublications = await publications();
-  const largeSave = await page.getByTestId("work-state").getAttribute("data-work-state");
-  const largeQueries = await queryCount();
-  const largeRequest = { type: "query_selection_statistics", expected_revision: largeTable.revision,
-    targets: largeTable.rows.map(row => ({ entity: row.id, field: largeTable.columns[0].id })) };
-  const largeRequestBytes = Buffer.byteLength(JSON.stringify(largeRequest));
-  await page.getByRole("columnheader", { name: "Amount", exact: true }).click();
-  // The working-size request budget admits this selection; no publication or
-  // Save-state change may accompany the real read.
-  await expectStatistics({ count: 8406, "numerical-count": 8406, sum: 16812, average: 2, min: 2, max: 2 });
-  assert.equal(await queryCount(), largeQueries + 1, "working-size statistics reaches Work once");
-  assert.equal(await publications(), largePublications);
-  assert.equal(await page.getByTestId("work-state").getAttribute("data-work-state"), largeSave);
-  assert.equal((await projection()).revision, largeTable.revision);
-  console.log(`PASS: 8,406-row imported selection returns real working-size statistics without publication (${largeRequestBytes}-byte request)`);
-  await select(largeTable, 0, 0, 1, 0);
-  await expectStatistics({ count: 2, "numerical-count": 2, sum: 4, average: 2, min: 2, max: 2 });
-  assert.equal(await queryCount(), largeQueries + 2, "a smaller selection still reads real Work statistics");
+  for (const { rowCount, sum } of [{ rowCount: 8406, sum: 16812 }, { rowCount: 10000, sum: 20000 }]) {
+    await page.close(); page = await context.newPage();
+    await page.goto(LOCAL_ORIGIN); await waitForColdHome(page);
+    await (await homeImportInput(page)).setInputFiles({
+      name: `selection-${rowCount}.csv`, mimeType: "text/csv", buffer: Buffer.from("Amount\n" + "2\n".repeat(rowCount)),
+    });
+    const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
+    await preview.locator(".ts-import-column select").first().selectOption("number");
+    await preview.getByRole("button", { name: "Import file", exact: true }).click();
+    await preview.waitFor({ state: "detached" }); await ready();
+    const largeTable = await projection();
+    assert.equal(largeTable.rows.length, rowCount);
+    assert.ok(await page.locator("tbody tr.ts-row").count() < 400, "large selection spans the virtualized grid");
+    const largePublications = await publications();
+    const largeSave = await page.getByTestId("work-state").getAttribute("data-work-state");
+    const largeQueries = await queryCount();
+    await page.getByRole("columnheader", { name: "Amount", exact: true }).click();
+    await expectStatistics({ count: rowCount, "numerical-count": rowCount, sum, average: 2, min: 2, max: 2 });
+    assert.equal(await queryCount(), largeQueries + 1, "range statistics reaches Work once");
+    const largeRequest = await page.evaluate(() => window.__selectionEvidence.records.flatMap(record => record.requests)
+      .filter(message => message.request?.type === "query_selection_statistics").at(-1).request);
+    assert.equal(largeRequest.targets, undefined);
+    assert.deepEqual(largeRequest.range, { collection: largeTable.collection.key,
+      first: largeTable.rows[0].id, last: largeTable.rows.at(-1).id, fields: [largeTable.columns[0].id] });
+    const largeRequestBytes = Buffer.byteLength(JSON.stringify(largeRequest));
+    assert.ok(largeRequestBytes < 65_536, "large rectangle uses a compact request below the ordinary budget");
+    assert.equal(await page.getByText("Selection too large for statistics", { exact: true }).count(), 0);
+    assert.equal(await publications(), largePublications);
+    assert.equal(await page.getByTestId("work-state").getAttribute("data-work-state"), largeSave);
+    assert.equal((await projection()).revision, largeTable.revision);
+    console.log(`PASS: ${rowCount}-row imported selection returns real range statistics without publication (${largeRequestBytes}-byte request)`);
+    await select(largeTable, 0, 0, 1, 0);
+    await expectStatistics({ count: 2, "numerical-count": 2, sum: 4, average: 2, min: 2, max: 2 });
+    assert.equal(await queryCount(), largeQueries + 2, "a smaller selection still reads real Work statistics");
+  }
   console.log("PASS: selection statistics browser acceptance cases 1, 2, 4–7");
 } finally { await context.close(); await browser.close(); }

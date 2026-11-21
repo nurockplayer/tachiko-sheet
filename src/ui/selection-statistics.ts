@@ -1,3 +1,4 @@
+import type { SelectionStatisticsRange } from "../../public/core-kit/runtime/protocol.js";
 import type { FieldTarget } from "../contracts.js";
 import type { CellRectangle } from "./clipboard.js";
 import { rowEntity, type TableRow, type TableColumn } from "./projection-access.js";
@@ -12,4 +13,14 @@ export function selectionStatisticsTargets(rows: readonly TableRow[], columns: r
     for (let column = area.left; column <= area.right; column++) targets.push({ entity, field: columns[column]!.id });
   }
   return targets;
+}
+
+/** The caller supplies a valid rectangle in Work's stored row order. */
+export function selectionStatisticsRange(collection: string, rows: readonly TableRow[], columns: readonly TableColumn[], area: CellRectangle): SelectionStatisticsRange {
+  return {
+    collection,
+    first: rowEntity(rows[area.top]!),
+    last: rowEntity(rows[area.bottom]!),
+    fields: columns.slice(area.left, area.right + 1).map(column => column.id),
+  };
 }
