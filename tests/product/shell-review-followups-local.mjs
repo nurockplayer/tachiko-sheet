@@ -52,24 +52,32 @@ async function activeCell(page, index, column) {
   await page.waitForFunction(({ index, column }) => document.querySelector(`tbody tr.ts-row[aria-rowindex="${index + 2}"]`)?.querySelectorAll("td")[column] === document.activeElement, { index, column });
 }
 try {
-  await check("#394/#395: header focuses the first visible cell after scrolling", async page => {
+  for (const overlap of [0.5, 1.25]) await check(`#483: column focus stays below sticky header (${overlap < 1 ? "partly" : "fully"} obscured row)`, async page => {
     await importRows(page);
     await row(page, 0).locator("td").first().focus();
     const scroller = page.locator(".ts-grid-scroll");
-    await scroller.evaluate(node => { node.scrollTop = 150 * node.querySelector("tr.ts-row").offsetHeight; });
+    await scroller.evaluate((node, overlap) => { node.scrollTop = (150 + overlap) * node.querySelector("tr.ts-row").offsetHeight; }, overlap);
     await row(page, 150).waitFor();
+    const obscured = await row(page, 150).locator("td").nth(1).evaluate(cell => {
+      const bounds = cell.getBoundingClientRect();
+      const header = document.querySelector("th.ts-column-header").getBoundingClientRect();
+      return { top: bounds.top, bottom: bounds.bottom, headerBottom: header.bottom };
+    });
+    assert.ok(obscured.top < obscured.headerBottom, "fixture row starts under the sticky header");
+    assert.equal(obscured.bottom > obscured.headerBottom, overlap < 1, "fixture row is partly or fully obscured as intended");
     const before = await scroller.evaluate(node => node.scrollTop);
     await page.locator("th.ts-column-header").nth(1).locator(".ts-col-head").click();
     const result = await page.evaluate(() => {
-      const port = document.querySelector(".ts-grid-scroll").getBoundingClientRect();
+      const header = document.querySelector("th.ts-column-header").getBoundingClientRect();
       const active = document.activeElement;
-      const visible = [...document.querySelectorAll('tbody tr.ts-row td:nth-of-type(2)')].find(cell => {
-        const r = cell.getBoundingClientRect(); return r.bottom > port.top && r.top < port.bottom;
-      });
-      return { visible: active === visible, field: active?.getAttribute("data-work-field"), expected: visible?.getAttribute("data-work-field") };
+      const bounds = active.getBoundingClientRect();
+      const selected = [...document.querySelectorAll('tbody tr.ts-row td:nth-of-type(2)')];
+      return { top: bounds.top, headerBottom: header.bottom, inColumn: selected.includes(active),
+        selectedColumn: selected.every(cell => cell.classList.contains("ts-cell--range-selected")) };
     });
-    assert.equal(result.visible, true, "active cell is the first visible row, not pinned row 1");
-    assert.equal(result.field, result.expected);
+    assert.equal(result.inColumn, true, "focus stays in the selected column");
+    assert.ok(result.top >= result.headerBottom, `focused cell top ${result.top} must be below sticky header bottom ${result.headerBottom}`);
+    assert.equal(result.selectedColumn, true, "the whole column remains selected");
     assert.equal(await scroller.evaluate(node => node.scrollTop), before, "header selection preserves scroll position");
   });
   for (const navigate of [false, true]) await check(`#389/#390: Find resets Tab origin (${navigate ? "Next match" : "Enter match"})`, async page => {
