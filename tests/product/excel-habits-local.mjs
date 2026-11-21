@@ -325,6 +325,7 @@ const cases = [
     await page.waitForFunction(() => !window.__habits.stale && window.__readObservedTable(window.__habits)?.rows.length === 1);
     const table = await projection(page);
     assert.deepEqual([0, 1, 2].map((column) => fieldAt(table, 0, column)?.stored?.value), ["a", "b", "c"]);
+    for (const [column, text] of ["a", "b", "c"].entries()) await waitForCellText(page, cellIdFor(table, 0, column), text);
   } },
   { id: "11", name: "Cancel editing", tier: "A", run: async (page) => {
     await example(page);
@@ -930,6 +931,7 @@ const cases = [
       await example(page);
       const table = await projection(page);
       await replaceCell(page, cellIdFor(table, 0, 0), "持久保存");
+      await waitForCellText(page, cellIdFor(table, 0, 0), "持久保存");
       await saveCopy(page, "habits-25");
       await context.close();
       const reopened = await open();
@@ -938,6 +940,7 @@ const cases = [
       await ready(reopened);
       const after = await projection(reopened);
       assert.equal(fieldAt(after, 0, 0)?.stored?.value, "持久保存", "the edit did not survive save, restart and reopen");
+      await waitForCellText(reopened, cellIdFor(after, 0, 0), "持久保存");
       assert.ok(fieldAt(after, 0, 4)?.formula, "the formula did not survive restart and reopen");
     } finally {
       await context?.close().catch(() => {});
@@ -1224,6 +1227,7 @@ const cases = [
     const after = await projection(page);
     const values = after.rows.map((_, row) => fieldAt(after, row, 0)?.stored?.value);
     assert.deepEqual(values, ["fill", "fill", "fill"], `Ctrl+Enter did not fill the whole selection with one entry: ${JSON.stringify(values)}`);
+    for (const row of [0, 1, 2]) await waitForCellText(page, id(row), "fill");
     await newTable(page, "Refused entry", [{ name: "Amount", type: "number" }]);
     for (let row = 0; row < 2; row += 1) await addRow(page, [String(row + 1)], row + 1);
     const numbers = await projection(page);
@@ -1247,6 +1251,7 @@ const cases = [
     await settle(page);
     const filled = await filledColumn(page, table, 0, 4);
     assert.deepEqual(filled.map(String), ["1", "1", "1", "4"], `Ctrl+D did not fill the selected range from its top cell: ${JSON.stringify(filled)}`);
+    for (const [row, text] of ["1", "1", "1", "4"].entries()) await waitForCellText(page, cellIdFor(table, row, 0), text);
   } },
   { id: "40", name: "Paste Special", tier: "B", budgetMs: 60_000, waitMs: 10_000, note: "Values and formulas only: no formats exist to paste yet.", run: async (page) => {
     await example(page);
@@ -1582,6 +1587,7 @@ const cases = [
     const value = String(fieldAt(await projection(page), 0, 7)?.stored?.value);
     assert.ok(value.includes("\n"), `Alt+Enter inserted no line break (stored ${JSON.stringify(value)})`);
     assert.equal(value, "Line one\nLine two", `the stored value is not the two typed lines (${JSON.stringify(value)})`);
+    await waitForCellText(page, target, "Line one\nLine two");
 
     // The break is part of the editor's own Undo.
     await page.getByTestId(cellIdFor(table, 1, 7)).press("F2");
@@ -1602,13 +1608,16 @@ const cases = [
     await page.keyboard.press("Enter");
     await settle(page);
     assert.equal(await stored(), "Line one\nLine two", "committing an unchanged value changed it");
+    await waitForCellText(page, target, "Line one\nLine two");
     await settle(page);
     await page.keyboard.press("Control+z");
     await settle(page);
     assert.equal(await stored(), before, "the unchanged F2 then Enter added a history entry");
+    await waitForCellText(page, target, before);
     await page.keyboard.press("Control+y");
     await settle(page);
     assert.equal(await stored(), "Line one\nLine two", "Redo did not restore the accepted edit");
+    await waitForCellText(page, target, "Line one\nLine two");
 
     await page.getByTestId(target).press("F2");
     await editor.waitFor();
@@ -1616,6 +1625,7 @@ const cases = [
     await settle(page);
     assert.equal(await editor.count(), 0, "Escape left the editor open");
     assert.equal(await stored(), "Line one\nLine two", "Escape published the value");
+    await waitForCellText(page, target, "Line one\nLine two");
 
     // The editor grows over the rows below instead of being clipped by its cell.
     await page.getByTestId(target).press("F2");
@@ -1647,10 +1657,12 @@ const cases = [
     await page.keyboard.press("Control+v");
     await settle(page);
     assert.equal(String(fieldAt(await projection(page), 1, 7)?.stored?.value), "Line one\nLine two", "the pasted value lost its line break");
+    await waitForCellText(page, pasted, "Line one\nLine two");
     await settle(page);
     await page.keyboard.press("Control+z");
     await settle(page);
     assert.equal(String(fieldAt(await projection(page), 1, 7)?.stored?.value ?? ""), replaced, "Undo did not restore the pasted cell");
+    await waitForCellText(page, pasted, replaced);
 
     // Alt+Enter in an editor that is not the multiline one does nothing at all.
     const numberCell = cellIdFor(table, 0, 2);
@@ -1673,6 +1685,7 @@ const cases = [
     await page.keyboard.press("Enter");
     await settle(page);
     assert.equal(String(fieldAt(await projection(page), 2, 7)?.stored?.value), "plain text", "plain Enter did not commit one line");
+    await waitForCellText(page, lastNotes, "plain text");
   } },
   { id: "46", name: "Sheet navigation", tier: "B", run: async (page) => {
     await example(page);
@@ -1770,6 +1783,7 @@ const cases = [
     await editor.press("Enter");
     await settle(page);
     assert.equal(fieldAt(await projection(page), 0, 0)?.stored?.value, "2026-04-15", "the current date was not stored");
+    await waitForCellText(page, id, "2026-04-15");
   } },
   { id: "51", name: "Move/copy worksheet tab", tier: "C", run: async (page) => {
     await example(page);

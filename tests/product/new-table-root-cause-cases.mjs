@@ -1,3 +1,4 @@
+import { expect } from "@playwright/test";
 import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 // Batch 3: real production UI/core, delaying or losing actual transport replies.
 import assert from "node:assert/strict";
@@ -135,6 +136,7 @@ export async function runNewTableRootCauseCases({ page, ready, projection, check
       await page.evaluate(() => { window.__rowEvidence.loseNextMutationReply = "edit_scalar"; });
       await input.press("Enter");
       await recoverSales("edit_scalar", before.revision, table => assert.equal(table.rows.find(r => r.id === row.id).fields.find(f => f.target.field === column.id).stored.value, 17));
+      await expect(page.getByTestId(`cell:${row.id}:${column.id}`)).toHaveText("17");
     },
     "R4-history": async () => {
       await sales(); const before = await projection(page); await fillEntry(before);

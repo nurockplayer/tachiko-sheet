@@ -1,3 +1,4 @@
+import { expect } from "@playwright/test";
 import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 // #212: ordinary grid events with the real pinned Worker/WASM. Observations
 // below copy public transport traffic; they never supply semantic results.
@@ -232,7 +233,9 @@ try {
 
   // Schema-changed grid coordinates and the tfoot row use current stable IDs.
   table = await projection(); await cell(table, 0, 1).focus(); await paste(cell(table, 0, 1), "9");
-  assert.equal(values(await projection())[0][1], 9); assert.equal(await copy(cell(await projection(), 0, 1)), "9");
+  assert.equal(values(await projection())[0][1], 9);
+  await expect(cell(table, 0, 1)).toHaveText("9");
+  assert.equal(await copy(cell(await projection(), 0, 1)), "9");
   const draftFirst = entry().locator('[data-entry-field]').first(); await draftFirst.focus(); await paste(draftFirst, "Bus\t4");
   await draftFirst.press("Enter"); await ready(); assert.deepEqual(values(await projection()).at(-1), ["Bus", 4]);
   assert.equal(await page.locator('table[aria-label="Table"] tbody tr').count(), 4);
@@ -313,7 +316,9 @@ try {
   for (const [typed, stored] of [["12%", 0.12], ["1,300", 1300]]) {
     await cell(table, 0, amountAt).dblclick(); await cellEditor.fill(typed); await cellEditor.press("Enter"); await ready();
     assert.equal(values(await projection())[0][amountAt], stored, `${typed} is stored as ${stored}`);
+    await expect(cell(table, 0, amountAt)).toHaveText(String(stored));
     await history("Undo"); assert.deepEqual(values(await projection()), values(table));
+    await expect(cell(table, 0, amountAt)).toHaveText(String(values(table)[0][amountAt]));
   }
   d = await add("Stats", "number"); await d.getByLabel("Required", { exact: true }).uncheck();
   await submit("Add column"); await d.waitFor({ state: "detached" });
@@ -569,6 +574,7 @@ try {
   // A real scalar edit makes the following bound Save perform a durable write.
   await cell(table, 0, 1).dblclick(); const capacityEditor = page.getByRole("textbox", { name: "Edit cell", exact: true });
   await capacityEditor.fill("777"); await capacityEditor.press("Enter"); await ready();
+  await expect(cell(table, 0, 1)).toHaveText("777");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
   await saveCopy("Capacity after columns"); const savedCapacity = await projection();
@@ -582,6 +588,7 @@ try {
   assert.ok(reopenedCapacity.rows.every(row => row.fields.find(field => field.target.field === addedColumn.id)?.stored?.value === "x"), "all capacity rows keep the authored fill value after a full restart");
   // The edit went to the column at index 1 of the pre-move snapshot; check it by id.
   assert.equal((await projection()).rows[0].fields.find(field => field.target.field === table.columns[1].id)?.stored?.value, 777);
+  await expect(cell(table, 0, 1)).toHaveText("777");
   checks.push("129-row native capacity: Work's v3 writer admits Add (desktop), Rename, Move and Remove (compact) with exact Undo/Redo; the authored column, its moved position and its values survive bound Save, Save a copy and a full restart/reopen");
 
   const manyHeaders = await assertManyColumnHeaders(page, screens);

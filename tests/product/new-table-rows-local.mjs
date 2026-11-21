@@ -1,3 +1,4 @@
+import { expect } from "@playwright/test";
 import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 import { runCreateDraftReadinessCases } from "./create-draft-readiness-cases.mjs";
 import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
@@ -347,6 +348,7 @@ try {
   const cell = page.getByTestId(`cell:${tea.id}:${amount.id}`);
   await cell.dblclick(); await page.getByRole("textbox", { name: "Edit cell", exact: true }).fill("4.5"); await page.getByRole("textbox", { name: "Edit cell", exact: true }).press("Enter"); await ready(page);
   table = await projection(page); assert.deepEqual(values(table), expected);
+  await expect(cell).toHaveText("4.5");
   const nextAmount = page.getByTestId(`cell:${table.rows[1].id}:${amount.id}`);
   await page.waitForFunction(id => document.activeElement?.dataset.testid === id, `cell:${table.rows[1].id}:${amount.id}`);
   assert.equal(await nextAmount.evaluate(node => node === document.activeElement), true, "Enter accepts and moves down in data cells");

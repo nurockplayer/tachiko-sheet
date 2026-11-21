@@ -1,3 +1,4 @@
+import { expect } from "@playwright/test";
 import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
 // #189 characterization: normal production controls + real Worker/WASM replies.
@@ -168,6 +169,12 @@ for (const mode of ['published', 'known', 'unknown', 'refused']) {
       if (command === 'insert') assert.equal(after.rows.length, before.rows.length + 1);
       if (command === 'delete') assert.equal(after.rows.length, before.rows.length - 1);
       if (command === 'scalar') assert.match(await p.getByTestId('results-pane').textContent(), /1,?000/);
+      if (['scalar', 'undo', 'redo'].includes(command)) {
+        const column = after.columns.find(column => column.field_type === 'number');
+        const row = after.rows[0];
+        const value = row.fields.find(field => field.target.field === column.id).stored.value;
+        await expect(p.getByTestId(`cell:${row.id}:${column.id}`)).toHaveText(String(value));
+      }
       if (command === 'cleanup') assert.equal(await p.getByTestId('cleanup-preview').count(), 0);
       if (['scalar', 'insert', 'delete', 'undo', 'redo'].includes(command)) {
         assert.equal(await p.getByTestId('work-state').textContent(), 'Edited — not saved');

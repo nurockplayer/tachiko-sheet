@@ -1,3 +1,4 @@
+import { expect } from "@playwright/test";
 import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 // #197: real producer v3 folders through Open, private copies and full browser exit.
 import assert from 'node:assert/strict';
@@ -63,6 +64,7 @@ async function edit(amount) {
   await editor.fill(String(amount)); await editor.press('Enter'); await ready();
   const edited = await table();
   assert.equal(edited.rows[0].fields.find(f => f.target.field === col.id).stored.value, amount);
+  await expect(page.getByTestId(`cell:${t.rows[0].id}:${col.id}`)).toHaveText(String(amount));
 }
 async function saved() {
   await page.getByTestId('save-status').filter({hasText: 'Saved on this device'}).waitFor();
