@@ -1,7 +1,7 @@
 import type { A1Translation, TranslateA1FormulaInput } from "./protocol.ts";
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportedWindowProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
 import { type DesignerClient } from "./client.ts";
-import type { FormulaCopy, TrackerCommand, BootstrapProjection, CapacityProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldExplanationProjection, FieldConstraintInput, NumberFormat, DateFormat, FieldTarget, OpenedProjection, OpenedWindowProjection, OccurrenceProjection, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, ProjectExport, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, SelectionStatisticsProjection, GroupDimension, GroupScope, GroupTotalsProjection } from "./protocol.ts";
+import type { FormulaCopy, TrackerCommand, BootstrapProjection, CapacityProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldExplanationProjection, FieldConstraintInput, NumberFormat, DateFormat, FieldTarget, OpenedProjection, OpenedWindowProjection, OccurrenceProjection, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, ProjectExport, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, SelectionStatisticsProjection, SelectionStatisticsRange, GroupDimension, GroupScope, GroupTotalsProjection } from "./protocol.ts";
 export type DesignerWorkerFactory = () => Worker;
 export declare class WorkerDesignerClient implements DesignerClient {
     #private;
@@ -33,7 +33,7 @@ export declare class WorkerDesignerClient implements DesignerClient {
     deleteTable(expectedRevision: string, collection: string): Promise<PublicationProjection>;
     addTable(expectedRevision: string, name: string, columns: NewTableColumnInput[]): Promise<DuplicateCollectionProjection>;
     renameTable(expectedRevision: string, collection: string, name: string): Promise<PublicationProjection>;
-    /** Return complete entity and schema presentation invalidation from Rust. */
+    /** Forward typed commands, including insert_row position, unchanged to Rust. */
     trackerCommand(request: TrackerCommand): Promise<PublicationProjection>;
     clearField(expectedRevision: string, target: FieldTarget): Promise<PublicationProjection>;
     changeColumnType(expectedRevision: string, collection: string, field: string, fieldType: string): Promise<PublicationProjection>;
@@ -72,6 +72,7 @@ export declare class WorkerDesignerClient implements DesignerClient {
     queryDistinctValues(expectedRevision: string, collection: string, view: TableView, field: string, limit: number): Promise<DistinctValuesProjection>;
     findInView(expectedRevision: string, collection: string, view: TableView, query: string, fields: string[], from: FindPosition | undefined, direction: FindDirection): Promise<FindInViewProjection>;
     querySelectionStatistics(expectedRevision: string, targets: FieldTarget[]): Promise<SelectionStatisticsProjection>;
+    querySelectionRangeStatistics(expectedRevision: string, range: SelectionStatisticsRange): Promise<SelectionStatisticsProjection>;
     queryColumnTotals(expectedRevision: string, collection: string, entities: string[]): Promise<ColumnTotalsProjection>;
     queryViewTotals(expectedRevision: string, collection: string, view: TableView): Promise<ColumnTotalsProjection>;
     queryGroupTotals(expectedRevision: string, collection: string, dimensions: GroupDimension[], measures: string[], scope: GroupScope): Promise<GroupTotalsProjection>;

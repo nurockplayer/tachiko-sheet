@@ -343,6 +343,12 @@ export type ColumnTotalsProjection = {
     column_totals: Record<string, number | null>;
 };
 /** Statistics over distinct selected cells, with no scalar coercion. */
+export type SelectionStatisticsRange = {
+    collection: string;
+    first: string;
+    last: string;
+    fields: string[];
+};
 export type SelectionStatisticsProjection = {
     revision: string;
     count: number;
@@ -603,6 +609,13 @@ export type TrackerCommand = {
     type: "insert_row";
     expected_revision: string;
     collection: string;
+    position?: {
+        before: string;
+        after?: never;
+    } | {
+        after: string;
+        before?: never;
+    };
     initializers: Array<{
         field: string;
         input: ScalarEditInput;
@@ -850,11 +863,16 @@ export type DesignerRequest = {
     fields: string[];
     from?: FindPosition;
     direction: FindDirection;
-} | {
+} | ({
     type: "query_selection_statistics";
     expected_revision: string;
+} & ({
     targets: FieldTarget[];
+    range?: never;
 } | {
+    range: SelectionStatisticsRange;
+    targets?: never;
+})) | {
     type: "query_column_totals";
     expected_revision: string;
     collection: string;

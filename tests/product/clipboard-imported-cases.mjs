@@ -39,36 +39,47 @@ export async function runImportedClipboardCases({ page, work, ready, close, disp
     }, index);
     await cell(baseline, index, 0).waitFor();
   }
-  async function readAllRows() {
-    const rows = new Map();
-    const step = await page.evaluate(() => {
-      const scroller = document.querySelector(".ts-grid-scroll");
-      const pitch = document.querySelector('table[aria-label="Table"] tbody tr.ts-row').offsetHeight;
-      return Math.max(1, Math.floor(scroller.clientHeight / pitch / 2));
-    });
-    let revision;
-    for (let index = 0; ; index = Math.min(index + step, baseline.rows.length - 1)) {
-      await scrollTo(index);
-      const grid = await displayed();
-      revision ??= grid.revision;
-      assert.equal(grid.revision, revision, "scrolling preserves the displayed revision");
-      for (const row of grid.rows) {
-        assert.deepEqual(row.cells.map(cell => cell.field), baseline.columns.map(column => column.id));
-        rows.set(row.id, row);
+  async function readStoredTable() {
+    const revision = (await displayed()).revision;
+    // Read Work directly: windowed DOM text cannot establish stored-value integrity.
+    const windows = await page.evaluate(async ({ revision, collection, total }) => {
+      const worker = window.__clipboardEvidence.worker;
+      const windows = [];
+      for (let start = 0; start < total; start += 256) {
+        const id = `clipboard-stored:${crypto.randomUUID()}`;
+        const reply = await new Promise((resolve, reject) => {
+          const receive = event => {
+            if (event.data.id !== id) return;
+            worker.removeEventListener("message", receive);
+            if (event.data.status !== "ok") reject(new Error(JSON.stringify(event.data)));
+            else resolve(event.data.response);
+          };
+          worker.addEventListener("message", receive);
+          worker.postMessage({ id, kind: "command", request: {
+            type: "query_table_window", expected_revision: revision, collection,
+            view: {}, start, count: Math.min(256, total - start),
+          } });
+        });
+        if (reply.type !== "table_window") throw new Error(`Expected table_window, received ${reply.type}`);
+        windows.push(reply.payload);
       }
-      if (index === baseline.rows.length - 1) break;
+      return windows;
+    }, { revision, collection: baseline.collection.key, total: baseline.rows.length });
+    for (const [index, window] of windows.entries()) {
+      assert.equal(window.revision, revision);
+      assert.deepEqual(window.collection, baseline.collection);
+      assert.deepEqual(window.columns, baseline.columns);
+      assert.equal(window.start, index * 256);
+      assert.equal(window.total_rows, 8406);
+      assert.equal(window.unfiltered_rows, 8406);
+      assert.equal(window.rows.length, Math.min(256, 8406 - window.start));
     }
-    assert.equal(rows.size, 8406, "all 8,406 row identities are displayed");
-    return { revision, rows: baseline.rows.map((row, index) => {
-      assert.ok(rows.has(row.id), `row ${index + 1} displays its original identity`);
-      return rows.get(row.id);
-    }) };
+    const rows = windows.flatMap(window => window.rows);
+    assert.deepEqual(rows.map(row => row.id), baseline.rows.map(row => row.id));
+    return { revision, rows };
   }
-  const before = await readAllRows();
+  const before = await readStoredTable();
   assert.equal(before.revision, baseline.revision, "imported fixture and grid start at the same revision");
-  const beforeValues = values(before);
-  assert.deepEqual(beforeValues, baseline.rows.map(row => baseline.columns.map(column =>
-    String(row.fields.find(field => field.target.field === column.id).stored.value))));
   await scrollTo(start);
   const anchor = cell(baseline, start, 0);
   await anchor.waitFor();
@@ -80,21 +91,22 @@ export async function runImportedClipboardCases({ page, work, ready, close, disp
   const beforeCount = (await commands()).length;
   await paste(anchor, block.map(row => row.join("\t")).join("\n"));
   await status().filter({ hasText: "Updated 2 rows" }).waitFor();
-  const after = await readAllRows();
+  const after = await readStoredTable();
   assert.notEqual(after.revision, before.revision, "paste advances the application revision");
   assert.equal((await commands()).length, beforeCount + 1);
   assert.deepEqual((await commands()).at(-1), {
     type: "edit_cells", expected_revision: baseline.revision, edits: editsFor(baseline, start, block),
   }, "one command addresses exactly the six original stable targets at rows 8001–8002");
-  assert.deepEqual(after.rows.map(row => row.id), before.rows.map(row => row.id));
-  assert.deepEqual(values(after), beforeValues.map((row, index) =>
-    index === start || index === start + 1 ? block[index - start] : row),
-  "every identity and all 25,218 displayed values checked; only six change");
+  const expectedRows = structuredClone(before.rows);
+  for (const [r, row] of block.entries()) for (const [c, value] of row.entries()) {
+    expectedRows[start + r].fields.find(field => field.target.field === baseline.columns[c].id).stored.value = value;
+  }
+  assert.deepEqual(after.rows, expectedRows, "all 8,406 stored rows match baseline except the six pasted cells");
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
-  assert.deepEqual((await readAllRows()).rows, before.rows, "one Undo restores every displayed value and identity");
+  assert.deepEqual((await readStoredTable()).rows, before.rows, "one Undo restores every stored value and identity");
   await page.getByRole("button", { name: "Redo", exact: true }).click(); await ready();
-  assert.deepEqual((await readAllRows()).rows, after.rows, "one Redo restores the pasted display and all untouched rows");
-  checks.push("221.a real capacity-8406 import; windowed far-scroll 2x3 paste; exact six stable targets; all 8,406 row identities and 25,218 DOM values/revisions; one Undo/Redo of all rows");
+  assert.deepEqual((await readStoredTable()).rows, expectedRows, "one Redo restores the six pasted cells and all untouched stored rows");
+  checks.push("221.a real capacity-8406 import; windowed far-scroll 2x3 paste; exact six stable targets; Work queries of all 8,406 stored rows and 25,218 values before/paste/Undo/Redo");
   await close(); page.setDefaultTimeout(10000);
 
   const typedCsv = path.join(work, "imported-paste-types.csv");
