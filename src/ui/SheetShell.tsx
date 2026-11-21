@@ -3344,10 +3344,11 @@ export function SheetShell(props: SheetShellProps) {
 
   function visibleColumnCell(field: string): HTMLElement | undefined {
     const viewport = gridScrollRef.current?.getBoundingClientRect();
+    const headerBottom = gridScrollRef.current?.querySelector<HTMLElement>("th.ts-column-header")?.getBoundingClientRect().bottom ?? viewport?.top ?? 0;
     return viewport ? displayRows.map(row => cellRefs.current.get(cellKey(rowEntity(row), field))).find(cell => {
       if (!cell) return false;
       const bounds = cell.getBoundingClientRect();
-      return bounds.bottom > viewport.top && bounds.top < viewport.bottom;
+      return bounds.top >= headerBottom && bounds.top < viewport.bottom;
     }) : undefined;
   }
 
