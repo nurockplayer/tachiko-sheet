@@ -1386,7 +1386,7 @@ describe("createSheetRuntime", () => {
     });
 
     await expect(runtime.importSpreadsheet(new ArrayBuffer(4), "xlsx", { delimiter: ",", header: true },
-      { column_types: [], extra_columns: [] })).rejects.toBe(refusal);
+      { column_types: [], extra_columns: [] })).rejects.toBe(reply === "lost" ? refusal : inspectionError);
     expect(inspect).toHaveBeenCalledExactlyOnceWith(expect.any(ArrayBuffer), "xlsx",
       { delimiter: ",", header: true }, "working_size");
     expect(fallback).not.toHaveBeenCalled();

@@ -1557,9 +1557,10 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     let source;
     try {
       source = await dispatch(kit, () => inspect.call(client, bytes.slice(0), format, options, "working_size"));
-    } catch {
-      // This read-only failure cannot change the definitively refused import.
-      throw capacityRefusal;
+    } catch (error) {
+      // A lost read-only reply cannot change the definitively refused import.
+      if (error instanceof UnknownOperationOutcomeError) throw capacityRefusal;
+      throw error;
     }
     // Working-size metadata carries no presentation. Only use it when there
     // is no source presentation to lose; retain Work's original refusal otherwise.
