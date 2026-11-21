@@ -4,7 +4,8 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { connect } from 'node:net';
-import { spawn } from 'node:child_process';
+import childProcess, { spawn } from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
 import { createInterface } from 'node:readline';
 import { runStep, signalableOwnedPids } from '../../scripts/product-acceptance-step.mjs';
 
@@ -57,6 +58,51 @@ async function setup(t, timeoutMs) {
     },
   };
 }
+
+test('macOS cleanup rejects PID reuse within the same start second', async t => {
+  const fixture = await setup(t, 60000);
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  const originalSpawn = childProcess.spawn;
+  const originalKill = process.kill;
+  const reusedPid = 987654321;
+  const signals = [];
+  let owner;
+  let scans = 0;
+  Object.defineProperty(process, 'platform', { value: 'darwin' });
+  t.after(() => {
+    Object.defineProperty(process, 'platform', platform);
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  });
+  t.mock.method(childProcess, 'spawn', (...args) => {
+    owner = args[2].env.TACHIKO_ACCEPTANCE_STEP_OWNER;
+    return originalSpawn(...args);
+  });
+  t.mock.method(childProcess, 'spawnSync', (command, args) => {
+    const result = { status: 0, stdout: '', stderr: '' };
+    if (command === '/usr/bin/clang') return result;
+    if (command === 'ps' && args[0] === '-wwE') {
+      result.stdout = scans === 2 ? `${reusedPid} node TACHIKO_ACCEPTANCE_STEP_OWNER=${owner}\n` : '';
+      return result;
+    }
+    // Native snapshots distinguish microseconds; the old ps scanner sees the
+    // same second for both instances and would signal the unrelated replacement.
+    assert.ok(command.endsWith('/process-table') || (command === 'ps' && args[0] === '-axo'));
+    scans++;
+    const started = command === 'ps' ? 'same second' : `1700000000.${scans === 2 ? '100000' : '900000'}`;
+    result.stdout = `${process.pid} 1 1 ${started}\n`;
+    if (scans >= 2) result.stdout += `${reusedPid} 1 999 ${started}\n`;
+    return result;
+  });
+  t.mock.method(process, 'kill', (pid, signal) => {
+    if (pid === reusedPid) { signals.push(signal); return true; }
+    return originalKill(pid, signal);
+  });
+  syncBuiltinESMExports();
+  assert.equal(await runStep('same-second-reuse', ['-e', ''], {}, { ...fixture.options, killGraceMs: 1 }), 0);
+  assert.ok(scans >= 3, 'must observe both owned and replacement process instances');
+  assert.deepEqual(signals, [], 'unrelated same-second replacement was signalled');
+});
 
 test('passing step keeps its output, details and zero exit code', async (t) => {
   const fixture = await setup(t, 60000);
