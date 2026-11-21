@@ -22,7 +22,7 @@ tauri-build = { version = "=2.7.0", features = [] }
 # The Tachiko Work runtime at an exact, immutable source revision: the Web
 # kit's pinned producer source, including the native host bridge.
 # Re-pin only together with the matching kit and independent qualification.
-tachiko-designer-runtime = { git = "https://github.com/nurockplayer/tachiko-work", rev = "38696aa013c03b8d28e732c7d1214daafc7e418e" }
+tachiko-designer-runtime = { git = "https://github.com/nurockplayer/tachiko-work", rev = "f5d3b2b59d695d95244b21647cc53bf4b302de9c" }
 tauri = { version = "=2.12.0", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

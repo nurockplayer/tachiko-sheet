@@ -163,7 +163,7 @@ export class WorkerDesignerClient {
     async renameTable(expectedRevision, collection, name) {
         return this.trackerCommand({ type: "rename_table", expected_revision: expectedRevision, collection, name });
     }
-    /** Return complete entity and schema presentation invalidation from Rust. */
+    /** Forward typed commands, including insert_row position, unchanged to Rust. */
     async trackerCommand(request) {
         return expectResponse("published", await this.#command(request));
     }
@@ -421,6 +421,13 @@ export class WorkerDesignerClient {
             type: "query_selection_statistics",
             expected_revision: expectedRevision,
             targets,
+        }));
+    }
+    async querySelectionRangeStatistics(expectedRevision, range) {
+        return expectResponse("selection_statistics", await this.#command({
+            type: "query_selection_statistics",
+            expected_revision: expectedRevision,
+            range,
         }));
     }
     async queryColumnTotals(expectedRevision, collection, entities) {
