@@ -2018,7 +2018,8 @@ export function SheetShell(props: SheetShellProps) {
       const plan = fillDownPlan(displayRows, columns, area, Boolean(table.native_table_profile), !gridSettings.sort && !gridSettings.filters?.length);
       const intent = completionIntent();
       const anchor = boundSelection?.anchor ?? { entity: rowEntity(displayRows[area!.top]!), field: columns[area!.left]!.id };
-      const end = { entity: rowEntity(displayRows[area!.bottom]!), field: columns[area!.right]!.id };
+      const endColumn = anchor.field === columns[area!.left]!.id ? area!.right : area!.left;
+      const end = { entity: rowEntity(displayRows[area!.bottom]!), field: columns[endColumn]!.id };
       const selectFilledRange = () => {
         if (!fromFillHandle || !completionMayUpdateUi(intent)) return;
         setCellSelection({ identity: collectionIdentity!, revision: pasteTargetRef.current.revision!, anchor, end, fromFillHandle: true });
