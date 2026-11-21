@@ -2556,7 +2556,7 @@ export function SheetShell(props: SheetShellProps) {
     }
     window.addEventListener("keydown", onHistoryKeyDown);
     return () => window.removeEventListener("keydown", onHistoryKeyDown);
-  }, [controlsLocked, currentness, formulaDraftActive, historyInteractionLocked, localHistory, modalInteractionOpen, onHistory, props.appearancePreference, rowDraftActive, view]);
+  }, [controlsLocked, currentness, formulaDraftActive, historyInteractionLocked, localHistory, modalInteractionOpen, onHistory, props.appearancePreference, rowDraftActive, view, boundSelection]);
   const cellDraftActive = editor !== null && editor.entity !== DRAFT_ROW && editor.value !== editor.original;
   const workFileDownloadLocked = controlsLocked || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
   // Downloads snapshot the published revision, so unpublished drafts block them.
