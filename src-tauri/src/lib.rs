@@ -586,6 +586,7 @@ async fn tokio_sleep(duration: std::time::Duration) {
 const ZOOM_IN: &str = "zoom-in";
 const ZOOM_OUT: &str = "zoom-out";
 const ZOOM_RESET: &str = "zoom-reset";
+const FREEZE_FIRST_COLUMN: &str = "freeze-first-column";
 const ZOOM_STEPS: [f64; 11] = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
 
 #[derive(Clone, Copy)]
@@ -686,7 +687,7 @@ fn page_item(app: &AppHandle, command: &PageCommand) -> tauri::Result<MenuItem<t
 
 /// Tell the page which menu command was chosen. Ids come only from `PAGE_COMMANDS`.
 fn run_page_command(app: &AppHandle, id: &str) {
-    if PAGE_COMMANDS.iter().any(|command| command.id == id)
+    if (id == FREEZE_FIRST_COLUMN || PAGE_COMMANDS.iter().any(|command| command.id == id))
         && let Some(window) = app.get_webview_window(MAIN_WINDOW)
     {
         let _ = window.eval(format!(
@@ -768,6 +769,9 @@ fn app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         };
         match submenu.text()?.as_str() {
             "View" => {
+                submenu.append(&MenuItem::with_id(
+                    app, FREEZE_FIRST_COLUMN, "Freeze First Column", true, None::<&str>,
+                )?)?;
                 if !submenu.items()?.is_empty() {
                     submenu.append(&PredefinedMenuItem::separator(app)?)?;
                 }
