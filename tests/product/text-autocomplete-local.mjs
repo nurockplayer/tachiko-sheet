@@ -33,7 +33,7 @@ try {
   const selection = () => editor.evaluate(node => [node.selectionStart, node.selectionEnd]);
   await page.goto(LOCAL_ORIGIN); await waitForColdHome(page);
   await (await homeImportInput(page)).setInputFiles({ name: "autocomplete.csv", mimeType: "text/csv", buffer: Buffer.from(
-    "City,Ambiguous,Amount,Day,Other\nTokyo,Osaka,1234,2026-11-22,12345\nOsaka,Okinawa,12,2026-11-23,2026-11-22\n,,,,\n",
+    "City,Ambiguous,Amount,Day,Other\nTokyo,Osaka,1234,2026-11-22,12345\nOsaka,Okinawa,12,2026-11-23,2026-11-22\n,,,,target\n",
   ) });
   const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
   for (const [i, type] of ["text", "text", "number", "date", "text"].entries()) await preview.locator(".ts-import-column select").nth(i).selectOption(type);
