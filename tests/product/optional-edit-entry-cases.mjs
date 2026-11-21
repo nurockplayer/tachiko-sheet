@@ -144,7 +144,7 @@ export async function runOptionalEditEntryCases(page, { close, checks }) {
   assert.deepEqual(zeroAppend.fields.find(field => field.target.field === ids[2]).stored, { kind: "number", value: 0 });
   await expect(page.getByTestId(`cell:${blankAppend.id}:${ids[0]}`)).toHaveText("appended");
   await expect(page.getByTestId(`cell:${zeroAppend.id}:${ids[0]}`)).toHaveText("zero");
-  await expect(page.getByTestId(`cell:${zeroAppend.id}:${ids[1]}`)).toHaveText(" ");
+  assert.equal(await page.getByTestId(`cell:${zeroAppend.id}:${ids[1]}`).textContent(), " ");
   await expect(page.getByTestId(`cell:${zeroAppend.id}:${ids[2]}`)).toHaveText("0");
   await assertBlank(zeroAppend, 3);
   await undo(); assert.deepEqual((await projection()).rows, baseline.rows); await noUndo();
