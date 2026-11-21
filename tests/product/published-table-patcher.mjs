@@ -42,21 +42,16 @@ export async function installPublishedTablePatcher(context) {
     };
     window.__trackObservedTable = (record, table, display = false) => {
       record.lastTable = table;
-      record.stale = false;
       record.tableDisplay = display;
-      const gaps = (record.gaps ?? []).filter(gap => !gap.resolved && gap.publication.resulting_revision === table.revision);
-      if (!gaps.length) return table;
-      const columnIds = new Set(table.columns.map(column => column.id));
-      const rowFields = new Map(table.rows.map(row => [row.id,
-        new Set([...row.fields.map(field => field.target.field), ...(row.blank_fields ?? [])]),
-      ]));
-      for (const gap of gaps) {
-        if (!gap.publication.changed.every(change => {
-          return columnIds.has(change.target.field) && rowFields.get(change.target.entity)?.has(change.target.field);
-        })) continue;
+      for (const gap of record.gaps ?? []) {
+        if (gap.resolved || gap.collection !== table.collection.id) continue;
+        // Resident revisions are monotonic counters, not lexically ordered strings.
+        if (BigInt(table.revision.slice("resident/".length)) <
+            BigInt(gap.publication.resulting_revision.slice("resident/".length))) continue;
         gap.resolved = true;
         window.__observerGaps--;
       }
+      record.stale = (record.gaps ?? []).some(gap => !gap.resolved);
       return table;
     };
     window.__readObservedTable = record => {
@@ -72,7 +67,8 @@ export async function installPublishedTablePatcher(context) {
       if (table === null) {
         window.__observerGaps++;
         record.stale = true;
-        (record.gaps ??= []).push({ publication: structuredClone(publication), resolved: false });
+        (record.gaps ??= []).push({ collection: record.lastTable.collection.id,
+          publication: structuredClone(publication), resolved: false });
       } else if (table) record.lastTable = table;
       return table;
     };
