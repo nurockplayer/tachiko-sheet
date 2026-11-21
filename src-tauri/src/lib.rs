@@ -716,6 +716,15 @@ fn choose_file_to_open(app: &AppHandle) {
 }
 
 fn run_menu_command(app: &AppHandle, id: &str) {
+    #[cfg(target_os = "linux")]
+    if id == "paste" {
+        use webkit2gtk::WebViewExt;
+        app.get_webview_window(MAIN_WINDOW)
+            .expect("Paste main window")
+            .with_webview(|webview| webview.inner().execute_editing_command("Paste"))
+            .expect("dispatch native WebKit Paste");
+        return;
+    }
     if id == ZOOM_IN {
         run_zoom_command(app, ZoomAction::In);
     } else if id == ZOOM_OUT {
@@ -782,6 +791,17 @@ fn app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                         continue;
                     };
                     let text = predefined.text()?.replace('&', "");
+                    // Linux's predefined item needs libxdo. Ask WebKit to paste
+                    // instead, producing the same clipboard event as Ctrl+V.
+                    #[cfg(target_os = "linux")]
+                    if text.starts_with("Paste") {
+                        submenu.remove(&item)?;
+                        submenu.insert(
+                            &MenuItem::with_id(app, "paste", "Paste", true, Some("Ctrl+V"))?,
+                            position,
+                        )?;
+                        continue;
+                    }
                     let command = if text.starts_with("Undo") {
                         &UNDO
                     } else if text.starts_with("Redo") {
