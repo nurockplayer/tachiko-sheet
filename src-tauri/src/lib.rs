@@ -127,6 +127,29 @@ const NOT_RESPONDING: &str = "Tachiko Sheet is not responding, so it cannot tell
 const CANNOT_TELL: &str =
     "Tachiko Sheet cannot tell whether your work is saved. Unsaved changes will be lost.";
 
+/// Installer-smoke diagnostics are opt-in; normal release launches write nothing.
+fn close_diagnostic(window: &WebviewWindow, event: &str) {
+    use std::io::Write;
+    let Some(path) = std::env::var_os("TACHIKO_CLOSE_DIAGNOSTICS") else {
+        return;
+    };
+    let runtime = window.state::<RuntimeChannel>().close_diagnostic();
+    let unix_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock before Unix epoch")
+        .as_millis();
+    let result = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .and_then(|mut file| {
+            writeln!(file, "UTC unix_ms={unix_ms} pid={} {event} {runtime}", std::process::id())
+        });
+    if let Err(error) = result {
+        eprintln!("installer-smoke close diagnostics: {error}");
+    }
+}
+
 /// Freezes the page (no input can change it after this point) and asks
 /// whether it holds unsaved or in-flight work, using the Sheet's own
 /// `beforeunload` guard; reports the answer for one check.
@@ -156,6 +179,7 @@ fn request_leave(window: &WebviewWindow, leave: Leave) {
         lock(&window.state::<LeaveGuard>().deciding)
     ));
     let guard = window.state::<LeaveGuard>();
+    close_diagnostic(window, &format!("requested leave={leave:?} state={:?}", lock(&guard.deciding)));
     let check = {
         let mut deciding = lock(&guard.deciding);
         match *deciding {
@@ -177,7 +201,9 @@ fn request_leave(window: &WebviewWindow, leave: Leave) {
         *deciding = Deciding::Checking(check, leave);
         check
     };
+    close_diagnostic(window, &format!("checking check={check} page_reply=false"));
     if window.eval(leave_check_script(check)).is_err() {
+        close_diagnostic(window, "page-eval-failed");
         *lock(&guard.deciding) = Deciding::Asking;
         ask_then_leave(window, leave, CANNOT_TELL);
     }
@@ -190,6 +216,7 @@ fn window_close_check(
     check: u64,
     unsaved: bool,
 ) {
+    close_diagnostic(&window, &format!("page-reply check={check} unsaved={unsaved}"));
     let mut deciding = lock(&guard.deciding);
     let Deciding::Checking(current, leave) = *deciding else {
         return;
@@ -197,12 +224,15 @@ fn window_close_check(
     if current != check {
         return;
     }
+    close_diagnostic(&window, &format!("page-reply-accepted check={check}"));
     let reason = if unsaved {
+        close_diagnostic(&window, "confirmation-reason=page-unsaved");
         Some(UNSAVED)
     } else if window.state::<RuntimeChannel>().seal_if_idle() {
         None
     } else {
         // An operation arrived after the page answered; that answer is stale.
+        close_diagnostic(&window, "confirmation-reason=runtime-busy");
         Some(UNSAVED)
     };
     match reason {
@@ -220,9 +250,11 @@ fn window_close_check(
 }
 
 fn ask_then_leave(window: &WebviewWindow, leave: Leave, reason: &'static str) {
+    close_diagnostic(window, &format!("confirmation state=Asking leave={leave:?} reason={reason}"));
     let target = window.clone();
     tauri::async_runtime::spawn(async move {
         let discard = confirm_discard(&target, leave, reason).await;
+        close_diagnostic(&target, &format!("confirmation-reply discard={discard}"));
         let channel = target.state::<RuntimeChannel>();
         let guard = target.state::<LeaveGuard>();
         let mut deciding = lock(&guard.deciding);
@@ -276,6 +308,7 @@ async fn confirm_discard(window: &WebviewWindow, leave: Leave, reason: &str) -> 
 /// Leaving is decided and the runtime is sealed. No further save starts; a
 /// save already being written finishes first, without blocking this thread.
 fn proceed(window: &WebviewWindow, leave: Leave) {
+    close_diagnostic(window, "state=Leaving waiting-for-save-writes");
     window.state::<Saves>().seal();
     let window = window.clone();
     tauri::async_runtime::spawn(async move {
@@ -284,6 +317,7 @@ fn proceed(window: &WebviewWindow, leave: Leave) {
         match leave {
             Leave::Close => {
                 guard.closing.store(true, Ordering::SeqCst);
+                close_diagnostic(&window, "save-writes-finished closing-window");
                 let _ = window.close();
             }
             Leave::Reload => {

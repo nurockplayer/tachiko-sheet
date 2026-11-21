@@ -104,6 +104,11 @@ impl Default for RuntimeChannel {
 }
 
 impl RuntimeChannel {
+    pub(crate) fn close_diagnostic(&self) -> String {
+        let gate = lock_gate(&self.gate);
+        format!("runtime={:?} waiting={} running={}", gate.phase, gate.waiting, gate.running)
+    }
+
     /// Start a new generation with an empty runtime. Any resident occurrence
     /// and every frame from an earlier generation become unreachable. This
     /// never reopens a held or sealed gate.

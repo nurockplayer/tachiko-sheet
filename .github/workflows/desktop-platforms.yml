@@ -162,4 +162,6 @@ jobs:
           name: sheet-desktop-smoke-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 7
           if-no-files-found: ignore
-          path: ${{ runner.temp }}/tachiko-desktop-smoke-*
+          path: |
+            ${{ runner.temp }}/tachiko-desktop-smoke-*
+            ${{ runner.temp }}/tachiko-installer-smoke-*
