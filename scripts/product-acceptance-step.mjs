@@ -7,10 +7,11 @@ const STEP_KILL_GRACE_MS = 5000;
 const PROCESS_SCAN_TIMEOUT_MS = 10_000;
 
 export function signalableOwnedPids(owned, current) {
-  // Recheck ownership as well as start time before signalling a recorded PID.
+  // Ownership persists even if a process drops its marker or closes its output.
+  // Recheck start time before signalling so a reused PID is never targeted.
   return [...owned].filter(([pid, started]) => {
     const info = current.get(pid);
-    return info?.started === started && (info.marked || info.holdsOutput);
+    return info?.started === started;
   }).map(([pid]) => pid);
 }
 

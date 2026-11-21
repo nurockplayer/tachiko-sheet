@@ -8,15 +8,15 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { runStep, signalableOwnedPids } from '../../scripts/product-acceptance-step.mjs';
 
-test('cleanup does not signal an unmarked reused PID with the same start time', () => {
-  const owned = new Map([[123, 'same second'], [456, 'same second']]);
+test('cleanup retains recorded ownership after the marker and output disappear', () => {
+  const owned = new Map([[123, 'same'], [456, 'same']]);
   const current = new Map([
-    [123, { started: 'same second', marked: false }],
-    [456, { started: 'same second', marked: true }],
+    [123, { started: 'same', marked: false, holdsOutput: false }],
+    [456, { started: 'same', marked: true }],
   ]);
   const signalled = [];
   for (const pid of signalableOwnedPids(owned, current)) signalled.push(pid);
-  assert.deepEqual(signalled, [456]);
+  assert.deepEqual(signalled, [123, 456]);
 });
 
 test('output ownership still requires the recorded process start time', () => {
@@ -348,6 +348,52 @@ for (const [label, detectOutputHolders, hangs, fd] of [
     }
   });
 }
+
+test('cleanup kills an output holder that closes stdout and stderr on SIGTERM', { skip: process.platform !== 'linux', timeout: 10000 }, async t => {
+  let fixture;
+  t.after(async () => {
+    if (!fixture) return;
+    const { pid } = JSON.parse(await readFile(path.join(fixture.directory, 'holder.json'), 'utf8'));
+    try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+  });
+  fixture = await setup(t, 60000);
+  const holder = `
+    const fs = require('node:fs');
+    process.on('SIGTERM', () => {
+      fs.closeSync(1);
+      fs.closeSync(2);
+      fs.writeFileSync('term-seen', 'closed');
+    });
+    fs.writeFileSync('heartbeat', 'started');
+    setInterval(() => fs.writeFileSync('heartbeat', String(Date.now())), 20);
+    fs.writeFileSync('holder.json', JSON.stringify({ pid: process.pid }));
+  `;
+  const source = `
+    const fs = require('node:fs');
+    const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(holder)}], {
+      detached: true, env: {}, stdio: ['ignore', 'inherit', 'inherit'],
+    });
+    child.unref();
+    const ready = setInterval(() => {
+      if (fs.existsSync('holder.json')) { clearInterval(ready); process.exit(0); }
+    }, 10);
+  `;
+  const code = await runStep('closing-output', ['-e', source], {}, { ...fixture.options, killGraceMs: 150 });
+  assert.equal(await readFile(path.join(fixture.directory, 'term-seen'), 'utf8'), 'closed');
+  assert.equal(code, 0);
+  assert.deepEqual(fixture.entries.map(({ status }) => status), ['START', 'PASS']);
+  // Allow SIGKILL delivery; an orphan can remain as a zombie under container PID 1.
+  await new Promise(resolve => setTimeout(resolve, 100));
+  const stopped = await readFile(path.join(fixture.directory, 'heartbeat'), 'utf8');
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(await readFile(path.join(fixture.directory, 'heartbeat'), 'utf8'), stopped, 'output holder survived cleanup');
+  const { pid } = JSON.parse(await readFile(path.join(fixture.directory, 'holder.json'), 'utf8'));
+  const stat = await readFile(`/proc/${pid}/stat`, 'utf8').catch(error => {
+    if (error.code === 'ENOENT' || error.code === 'ESRCH') return null;
+    throw error;
+  });
+  assert.ok(stat === null || stat.slice(stat.lastIndexOf(')') + 2).startsWith('Z '), 'output holder survived cleanup');
+});
 
 for (const cancellation of ['SIGINT', 'SIGTERM', 'SIGHUP', 'exit']) {
   test(`parent ${cancellation} kills the active step and detached descendant`, { timeout: 180000 }, async (t) => {
