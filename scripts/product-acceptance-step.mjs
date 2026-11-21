@@ -1,16 +1,19 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, writeSync } from 'node:fs';
+import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, readlinkSync, rmSync, writeSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const STEP_KILL_GRACE_MS = 5000;
 const PROCESS_SCAN_TIMEOUT_MS = 10_000;
 
 export function signalableOwnedPids(owned, current) {
-  // Recheck ownership as well as start time before signalling a recorded PID.
+  // Ownership persists even if a process drops its marker or closes its output.
+  // Recheck start time before signalling so a reused PID is never targeted.
   return [...owned].filter(([pid, started]) => {
     const info = current.get(pid);
-    return info?.started === started && (info.marked || info.holdsOutput);
+    return info?.started === started;
   }).map(([pid]) => pid);
 }
 
@@ -31,6 +34,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
   let closeTimer;
   let descendantTimer;
   let groupCleanup;
+  let processScannerDirectory;
   let timedOut = false;
   let cleanupParentListeners = () => {};
   let cleanupOwned = () => {};
@@ -43,6 +47,18 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
     const owner = randomUUID();
     const ownership = `TACHIKO_ACCEPTANCE_STEP_OWNER=${owner}`;
     const outputPipes = new Set();
+    let processScanner;
+    if (process.platform === 'darwin') {
+      processScannerDirectory = mkdtempSync(path.join(tmpdir(), 'sheet-process-table-'));
+      processScanner = path.join(processScannerDirectory, 'process-table');
+      const compiled = spawnSync('/usr/bin/clang', ['-O2', '-lproc', '-o', processScanner,
+        fileURLToPath(new URL('./product-acceptance-process-table.c', import.meta.url))], {
+        encoding: 'utf8', timeout: PROCESS_SCAN_TIMEOUT_MS,
+      });
+      if (compiled.error || compiled.status !== 0) {
+        throw new Error(`cannot build process scanner: ${compiled.error?.code ?? compiled.status}: ${compiled.stderr}`);
+      }
+    }
     let baseline;
     const processTable = () => {
       if (process.platform === 'linux') {
@@ -79,7 +95,9 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
         }
         return table;
       }
-      const table = spawnSync('ps', ['-axo', 'pid=,ppid=,pgid=,lstart='], {
+      // Darwin's lstart is rounded to a second. The native scanner preserves
+      // kernel microseconds, including after markers and output are discarded.
+      const table = spawnSync(processScanner, [], {
         encoding: 'utf8', timeout: PROCESS_SCAN_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024,
       });
       if (table.error || table.status !== 0) throw new Error(`cannot inspect process ownership: ${table.error?.code ?? table.status}`);
@@ -265,6 +283,7 @@ export async function runStep(name, args, extraEnvironment = {}, options = {}) {
     cleanupParentListeners();
     try { cleanupOwned(); } finally {
       for (const descriptor of logs) closeSync(descriptor);
+      if (processScannerDirectory) rmSync(processScannerDirectory, { recursive: true });
     }
   }
 }

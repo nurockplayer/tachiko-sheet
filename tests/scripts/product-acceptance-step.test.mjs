@@ -4,19 +4,20 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { connect } from 'node:net';
-import { spawn } from 'node:child_process';
+import childProcess, { spawn } from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
 import { createInterface } from 'node:readline';
 import { runStep, signalableOwnedPids } from '../../scripts/product-acceptance-step.mjs';
 
-test('cleanup does not signal an unmarked reused PID with the same start time', () => {
-  const owned = new Map([[123, 'same second'], [456, 'same second']]);
+test('cleanup retains recorded ownership after the marker and output disappear', () => {
+  const owned = new Map([[123, 'same'], [456, 'same']]);
   const current = new Map([
-    [123, { started: 'same second', marked: false }],
-    [456, { started: 'same second', marked: true }],
+    [123, { started: 'same', marked: false, holdsOutput: false }],
+    [456, { started: 'same', marked: true }],
   ]);
   const signalled = [];
   for (const pid of signalableOwnedPids(owned, current)) signalled.push(pid);
-  assert.deepEqual(signalled, [456]);
+  assert.deepEqual(signalled, [123, 456]);
 });
 
 test('output ownership still requires the recorded process start time', () => {
@@ -57,6 +58,51 @@ async function setup(t, timeoutMs) {
     },
   };
 }
+
+test('macOS cleanup rejects PID reuse within the same start second', async t => {
+  const fixture = await setup(t, 60000);
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  const originalSpawn = childProcess.spawn;
+  const originalKill = process.kill;
+  const reusedPid = 987654321;
+  const signals = [];
+  let owner;
+  let scans = 0;
+  Object.defineProperty(process, 'platform', { value: 'darwin' });
+  t.after(() => {
+    Object.defineProperty(process, 'platform', platform);
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  });
+  t.mock.method(childProcess, 'spawn', (...args) => {
+    owner = args[2].env.TACHIKO_ACCEPTANCE_STEP_OWNER;
+    return originalSpawn(...args);
+  });
+  t.mock.method(childProcess, 'spawnSync', (command, args) => {
+    const result = { status: 0, stdout: '', stderr: '' };
+    if (command === '/usr/bin/clang') return result;
+    if (command === 'ps' && args[0] === '-wwE') {
+      result.stdout = scans === 2 ? `${reusedPid} node TACHIKO_ACCEPTANCE_STEP_OWNER=${owner}\n` : '';
+      return result;
+    }
+    // Native snapshots distinguish microseconds; the old ps scanner sees the
+    // same second for both instances and would signal the unrelated replacement.
+    assert.ok(command.endsWith('/process-table') || (command === 'ps' && args[0] === '-axo'));
+    scans++;
+    const started = command === 'ps' ? 'same second' : `1700000000.${scans === 2 ? '100000' : '900000'}`;
+    result.stdout = `${process.pid} 1 1 ${started}\n`;
+    if (scans >= 2) result.stdout += `${reusedPid} 1 999 ${started}\n`;
+    return result;
+  });
+  t.mock.method(process, 'kill', (pid, signal) => {
+    if (pid === reusedPid) { signals.push(signal); return true; }
+    return originalKill(pid, signal);
+  });
+  syncBuiltinESMExports();
+  assert.equal(await runStep('same-second-reuse', ['-e', ''], {}, { ...fixture.options, killGraceMs: 1 }), 0);
+  assert.ok(scans >= 3, 'must observe both owned and replacement process instances');
+  assert.deepEqual(signals, [], 'unrelated same-second replacement was signalled');
+});
 
 test('passing step keeps its output, details and zero exit code', async (t) => {
   const fixture = await setup(t, 60000);
@@ -291,7 +337,7 @@ for (const [label, detectOutputHolders, hangs, fd] of [
   ['owned-stdout', true, false, 1],
   ['owned-stderr', true, false, 2],
   ['escaped-exit', false, false, 1],
-  ['escaped-timeout', false, true, 1],
+  ['ancestry-timeout', false, true, 1],
 ]) {
   test(`bounded output wait: ${label}`, { skip: detectOutputHolders && process.platform !== 'linux', timeout: 10000 }, async t => {
     let fixture;
@@ -310,7 +356,11 @@ for (const [label, detectOutputHolders, hangs, fd] of [
     const killGraceMs = 100;
     const closeGraceMs = 300;
     fixture = await setup(t, timeoutMs);
-    const holder = 'setTimeout(() => {}, 3000);';
+    const holder = `
+      const fs = require('node:fs');
+      setInterval(() => fs.writeFileSync('holder-heartbeat', String(Date.now())), 20);
+      setTimeout(() => process.exit(0), 3000);
+    `;
     const source = `
       const fs = require('node:fs');
       fs.writeFileSync('pids.json', JSON.stringify({ parent: process.pid }));
@@ -330,24 +380,76 @@ for (const [label, detectOutputHolders, hangs, fd] of [
     const expectedStatus = hangs ? 'TIMEOUT' : detectOutputHolders ? 'PASS' : 'FAIL';
     assert.equal(code, detectOutputHolders ? 0 : 1);
     assert.deepEqual(fixture.entries.map(({ status }) => status), ['START', expectedStatus]);
-    assert.equal(fixture.options.summary[0].escapedOutput, detectOutputHolders ? undefined : true);
+    // A live parent lets ancestry discovery record the holder before timeout,
+    // even with output-holder detection disabled. That ownership now persists.
+    const ownsHolder = detectOutputHolders || hangs;
+    assert.equal(fixture.options.summary[0].escapedOutput, ownsHolder ? undefined : true);
     const [local, upload] = await fixture.logs(label);
     assert.equal(local, upload);
-    assert.equal(local, detectOutputHolders ? '' : 'escaped descendant held step output open after exit; failing step\n');
+    assert.equal(local, ownsHolder ? '' : 'escaped descendant held step output open after exit; failing step\n');
     const { holder: pid } = JSON.parse(await readFile(path.join(fixture.directory, 'pids.json'), 'utf8'));
-    if (detectOutputHolders) {
-      // Container PID 1 may leave an exited orphan as a zombie.
-      const stat = await readFile(`/proc/${pid}/stat`, 'utf8').catch(error => {
-        if (error.code === 'ENOENT' || error.code === 'ESRCH') return null;
+    if (ownsHolder) {
+      // A dead orphan may remain a zombie; its heartbeat must stop on all hosts.
+      const heartbeat = () => readFile(path.join(fixture.directory, 'holder-heartbeat'), 'utf8').catch(error => {
+        if (error.code === 'ENOENT') return null;
         throw error;
       });
-      assert.ok(stat === null || stat.slice(stat.lastIndexOf(')') + 2).startsWith('Z '), 'output holder survived cleanup');
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const stopped = await heartbeat();
+      await new Promise(resolve => setTimeout(resolve, 100));
+      assert.equal(await heartbeat(), stopped, 'output holder survived cleanup');
     } else {
       assert.doesNotThrow(() => process.kill(pid, 0), 'test must exercise a surviving escaped holder');
       assert.ok(elapsed >= closeGraceMs + (hangs ? timeoutMs + killGraceMs : 0));
     }
   });
 }
+
+test('cleanup kills an output holder that closes stdout and stderr on SIGTERM', { skip: process.platform !== 'linux', timeout: 10000 }, async t => {
+  let fixture;
+  t.after(async () => {
+    if (!fixture) return;
+    const { pid } = JSON.parse(await readFile(path.join(fixture.directory, 'holder.json'), 'utf8'));
+    try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+  });
+  fixture = await setup(t, 60000);
+  const holder = `
+    const fs = require('node:fs');
+    process.on('SIGTERM', () => {
+      fs.closeSync(1);
+      fs.closeSync(2);
+      fs.writeFileSync('term-seen', 'closed');
+    });
+    fs.writeFileSync('heartbeat', 'started');
+    setInterval(() => fs.writeFileSync('heartbeat', String(Date.now())), 20);
+    fs.writeFileSync('holder.json', JSON.stringify({ pid: process.pid }));
+  `;
+  const source = `
+    const fs = require('node:fs');
+    const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(holder)}], {
+      detached: true, env: {}, stdio: ['ignore', 'inherit', 'inherit'],
+    });
+    child.unref();
+    const ready = setInterval(() => {
+      if (fs.existsSync('holder.json')) { clearInterval(ready); process.exit(0); }
+    }, 10);
+  `;
+  const code = await runStep('closing-output', ['-e', source], {}, { ...fixture.options, killGraceMs: 150 });
+  assert.equal(await readFile(path.join(fixture.directory, 'term-seen'), 'utf8'), 'closed');
+  assert.equal(code, 0);
+  assert.deepEqual(fixture.entries.map(({ status }) => status), ['START', 'PASS']);
+  // Allow SIGKILL delivery; an orphan can remain as a zombie under container PID 1.
+  await new Promise(resolve => setTimeout(resolve, 100));
+  const stopped = await readFile(path.join(fixture.directory, 'heartbeat'), 'utf8');
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(await readFile(path.join(fixture.directory, 'heartbeat'), 'utf8'), stopped, 'output holder survived cleanup');
+  const { pid } = JSON.parse(await readFile(path.join(fixture.directory, 'holder.json'), 'utf8'));
+  const stat = await readFile(`/proc/${pid}/stat`, 'utf8').catch(error => {
+    if (error.code === 'ENOENT' || error.code === 'ESRCH') return null;
+    throw error;
+  });
+  assert.ok(stat === null || stat.slice(stat.lastIndexOf(')') + 2).startsWith('Z '), 'output holder survived cleanup');
+});
 
 for (const cancellation of ['SIGINT', 'SIGTERM', 'SIGHUP', 'exit']) {
   test(`parent ${cancellation} kills the active step and detached descendant`, { timeout: 180000 }, async (t) => {
