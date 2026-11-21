@@ -7,6 +7,8 @@ import { connect } from 'node:net';
 import childProcess, { spawn } from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import { createInterface } from 'node:readline';
+import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
 import { runStep, signalableOwnedPids } from '../../scripts/product-acceptance-step.mjs';
 
 test('cleanup retains recorded ownership after the marker and output disappear', () => {
@@ -58,6 +60,34 @@ async function setup(t, timeoutMs) {
     },
   };
 }
+
+test('macOS process scanner reports native process identity and start time',
+  { skip: process.platform !== 'darwin' && 'requires macOS libproc' }, async (t) => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'sheet-scanner-test-'));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const scanner = path.join(directory, 'process-table');
+    const source = fileURLToPath(new URL('../../scripts/product-acceptance-process-table.c', import.meta.url));
+    const compiled = childProcess.spawnSync('/usr/bin/clang', ['-O2', '-lproc', '-o', scanner, source], { encoding: 'utf8' });
+    assert.equal(compiled.status, 0, compiled.stderr || String(compiled.error));
+
+    const before = Date.now();
+    const child = spawn(process.execPath, ['-e', 'console.log("ready"); setInterval(() => {}, 1000)'],
+      { detached: true, stdio: ['ignore', 'pipe', 'inherit'] });
+    t.after(() => child.kill('SIGKILL'));
+    await once(child.stdout, 'data');
+    const after = Date.now();
+    const snapshot = childProcess.spawnSync(scanner, [], { encoding: 'utf8' });
+    assert.equal(snapshot.status, 0, snapshot.stderr || String(snapshot.error));
+    const row = snapshot.stdout.trim().split('\n').find(line => line.startsWith(`${child.pid} `));
+    assert.ok(row, 'scanner must report the child');
+    const [, pid, parent, group, seconds, micros] = row.match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\.(\d{6})$/);
+    assert.equal(Number(pid), child.pid);
+    assert.equal(Number(parent), process.pid);
+    assert.equal(Number(group), child.pid);
+    assert.notEqual(Number(micros), 0, 'start timestamp must retain sub-second precision');
+    const started = Number(seconds) * 1000 + Number(micros) / 1000;
+    assert.ok(started >= before - 1 && started <= after, `start time ${started} outside ${before}–${after}`);
+  });
 
 test('macOS cleanup rejects PID reuse within the same start second', async t => {
   const fixture = await setup(t, 60000);
