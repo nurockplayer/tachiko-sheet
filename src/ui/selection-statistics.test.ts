@@ -47,7 +47,9 @@ describe("selection statistics range", () => {
   it("maps 10,000 stored rows to inclusive anchors and selected field IDs without reading values", () => {
     const largeRows = Array.from({ length: 10_000 }, (_, index) => {
       const projected = row(`e${index}`);
-      Object.defineProperty(projected, "fields", { get(): never { throw new Error("values must not be read"); } });
+      Object.defineProperty(projected, "fields", { value: [{ target: { entity: projected.id, field: "a" },
+        get stored(): never { throw new Error("values must not be read"); },
+        get calculated(): never { throw new Error("values must not be read"); } }] });
       return projected;
     });
     expect(selectionStatisticsRange("table", largeRows, columns, { top: 0, bottom: 9_999, left: 1, right: 1 }))
