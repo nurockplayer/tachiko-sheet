@@ -548,7 +548,12 @@ const cases = [
     await page.waitForFunction(() => {
       const cells = document.querySelectorAll("td[data-work-field]:not([data-entry-field])");
       return cells.length > 0 && [...cells].every((cell) => cell.getAttribute("aria-selected") === "true");
-    }, null, { timeout: 10000 });
+    }, null, { timeout: 10000 }).catch(async error => {
+      const selection = await page.locator('td[data-work-field]:not([data-entry-field])').evaluateAll(cells => cells.map(cell => ({
+        id: cell.dataset.testid, revision: cell.dataset.workRevision, selected: cell.getAttribute("aria-selected"),
+      })));
+      throw new Error(`${error.message}\nSelect All after column fit: ${JSON.stringify(selection)}`);
+    });
     assert.equal(await focused(firstTitle), true, "Select All still keeps focus where it was");
   }],
   ["Tab run returns to its starting column and ArrowDown cancels it", async (page) => {
