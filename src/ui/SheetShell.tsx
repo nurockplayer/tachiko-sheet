@@ -858,7 +858,7 @@ export function SheetShell(props: SheetShellProps) {
   const requestPrint = () => setPrinting(printRequestRef.current += 1);
   const gridScrollFrameRef = useRef<number | null>(null);
   const pasteRevealFrameRef = useRef<number | null>(null);
-  const pendingPasteRevealRef = useRef<{ position: GridPosition; collectionIdentity: string | null; intent: { generation: number; occurrence: string | null } } | null>(null);
+  const pendingPasteRevealRef = useRef<{ position: GridPosition; collectionIdentity: string | null; intent: { generation: number; occurrence: string | null }; settled: boolean } | null>(null);
   // A focus target waiting for its windowed row to mount, with the user-intent
   // generation at request time; any newer input cancels it.
   const pendingCellFocusRef = useRef<{ entity: string; field: string; generation: number } | null>(null);
@@ -1832,7 +1832,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function revealPastedCell(position: GridPosition, intent: ReturnType<typeof completionIntent>): void {
     if (!completionMayUpdateUi(intent)) return;
-    pendingPasteRevealRef.current = { position, collectionIdentity, intent };
+    pendingPasteRevealRef.current = { position, collectionIdentity, intent, settled: false };
     const rowIndex = rowIndexByEntity.get(position.entity);
     if (rowIndex !== undefined) revealGridRow(rowIndex);
     schedulePasteReveal();
@@ -1842,11 +1842,11 @@ export function SheetShell(props: SheetShellProps) {
     if (!pendingPasteRevealRef.current || pasteRevealFrameRef.current !== null) return;
     pasteRevealFrameRef.current = requestAnimationFrame(() => {
       pasteRevealFrameRef.current = null;
-      correctPasteReveal();
+      correctPasteReveal(true);
     });
   }
 
-  function correctPasteReveal(): void {
+  function correctPasteReveal(frame = false): void {
     const pending = pendingPasteRevealRef.current;
     if (!pending) return;
     if (!completionMayUpdateUi(pending.intent) || clipboardIdentityRef.current !== pending.collectionIdentity) {
@@ -1858,6 +1858,7 @@ export function SheetShell(props: SheetShellProps) {
     const { position } = pending;
     const cell = cellRefs.current.get(cellKey(position.entity, position.field));
     if (!cell) {
+      pending.settled = false;
       const rowIndex = rowIndexByEntity.get(position.entity);
       if (rowIndex === undefined) { pendingPasteRevealRef.current = null; return; }
       revealGridRow(rowIndex);
@@ -1866,9 +1867,13 @@ export function SheetShell(props: SheetShellProps) {
     }
     const top = scroller.scrollTop, left = scroller.scrollLeft;
     const visible = scrollCellIntoGridNearest(cell, scroller);
-    // Recheck after scrolling commits a new virtual window. Keep the request
-    // through later layout/offset changes until newer user intent cancels it.
-    if (!visible || top !== scroller.scrollTop || left !== scroller.scrollLeft) schedulePasteReveal();
+    // A stable frame after correction lets the virtual window commit before
+    // releasing the request, so later scrolling is no longer pulled back.
+    if (visible && top === scroller.scrollTop && left === scroller.scrollLeft) {
+      if (frame && pending.settled) { pendingPasteRevealRef.current = null; return; }
+      pending.settled = true;
+    } else pending.settled = false;
+    schedulePasteReveal();
   }
 
   function cancelPasteReveal(): void {

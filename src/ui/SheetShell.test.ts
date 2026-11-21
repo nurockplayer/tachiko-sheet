@@ -688,6 +688,10 @@ describe("paste completion reveal", () => {
       if (outcome === "confirmed" || outcome === "offset/window changes") {
         expect(target.getBoundingClientRect().bottom).toBeLessThanOrEqual(83);
         expect(target.getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
+        scrollport.scrollTop = 0;
+        scroller.props.onScroll();
+        while (frames.length) frames.shift()!(0);
+        expect(scrollport.scrollTop).toBe(0);
       } else {
         expect(scrollport.scrollTop).toBe(outcome === "wheel" || outcome === "touch" ? 20 : 0);
         if (outcome === "cancelled") expect(publish).not.toHaveBeenCalled();
