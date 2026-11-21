@@ -43,7 +43,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Test acceptance process cleanup
-        run: node --test tests/scripts/product-acceptance-step.test.mjs
+        run: node --test --test-name-pattern='macOS process scanner reports native process identity and start time' tests/scripts/product-acceptance-step.test.mjs
 
       - name: Initialize bounded desktop evidence
         id: evidence-init
