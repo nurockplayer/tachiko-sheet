@@ -10,8 +10,6 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
 public static class AltGrInput {
-    [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr LoadKeyboardLayoutW([MarshalAs(UnmanagedType.LPWStr)] string id, uint flags);
-    [DllImport("user32.dll")] public static extern bool UnloadKeyboardLayout(IntPtr layout);
     [DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint thread);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
     [DllImport("user32.dll", SetLastError=true)] public static extern bool PostMessageW(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
@@ -21,6 +19,7 @@ public static class AltGrInput {
     [DllImport("user32.dll", SetLastError=true)] public static extern bool AttachThreadInput(uint from, uint to, bool attach);
     [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
     public static void Activate(IntPtr target) {
+        if (GetForegroundWindow() == target) return;
         uint owner;
         uint foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out owner);
         uint helperThread = GetCurrentThreadId();
@@ -58,6 +57,13 @@ public static class AltGrInput {
         for (int i = 0; i < actual; i++) values[i] = layouts[i].ToInt64().ToString("X");
         return String.Join(",", values);
     }
+    public static IntPtr GermanLayout() {
+        int count = GetKeyboardLayoutList(0, null); var layouts = new IntPtr[count];
+        int actual = GetKeyboardLayoutList(count, layouts);
+        for (int i = 0; i < actual; i++)
+            if ((layouts[i].ToInt64() & 0xFFFF) == 0x0407) return layouts[i];
+        throw new InvalidOperationException("German keyboard layout unavailable; install German keyboard layout for this user");
+    }
     [DllImport("user32.dll", SetLastError=true)] static extern uint SendInput(uint count, INPUT[] inputs, int size);
     [StructLayout(LayoutKind.Sequential)] struct KEYBDINPUT {
         public ushort vk, scan; public uint flags, time; public UIntPtr extra;
@@ -90,17 +96,9 @@ $window = $process.MainWindowHandle
 if ($window -eq [IntPtr]::Zero) { throw "PID $AppPid has no main window" }
 [uint32]$owner = 0
 $thread = [AltGrInput]::GetWindowThreadProcessId($window, [ref]$owner)
-Add-Type -AssemblyName System.Windows.Forms
-$loader = New-Object System.Windows.Forms.Form
-$loader.Text = 'AltGr layout setup'
-$loader.ShowInTaskbar = $false
-$loader.Show()
-$layout = [IntPtr]::Zero
+# Use the runner's loaded German layout without stealing app focus for a loader.
+$layout = [AltGrInput]::GermanLayout()
 try {
-    # The loader must own keyboard focus when LoadKeyboardLayoutW is called.
-    [AltGrInput]::Activate($loader.Handle)
-    $layout = [AltGrInput]::LoadKeyboardLayoutW('00000407', 0)
-    if ($layout -eq [IntPtr]::Zero -or ($layout.ToInt64() -band 0xFFFF) -ne 0x0407) { throw "German keyboard layout unavailable; install German keyboard layout for this user (returned $($layout.ToInt64().ToString('X')))" }
 [AltGrInput]::Activate($window)
 Start-Sleep -Milliseconds 200
 $info = New-Object AltGrInput+GUITHREADINFO
@@ -128,8 +126,4 @@ if ($focus -ne $window -and -not [AltGrInput]::IsChild($window, $focus)) { throw
     Write-Host "AltGr native input queued: PID $AppPid, layout 00000407, Right-Alt+$Key via SendInput (4/4); foreground/focus verified; app receipt still required"
 } finally {
     if ($focus -and $previous) { [void][AltGrInput]::PostMessageW($focus, 0x50, [IntPtr]::Zero, $previous) }
-    # Give the app thread time to release the test layout before unloading it.
-    Start-Sleep -Milliseconds 200
-    if ($layout -ne [IntPtr]::Zero) { [void][AltGrInput]::UnloadKeyboardLayout($layout) }
-    $loader.Dispose()
 }
