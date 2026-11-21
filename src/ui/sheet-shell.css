@@ -1193,6 +1193,10 @@ body { margin: 0; }
   flex-direction: column;
   overflow: hidden;
 }
+.ts-table-panel > .ts-notice {
+  order: 1;
+  flex: 0 0 auto;
+}
 .ts-table-composition {
   display: flex;
   align-items: stretch;
