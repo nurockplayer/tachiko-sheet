@@ -6,18 +6,98 @@ function DefaultValue($path) {
   if ($key) { return $key.GetValue('') }
   return $null
 }
-# MainWindowHandle alone also accepts a hidden window.
+$diagnosticRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $env:TEMP }
+$diagnosticDir = Join-Path $diagnosticRoot ("tachiko-installer-smoke-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $diagnosticDir | Out-Null
+$env:TACHIKO_CLOSE_DIAGNOSTICS = Join-Path $diagnosticDir 'app-close.log'
+# EnumWindows includes owned top-level dialogs, which MainWindowHandle omits.
 Add-Type @'
 using System;
+using System.Text;
 using System.Runtime.InteropServices;
 public static class InstallerSmokeWindow {
+    delegate bool EnumProc(IntPtr handle, IntPtr param);
     [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr handle);
+    [DllImport("user32.dll")]
+    static extern bool IsWindowEnabled(IntPtr handle);
+    [DllImport("user32.dll")]
+    static extern bool EnumWindows(EnumProc callback, IntPtr param);
+    [DllImport("user32.dll")]
+    static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr param);
+    [DllImport("user32.dll")]
+    static extern uint GetWindowThreadProcessId(IntPtr handle, out uint pid);
+    [DllImport("user32.dll")]
+    static extern IntPtr GetWindow(IntPtr handle, uint command);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern int GetClassName(IntPtr handle, StringBuilder text, int count);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern IntPtr SendMessageTimeout(IntPtr handle, uint message, IntPtr count,
+        StringBuilder text, uint flags, uint timeout, out IntPtr result);
+    static string Text(IntPtr handle) {
+        var text = new StringBuilder(1024);
+        IntPtr result;
+        if (SendMessageTimeout(handle, 13, (IntPtr)text.Capacity, text, 2, 200, out result) == IntPtr.Zero)
+            return "<WM_GETTEXT timed out/failed>";
+        return text.ToString();
+    }
+    static string Class(IntPtr handle) {
+        var text = new StringBuilder(256);
+        GetClassName(handle, text, text.Capacity);
+        return text.ToString();
+    }
+    public static string Describe(uint pid) {
+        var report = new StringBuilder();
+        EnumWindows((handle, param) => {
+            uint windowPid;
+            GetWindowThreadProcessId(handle, out windowPid);
+            if (windowPid != pid) return true;
+            var owner = GetWindow(handle, 4); // GW_OWNER
+            report.AppendLine(String.Format("window=0x{0:X} owner=0x{1:X} class={2} visible={3} enabled={4} title={5}",
+                handle.ToInt64(), owner.ToInt64(), Class(handle), IsWindowVisible(handle), IsWindowEnabled(handle), Text(handle)));
+            EnumChildWindows(handle, (child, unused) => {
+                if (Class(child).IndexOf("Button", StringComparison.OrdinalIgnoreCase) >= 0)
+                    report.AppendLine(String.Format("  button=0x{0:X} visible={1} enabled={2} text={3}",
+                        child.ToInt64(), IsWindowVisible(child), IsWindowEnabled(child), Text(child)));
+                return true;
+            }, IntPtr.Zero);
+            return true;
+        }, IntPtr.Zero);
+        return report.Length == 0 ? "no top-level windows for PID" : report.ToString();
+    }
 }
 '@
-function CheckWindow($process) {
+function CloseTimeoutDiagnostics($process, $launch, $started, $visibleMs, $closeMs) {
+  $elapsedMs = [math]::Round(([DateTime]::UtcNow - $started).TotalMilliseconds)
+  $process.Refresh()
+  $responding = if ($process.HasExited) { 'exited' } else { $process.Responding }
+  $summary = "$launch close-timeout UTC=$([DateTime]::UtcNow.ToString('o')) PID=$($process.Id) responding=$responding launch_UTC=$($started.ToString('o')) visible_ms=$visibleMs close_ms=$closeMs elapsed_ms=$elapsedMs since_close_ms=$($elapsedMs - $closeMs)"
+  Write-Host $summary
+  $windows = [InstallerSmokeWindow]::Describe($process.Id)
+  Write-Host $windows
+  @($summary, $windows) | Set-Content (Join-Path $diagnosticDir "windows-$($process.Id).txt")
+  try {
+    Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+    $bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
+    $bitmap = [System.Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    try {
+      $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+      $screenshot = Join-Path $diagnosticDir "timeout-$($process.Id).png"
+      $bitmap.Save($screenshot, [System.Drawing.Imaging.ImageFormat]::Png)
+      Write-Host "close-timeout screenshot: $screenshot"
+    } finally { $graphics.Dispose(); $bitmap.Dispose() }
+  } catch { Write-Host "close-timeout screenshot failed: $_" }
+  if (Test-Path -LiteralPath $env:TACHIKO_CLOSE_DIAGNOSTICS) {
+    Write-Host 'close-timeout app close-stage trace:'
+    Get-Content -LiteralPath $env:TACHIKO_CLOSE_DIAGNOSTICS | ForEach-Object { Write-Host $_ }
+  } else { Write-Host 'close-timeout app close-stage trace: no events recorded (no close request observed)' }
+}
+function CheckWindow($process, $launch) {
   if (-not $process) { throw 'shell dispatch did not return an app process' }
   try {
+    $started = $process.StartTime.ToUniversalTime()
+    Write-Host "$launch launch UTC=$($started.ToString('o')) PID=$($process.Id)"
     $window = $false
     for ($i = 0; $i -lt 60; $i++) {
       $process.Refresh()
@@ -26,11 +106,19 @@ function CheckWindow($process) {
       Start-Sleep -Seconds 1
     }
     if (-not $window) { throw 'no window within 60 seconds' }
+    $visibleMs = [math]::Round(([DateTime]::UtcNow - $started).TotalMilliseconds)
+    Write-Host "$launch visible PID=$($process.Id) elapsed_ms=$visibleMs"
     Start-Sleep -Seconds 10
     $process.Refresh()
     if ($process.HasExited) { throw 'process exited during 10-second hold' }
+    $closeMs = [math]::Round(([DateTime]::UtcNow - $started).TotalMilliseconds)
+    Write-Host "$launch close requested PID=$($process.Id) elapsed_ms=$closeMs"
     if (-not $process.CloseMainWindow()) { throw 'could not close main window' }
-    if (-not $process.WaitForExit(15000)) { throw 'process did not exit within 15 seconds' }
+    if (-not $process.WaitForExit(15000)) {
+      try { CloseTimeoutDiagnostics $process $launch $started $visibleMs $closeMs }
+      catch { Write-Host "close-timeout diagnostics failed: $_" }
+      throw 'process did not exit within 15 seconds'
+    }
   } finally {
     $process.Refresh()
     if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }
@@ -97,7 +185,7 @@ foreach ($case in @('A', 'B')) {
   if ($exe.Count -ne 1) { throw "expected one installed executable in $installDir, found $($exe.Count)" }
   $exePath = $exe[0].FullName
   Write-Host "Installed executable: $exePath"
-  CheckWindow (Start-Process -FilePath $exePath -PassThru)
+  CheckWindow (Start-Process -FilePath $exePath -PassThru) "Case $case direct"
   $fixture = Join-Path $env:TEMP "tachiko-installer-$case.ro"
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../public/templates/budget.ro') -Destination $fixture
   try {
@@ -137,7 +225,7 @@ foreach ($case in @('A', 'B')) {
       }) -join '; '
       throw ".ro shell dispatch did not start the installed executable; opened null=$($null -eq $opened), Id=$openedId, Path=$openedPath, HasExited=$openedExited; tachiko processes: $processes"
     }
-    CheckWindow $dispatched
+    CheckWindow $dispatched "Case $case shell"
   } finally {
     Remove-Item -LiteralPath $fixture -ErrorAction SilentlyContinue
   }

@@ -104,6 +104,14 @@ impl Default for RuntimeChannel {
 }
 
 impl RuntimeChannel {
+    pub(crate) fn close_diagnostic(&self) -> String {
+        let gate = lock_gate(&self.gate);
+        format!(
+            "runtime={:?} waiting={} running={}",
+            gate.phase, gate.waiting, gate.running
+        )
+    }
+
     /// Start a new generation with an empty runtime. Any resident occurrence
     /// and every frame from an earlier generation become unreachable. This
     /// never reopens a held or sealed gate.
@@ -250,9 +258,13 @@ fn route(host: &mut DesignerHost, kind: &str, request: &[u8], payload: &[u8]) ->
         "open_project" => reply(host.open_project(payload, request)),
         "open_project_working_size" => reply(host.open_project_working_size(payload, request)),
         "open_local_document" => reply(host.open_local_document(payload, request)),
-        "open_local_document_working_size" => reply(host.open_local_document_working_size(payload, request)),
+        "open_local_document_working_size" => {
+            reply(host.open_local_document_working_size(payload, request))
+        }
         "open_portable_ro" => reply(host.open_portable_ro(payload, request)),
-        "open_portable_ro_working_size" => reply(host.open_portable_ro_working_size(payload, request)),
+        "open_portable_ro_working_size" => {
+            reply(host.open_portable_ro_working_size(payload, request))
+        }
         "verify_portable_ro" => reply(host.verify_portable_ro(payload)),
         "export_project" => host.export_project(request),
         "export_project_v3" => host.export_project_v3(request),
@@ -346,22 +358,67 @@ mod tests {
     fn working_size_open_and_session_request_limits() {
         let channel = RuntimeChannel::default();
         let generation = channel.attach();
-        let tracker = br#"{"type":"new_tracker","occurrence_id":"00000000-0000-4000-8000-000000000701"}"#;
-        let (opened, _) = reply(&channel.dispatch(&frame("command", generation, tracker, &[])).unwrap());
-        let revision = opened["response"]["payload"]["bootstrap"]["revision"].as_str().unwrap();
-        let (_, project) = reply(&channel.dispatch(&frame("export_project", generation, revision.as_bytes(), &[])).unwrap());
-        let (ordinary, _) = reply(&channel.dispatch(&frame("open_project", generation, OCCURRENCE, &project)).unwrap());
+        let tracker =
+            br#"{"type":"new_tracker","occurrence_id":"00000000-0000-4000-8000-000000000701"}"#;
+        let (opened, _) = reply(
+            &channel
+                .dispatch(&frame("command", generation, tracker, &[]))
+                .unwrap(),
+        );
+        let revision = opened["response"]["payload"]["bootstrap"]["revision"]
+            .as_str()
+            .unwrap();
+        let (_, project) = reply(
+            &channel
+                .dispatch(&frame(
+                    "export_project",
+                    generation,
+                    revision.as_bytes(),
+                    &[],
+                ))
+                .unwrap(),
+        );
+        let (ordinary, _) = reply(
+            &channel
+                .dispatch(&frame("open_project", generation, OCCURRENCE, &project))
+                .unwrap(),
+        );
         assert_eq!(ordinary["response"]["type"], "opened");
-        let (before, _) = reply(&channel.dispatch(&frame("observe_occurrence", generation, &[], &[])).unwrap());
+        let (before, _) = reply(
+            &channel
+                .dispatch(&frame("observe_occurrence", generation, &[], &[]))
+                .unwrap(),
+        );
         let mut large = tracker.to_vec();
         large.resize(70_000, b' ');
-        let (refused, _) = reply(&channel.dispatch(&frame("command", generation, &large, &[])).unwrap());
+        let (refused, _) = reply(
+            &channel
+                .dispatch(&frame("command", generation, &large, &[]))
+                .unwrap(),
+        );
         assert_eq!(refused["error"]["code"], "request_too_large");
-        let (after, _) = reply(&channel.dispatch(&frame("observe_occurrence", generation, &[], &[])).unwrap());
+        let (after, _) = reply(
+            &channel
+                .dispatch(&frame("observe_occurrence", generation, &[], &[]))
+                .unwrap(),
+        );
         assert_eq!(before, after);
-        let (working, _) = reply(&channel.dispatch(&frame("open_project_working_size", generation, OCCURRENCE, &project)).unwrap());
+        let (working, _) = reply(
+            &channel
+                .dispatch(&frame(
+                    "open_project_working_size",
+                    generation,
+                    OCCURRENCE,
+                    &project,
+                ))
+                .unwrap(),
+        );
         assert_eq!(working["response"]["type"], "opened_window");
-        let (accepted, _) = reply(&channel.dispatch(&frame("command", generation, &large, &[])).unwrap());
+        let (accepted, _) = reply(
+            &channel
+                .dispatch(&frame("command", generation, &large, &[]))
+                .unwrap(),
+        );
         assert_eq!(accepted["status"], "ok", "{accepted}");
     }
 
