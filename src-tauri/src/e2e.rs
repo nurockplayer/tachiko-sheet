@@ -15,6 +15,8 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
 
+mod native_paste;
+
 const SCRIPT_POLL: Duration = Duration::from_millis(40);
 
 fn script_dir() -> Option<PathBuf> {
@@ -98,7 +100,20 @@ pub fn e2e_request_quit(app: AppHandle) {
 
 /// Choose a menu command exactly as a click on it does.
 #[tauri::command]
-pub fn e2e_menu_command(app: AppHandle, id: String) -> Result<(), String> {
+pub async fn e2e_menu_command(app: AppHandle, id: String) -> Result<(), String> {
+    if id == "paste" {
+        let (send, receive) = std::sync::mpsc::channel();
+        let target = app.clone();
+        app.run_on_main_thread(move || {
+            let result = (|| {
+                target.get_webview_window("main").ok_or("main window missing")?
+                    .set_focus().map_err(|error| error.to_string())?;
+                native_paste::activate(&target)
+            })();
+            send.send(result).expect("native Paste receiver");
+        }).map_err(|error| error.to_string())?;
+        return receive.recv().map_err(|error| error.to_string())?;
+    }
     match HOOKS.get() {
         Some(hooks) if (hooks.menu_command)(&app, &id) => Ok(()),
         _ => Err(format!("the menu has no command {id}")),
