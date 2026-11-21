@@ -55,7 +55,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Native runtime parity with the Web Worker/WASM runtime
-        run: pnpm test:desktop-parity
+        run: |
+          pnpm test:desktop-parity
+          echo 'Intentional #467 parity failure probe; revert this commit after the workflow fails.' >&2
+          exit 1
 
   desktop:
     name: macOS desktop app
