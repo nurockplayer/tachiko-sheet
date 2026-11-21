@@ -221,6 +221,7 @@ interface HistoryFocusRequest {
   initiator: HTMLElement | null;
   publicationTarget: FieldTarget | null;
   userDestination: HTMLElement | null;
+  retainFillSelection: boolean;
   settled: boolean;
 }
 
@@ -821,7 +822,7 @@ export function SheetShell(props: SheetShellProps) {
   const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean; polite?: boolean } | null>(null);
   // Excel's Ctrl+`: a view choice like zoom, not saved with the work.
   const [showFormulas, setShowFormulas] = useState(false);
-  const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition } | null>(null);
+  const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition; fromFillHandle?: boolean } | null>(null);
   const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition; activeCell?: GridPosition; pasteSpecial?: boolean; column?: string; trigger?: HTMLElement } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   // The live grid focus for async continuations: a translation that returns
@@ -2005,25 +2006,33 @@ export function SheetShell(props: SheetShellProps) {
       announceClipboard("The table changed during the drag. Nothing was filled.", true, true);
       return;
     }
-    fillDown(area);
+    fillDown(area, true);
   }
 
-  function fillDown(area: CellRectangle | null = selectionRectangle): void {
+  function fillDown(area: CellRectangle | null = selectionRectangle, fromFillHandle = false): void {
     if (controlsLocked || rowCommandPendingRef.current || currentness !== "current" || editor || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || modalInteractionOpen) {
       announceClipboard("Finish the current edit or operation before filling cells.", true, true); return;
     }
     if (!table || !view || !witness) { announceClipboard("Filling cells is not available in this view.", true, true); return; }
     try {
       const plan = fillDownPlan(displayRows, columns, area, Boolean(table.native_table_profile), !gridSettings.sort && !gridSettings.filters?.length);
+      const intent = completionIntent();
+      const anchor = boundSelection?.anchor ?? { entity: rowEntity(displayRows[area!.top]!), field: columns[area!.left]!.id };
+      const end = { entity: rowEntity(displayRows[area!.bottom]!), field: columns[area!.right]!.id };
+      const selectFilledRange = () => {
+        if (!fromFillHandle || !completionMayUpdateUi(intent)) return;
+        setCellSelection({ identity: collectionIdentity!, revision: pasteTargetRef.current.revision!, anchor, end, fromFillHandle: true });
+        withAppFocus(() => focusCell(anchor.entity, anchor.field));
+      };
       keepGridRows(rowViewBlockRows(displayRows, area!.top, area!.bottom - area!.top + 1).map(rowEntity));
       if (plan.kind === "formula" ? !onCopyFormula : !onEditCells) {
         announceClipboard("Filling cells is not available in this view.", true, true); return;
       }
-      if (plan.kind === "values" && !plan.edits.length) { announceClipboard("The selected cells are unchanged.", false, true); return; }
+      if (plan.kind === "values" && !plan.edits.length) { selectFilledRange(); announceClipboard("The selected cells are unchanged.", false, true); return; }
       const publish = plan.kind === "formula"
         ? () => onCopyFormula!(witness, plan.request)
         : () => onEditCells!(witness, plan.edits);
-      void publishCells(publish, plan.count, "Filled", "fill");
+      void publishCells(publish, plan.count, "Filled", "fill").then(confirmed => { if (confirmed) selectFilledRange(); });
     } catch (error) {
       if (error instanceof FillDownRefusal) announceClipboard(error.message, true, true);
       else announceClipboard(explain(error, "These cells cannot be filled here."), true, true);
@@ -2428,12 +2437,19 @@ export function SheetShell(props: SheetShellProps) {
     }
     if (!request.settled || busy || commitPending) return;
 
+    const retainedSelection = request.retainFillSelection && cellSelection?.fromFillHandle
+      && cellSelection.identity === collectionIdentity
+      && [cellSelection.anchor, cellSelection.end].every(position => rowIndexByEntity.has(position.entity) && columns.some(column => column.id === position.field))
+      ? cellSelection : null;
+    if (retainedSelection && view && retainedSelection.revision !== view.revision) {
+      setCellSelection({ ...retainedSelection, revision: view.revision });
+    }
     const shell = shellRef.current;
     let destination: HTMLElement | null = null;
     if (historyFocusDestinationIsUsable(request.userDestination, shell)) {
       destination = request.userDestination;
-    } else if (request.publicationTarget && view) {
-      const target = request.publicationTarget;
+    } else if ((retainedSelection || request.publicationTarget) && view) {
+      const target = retainedSelection?.anchor ?? request.publicationTarget!;
       const matches = gridOrder.filter((entry) => entry.entity === target.entity && entry.field === target.field);
       const cell = matches.length === 1 ? cellRefs.current.get(cellKey(target.entity, target.field)) ?? null : null;
       if (historyFocusDestinationIsUsable(cell, shell)) destination = cell;
@@ -2458,7 +2474,7 @@ export function SheetShell(props: SheetShellProps) {
     if (destination && document.activeElement !== destination) destination.focus();
     historyFocusRequestRef.current = null;
     setHistoryFocusRequest(null);
-  }, [busy, commitPending, currentness, gridOrder, gridWindowed, historyFocusRequest, rowIndexByEntity, view]);
+  }, [busy, commitPending, currentness, gridOrder, gridWindowed, historyFocusRequest, rowIndexByEntity, view, cellSelection, collectionIdentity, columns]);
 
   useEffect(() => {
     if (controlsLocked || historyInteractionLocked || historyFocusRequestRef.current) return;
@@ -3530,6 +3546,7 @@ export function SheetShell(props: SheetShellProps) {
       initiator,
       publicationTarget: null,
       userDestination: null,
+      retainFillSelection: Boolean(boundSelection?.fromFillHandle),
       settled: false,
     };
     historyFocusRequestRef.current = request;
@@ -6207,7 +6224,7 @@ export function SheetShell(props: SheetShellProps) {
               const adjacentRow = displayRows[row], adjacentColumn = columns[column];
               return Boolean(adjacentRow && adjacentColumn && cellDisplay(adjacentRow, adjacentColumn).text !== "");
             }, displayRows.length);
-            if (bottom !== null) fillDown({ ...source, bottom });
+            if (bottom !== null) fillDown({ ...source, bottom }, true);
           }}
         /> : null}
         {draft && !editing && rowError?.fields?.includes(column.id) ? <span id={`ts-draft-message-${column.id}`} className={`ts-draft-cell-message ${rowError.missing ? "ts-hint" : "ts-row-error"}`}>{rowError.message}</span> : null}
