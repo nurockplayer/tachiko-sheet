@@ -2,7 +2,7 @@
 // records requests and can hold one real reply; it never manufactures a result.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium } from "playwright-core";
@@ -23,14 +23,14 @@ const fixture = path.join(work, "many-tables.xlsx");
 // Expand an existing valid XLSX template, replacing only its workbook/sheets.
 async function makeWorkbook(file, names) {
   const expanded = path.join(work, path.basename(file) + "-expanded");
-  execFileSync("unzip", ["-q", "acceptance/j3-interop/fixtures/messy.xlsx", "-d", expanded]);
+  execFileSync("python3", ["-m", "zipfile", "-e", "acceptance/j3-interop/fixtures/messy.xlsx", expanded]);
   const main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
   const rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
   await writeFile(path.join(expanded, "xl/workbook.xml"), `<workbook xmlns="${main}" xmlns:r="${rel}"><sheets>${names.map((n, i) => `<sheet name="${n}" sheetId="${i + 1}" r:id="r${i + 1}"/>`).join("")}</sheets></workbook>`);
   await writeFile(path.join(expanded, "xl/_rels/workbook.xml.rels"), `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${names.map((_, i) => `<Relationship Id="r${i + 1}" Type="${rel}/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("")}</Relationships>`);
   await writeFile(path.join(expanded, "[Content_Types].xml"), `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${names.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}</Types>`);
   for (let i = 0; i < names.length; i++) await writeFile(path.join(expanded, `xl/worksheets/sheet${i + 1}.xml`), `<worksheet xmlns="${main}"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>item</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>record-${i + 1}</t></is></c></row></sheetData></worksheet>`);
-  execFileSync("zip", ["-Xqr", file, "."], { cwd: expanded });
+  execFileSync("python3", ["-m", "zipfile", "-c", file, ...await readdir(expanded)], { cwd: expanded });
 }
 await makeWorkbook(fixture, names);
 const collisionFixture = path.join(work, "mode-names.xlsx");
@@ -255,6 +255,21 @@ try {
   await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 0)));
   await tabs().nth(0).click(); await selected(0);
   checks.push("click, roving arrows, select sync, Ctrl+PageUp/Down, editor/IME/browser ownership and cell draft refusal");
+  await tabs().nth(0).click({ button: "right" });
+  const tableMenu = page.getByRole("menu", { name: "Sheet actions", exact: true });
+  await tableMenu.waitFor();
+  await tabs().nth(0).press("Control+/");
+  const shortcutHelp = page.getByRole("dialog", { name: "Keyboard shortcuts", exact: true });
+  await shortcutHelp.waitFor();
+  assert.equal(await shortcutHelp.getAttribute("aria-modal"), "true");
+  assert.equal(await tableMenu.count(), 0, "shortcut help dismisses the table-tab menu");
+  assert.equal(await page.getByRole("menuitem", { name: /^(Rename|Delete) sheet…$/ }).count(), 0,
+    "table-tab actions are no longer clickable over shortcut help");
+  await page.keyboard.press("Escape");
+  await shortcutHelp.waitFor({ state: "detached" });
+  await page.waitForFunction(() => document.querySelector('[aria-label="Sheets"] [role="tab"]') === document.activeElement);
+  assert.equal(await tableMenu.count(), 0, "closing help does not reopen the table-tab menu");
+  checks.push("shortcut help dismisses the open table-tab menu and Escape restores tab focus");
   // The Sales example has two real native tables, so a new-row draft can
   // attempt an actual cross-table switch without inventing a workbook shape.
   const rowDraftCell = page.locator(".ts-entry-row td").first();
@@ -378,7 +393,7 @@ try {
   await exportDialog.getByRole("button", { name: "Download", exact: true }).click();
   const exported = path.join(work, "lifecycle-export.xlsx");
   await (await downloaded).saveAs(exported);
-  const workbookXml = execFileSync("unzip", ["-p", exported, "xl/workbook.xml"], { encoding: "utf8" });
+  const workbookXml = execFileSync("python3", ["-c", "import sys, zipfile; sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read('xl/workbook.xml').decode('utf-8'))", exported], { encoding: "utf8" });
   assert.deepEqual([...workbookXml.matchAll(/<sheet\s[^>]*name="([^"]+)"/g)].map(match => match[1]), ["Renamed original", "Sheet 3"]);
   await close();
   await (await homeImportInput(page)).setInputFiles(exported);
