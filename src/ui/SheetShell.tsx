@@ -293,11 +293,15 @@ export function scrollCellIntoGridNearest(cell: HTMLElement, scrollport: HTMLEle
   const gutter = scrollport.querySelector<HTMLElement>(".ts-gutter-head");
   const left = cell.classList.contains("ts-frozen-first-column") ? port.left
     : frozen?.getBoundingClientRect().right ?? (port.left + (gutter?.getBoundingClientRect().width ?? 0));
-  const visible = (rect: DOMRect) => rect.left >= left && rect.right <= port.right && rect.top >= bodyTop && rect.bottom <= bodyBottom;
-  if (before.left < left) scrollport.scrollLeft -= left - before.left;
-  else if (before.right > port.right) scrollport.scrollLeft += before.right - port.right;
-  if (before.top < bodyTop) scrollport.scrollTop -= bodyTop - before.top;
-  else if (before.bottom > bodyBottom) scrollport.scrollTop += before.bottom - bodyBottom;
+  const wide = before.right - before.left > port.right - left;
+  const tall = before.bottom - before.top > bodyBottom - bodyTop;
+  const tolerance = 1;
+  const visible = (rect: DOMRect) => (wide ? Math.abs(rect.left - left) <= tolerance : rect.left >= left - tolerance && rect.right <= port.right + tolerance)
+    && (tall ? Math.abs(rect.top - bodyTop) <= tolerance : rect.top >= bodyTop - tolerance && rect.bottom <= bodyBottom + tolerance);
+  if (wide ? Math.abs(before.left - left) > tolerance : before.left < left - tolerance) scrollport.scrollLeft -= left - before.left;
+  else if (!wide && before.right > port.right + tolerance) scrollport.scrollLeft += before.right - port.right;
+  if (tall ? Math.abs(before.top - bodyTop) > tolerance : before.top < bodyTop - tolerance) scrollport.scrollTop -= bodyTop - before.top;
+  else if (!tall && before.bottom > bodyBottom + tolerance) scrollport.scrollTop += before.bottom - bodyBottom;
   return visible(cell.getBoundingClientRect());
 }
 
@@ -857,6 +861,8 @@ export function SheetShell(props: SheetShellProps) {
   const printRequestRef = useRef(0);
   const requestPrint = () => setPrinting(printRequestRef.current += 1);
   const gridScrollFrameRef = useRef<number | null>(null);
+  const pasteRevealFrameRef = useRef<number | null>(null);
+  const pendingPasteRevealRef = useRef<{ position: GridPosition; collectionIdentity: string | null; intent: { generation: number; occurrence: string | null }; settled: boolean; frames: number } | null>(null);
   // A focus target waiting for its windowed row to mount, with the user-intent
   // generation at request time; any newer input cancels it.
   const pendingCellFocusRef = useRef<{ entity: string; field: string; generation: number } | null>(null);
@@ -1830,20 +1836,59 @@ export function SheetShell(props: SheetShellProps) {
 
   function revealPastedCell(position: GridPosition, intent: ReturnType<typeof completionIntent>): void {
     if (!completionMayUpdateUi(intent)) return;
+    pendingPasteRevealRef.current = { position, collectionIdentity, intent, settled: false, frames: 0 };
     const rowIndex = rowIndexByEntity.get(position.entity);
     if (rowIndex !== undefined) revealGridRow(rowIndex);
-    const scroller = gridScrollRef.current;
-    const scrollTop = scroller?.scrollTop, scrollLeft = scroller?.scrollLeft;
-    // A windowed target may mount with the confirmed projection. Keep focus and selection intact.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (!completionMayUpdateUi(intent) || clipboardIdentityRef.current !== collectionIdentity) return;
-      // A scroll after publication is a newer viewport choice. The delayed
-      // reveal must not pull it back to the pasted row.
-      if (!scroller || gridScrollRef.current !== scroller || scroller.scrollTop !== scrollTop || scroller.scrollLeft !== scrollLeft) return;
-      const cell = cellRefs.current.get(cellKey(position.entity, position.field));
-      if (cell) scrollCellIntoGridNearest(cell, scroller);
-    }));
+    schedulePasteReveal();
   }
+
+  function schedulePasteReveal(): void {
+    if (!pendingPasteRevealRef.current || pasteRevealFrameRef.current !== null) return;
+    // Eight frames allow the virtual window to mount, correct, and settle after layout changes.
+    if (pendingPasteRevealRef.current.frames >= 8) { pendingPasteRevealRef.current = null; return; }
+    pasteRevealFrameRef.current = requestAnimationFrame(() => {
+      pasteRevealFrameRef.current = null;
+      if (pendingPasteRevealRef.current) pendingPasteRevealRef.current.frames++;
+      correctPasteReveal(true);
+    });
+  }
+
+  function correctPasteReveal(frame = false): void {
+    const pending = pendingPasteRevealRef.current;
+    if (!pending) return;
+    if (!completionMayUpdateUi(pending.intent) || clipboardIdentityRef.current !== pending.collectionIdentity) {
+      pendingPasteRevealRef.current = null;
+      return;
+    }
+    const scroller = gridScrollRef.current;
+    if (!scroller) return;
+    const { position } = pending;
+    const cell = cellRefs.current.get(cellKey(position.entity, position.field));
+    if (!cell) {
+      pending.settled = false;
+      const rowIndex = rowIndexByEntity.get(position.entity);
+      if (rowIndex === undefined) { pendingPasteRevealRef.current = null; return; }
+      revealGridRow(rowIndex);
+      schedulePasteReveal();
+      return;
+    }
+    const top = scroller.scrollTop, left = scroller.scrollLeft;
+    const visible = scrollCellIntoGridNearest(cell, scroller);
+    // A stable frame after correction lets the virtual window commit before
+    // releasing the request, so later scrolling is no longer pulled back.
+    if (visible && top === scroller.scrollTop && left === scroller.scrollLeft) {
+      if (frame && pending.settled) { pendingPasteRevealRef.current = null; return; }
+      pending.settled = true;
+    } else pending.settled = false;
+    schedulePasteReveal();
+  }
+
+  function cancelPasteReveal(): void {
+    focusIntentRef.current += 1;
+    pendingPasteRevealRef.current = null;
+  }
+
+  useLayoutEffect(() => { correctPasteReveal(); });
 
   async function publishCells(run: () => Promise<RowCommandOutcome>, count: number, verb: "Cleared" | "Filled" | "Cut" | "Updated", noun: "clear" | "fill" | "cut" | "paste"): Promise<boolean> {
     const intent = completionIntent();
@@ -2189,6 +2234,7 @@ export function SheetShell(props: SheetShellProps) {
 
   useEffect(() => () => {
     if (gridScrollFrameRef.current !== null) window.cancelAnimationFrame(gridScrollFrameRef.current);
+    if (pasteRevealFrameRef.current !== null) window.cancelAnimationFrame(pasteRevealFrameRef.current);
   }, []);
 
   useEffect(() => {
@@ -5554,7 +5600,7 @@ export function SheetShell(props: SheetShellProps) {
               onChange={changeFormulaDraft}
               onKeyDown={onFormulaKeyDown}
             />
-            <div className="ts-grid-scroll" ref={gridScrollRef} onScroll={() => { if (gridWindowed) onGridScroll(); repositionOpenColumnMenu(); }}>
+            <div className="ts-grid-scroll" ref={gridScrollRef} onWheelCapture={cancelPasteReveal} onTouchMoveCapture={cancelPasteReveal} onScroll={() => { if (gridWindowed) onGridScroll(); schedulePasteReveal(); repositionOpenColumnMenu(); }}>
               {/* React removes old keyed rows/spacers before adding their replacements.
                   Reserve the full extent outside the table so WebKit cannot clamp
                   scrollTop against a temporarily shorter table during that commit.

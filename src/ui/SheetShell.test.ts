@@ -616,19 +616,25 @@ describe("keyboard history queue", () => {
 });
 
 describe("paste completion reveal", () => {
-  it.each(["confirmed", "refused", "cancelled"])("reveals an off-screen target only after confirmed paste (%s)", async outcome => {
+  it.each(["confirmed", "refused", "cancelled", "offset/window changes", "wheel", "touch", "wide", "tall", "fractional", "nonconverging"])("reveals an off-screen target only after confirmed paste (%s)", async outcome => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
+    let scrollLeft = 0;
     const scrollport = {
-      scrollTop: 0, scrollLeft: 0, clientTop: 0, clientHeight: 83,
+      scrollTop: 0, get scrollLeft() { return scrollLeft; }, set scrollLeft(value: number) { scrollLeft = outcome === "fractional" ? Math.round(value) : value; }, clientTop: 0, clientHeight: 83,
       querySelector: () => null,
       getBoundingClientRect: () => ({ top: 0, bottom: 100, left: 0, right: 400 }),
     };
+    let cellTop = 400;
     class Cell {
       dataset = { workEntity: entityB, workField: "c-title" };
       classList = { contains: () => false };
       closest(selector: string) { return selector.startsWith("td[") ? this : null; }
-      getBoundingClientRect() { return { top: 400 - scrollport.scrollTop, bottom: 432 - scrollport.scrollTop, left: 20, right: 120 }; }
+      getBoundingClientRect() {
+        const left = (outcome === "fractional" ? 500.328125 : outcome === "wide" ? 500 : 20) - scrollport.scrollLeft;
+        const top = outcome === "nonconverging" ? 400 : cellTop - scrollport.scrollTop;
+        return { top, bottom: top + (outcome === "tall" ? 160 : 32), left, right: left + (["wide", "fractional"].includes(outcome) ? 800 : 100) };
+      }
     }
     const target = new Cell();
     const doc = { activeElement: target };
@@ -660,16 +666,44 @@ describe("paste completion reveal", () => {
         grid.props.onPaste({ target, preventDefault() {}, clipboardData: { types: ["text/plain"], getData: () => "pasted" } });
         expect(publish).toHaveBeenCalledOnce();
         expect(scrollport.scrollTop).toBe(0);
-        finish(outcome === "confirmed" ? { kind: "confirmed" } : { kind: "refused", message: "Refused" });
+        finish(outcome === "refused" ? { kind: "refused", message: "Refused" } : { kind: "confirmed" });
       }
       await Promise.resolve();
       await Promise.resolve();
-      while (frames.length) frames.shift()!(0);
-      if (outcome === "confirmed") {
-        expect(target.getBoundingClientRect().bottom).toBeLessThanOrEqual(83);
+      if (outcome === "offset/window changes") {
+        // Publication's estimated scroll is clamped while the virtual window
+        // replaces its rows. The target mounts only after the first frame.
+        scrollport.scrollTop = 200;
+        cell.props.ref(null);
+        frames.shift()!(0);
+        cellTop = 700;
+        cell.props.ref(target);
+        frames.shift()!(0);
+        // A later measurement/commit changes both offsets and cell geometry.
+        cellTop = 1000;
+        scrollport.scrollTop = 850;
+        scroller.props.onScroll();
+      } else if (outcome === "wheel" || outcome === "touch") {
+        scroller.props[outcome === "wheel" ? "onWheelCapture" : "onTouchMoveCapture"]();
+        scrollport.scrollTop = 20;
+        scroller.props.onScroll();
+      }
+      let frame = 0;
+      for (; frames.length && frame < 10; frame++) frames.shift()!(0);
+      expect(frames).toHaveLength(0);
+      if (outcome === "nonconverging") expect(frame).toBe(8);
+      else if (["confirmed", "offset/window changes", "wide", "tall", "fractional"].includes(outcome)) {
+        if (outcome === "tall") expect(target.getBoundingClientRect().top).toBe(0);
+        else expect(target.getBoundingClientRect().bottom).toBeLessThanOrEqual(83);
+        if (outcome === "wide") expect(target.getBoundingClientRect().left).toBe(0);
+        if (outcome === "fractional") expect(target.getBoundingClientRect().left).toBeCloseTo(0.328125);
         expect(target.getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
-      } else {
+        scrollport.scrollTop = 0;
+        scroller.props.onScroll();
+        while (frames.length) frames.shift()!(0);
         expect(scrollport.scrollTop).toBe(0);
+      } else {
+        expect(scrollport.scrollTop).toBe(outcome === "wheel" || outcome === "touch" ? 20 : 0);
         if (outcome === "cancelled") expect(publish).not.toHaveBeenCalled();
       }
     } finally {
