@@ -16,7 +16,7 @@ const schemas = JSON.parse(await readFile(new URL("../fixtures/release-plan.ropr
 const fields = Object.fromEntries(schemas[0].fields.map(field => [field.key, field.id]));
 const ready = page => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
 try {
-  await installDistRoutes(context, process.env.WORK_DIST ?? "dist-acceptance");
+  await installDistRoutes(context, process.env.WORK_DIST ?? "dist");
   await context.addInitScript(() => {
     const evidence = window.__r3 = { requests: [], replies: [] };
     const Original = window.Worker;
