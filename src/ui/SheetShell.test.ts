@@ -220,6 +220,78 @@ describe("keyboard history queue", () => {
     return { container, update, key, cell, view };
   }
 
+  it.each(["Shift+click", "Ctrl+Shift+End"])("preserves B2 as the range anchor after scrolling a 450-row table (%s)", async extension => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.rows = Array.from({ length: 450 }, (_, index) => ({
+      id: `row-${index}`, key: `row-${index}`,
+      fields: view.table.columns.map((column, field) => projected(`row-${index}`, column.id, {
+        kind: "text", value: `R${index + 1}C${field + 1}`,
+      })),
+    }));
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
+    const flushFrames = async () => {
+      for (let count = 0; frames.length && count < 20; count++) {
+        const batch = frames.splice(0);
+        await act(async () => { batch.forEach(callback => callback(0)); });
+      }
+      expect(frames).toHaveLength(0);
+    };
+    try {
+      const ui = await mount({ view });
+      const scroller = ui.container.querySelector<HTMLElement>(".ts-grid-scroll")!;
+      Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 320 });
+      const cell = (row: number, field: string) => ui.container.querySelector<HTMLElement>(`[data-testid="cell:row-${row}:${field}"]`)!;
+      const anchor = cell(1, "c-impact");
+      await act(async () => anchor.click());
+      expect(document.activeElement).toBe(anchor);
+      const initiallyMounted = cell(10, "c-title");
+      expect(initiallyMounted).not.toBeNull();
+      await act(async () => {
+        scroller.scrollTop = 399 * 32;
+        scroller.dispatchEvent(new Event("scroll"));
+      });
+      await flushFrames();
+      expect(initiallyMounted.isConnected).toBe(false);
+      expect(ui.container.querySelectorAll("tbody tr.ts-row").length).toBeLessThan(100);
+      // B2 is outside the window, but focus already pins its row.
+      expect(anchor.isConnected).toBe(true);
+      expect(document.activeElement).toBe(anchor);
+      await act(async () => {
+        if (extension === "Shift+click") {
+          cell(399, "c-notes").dispatchEvent(new MouseEvent("click", { shiftKey: true, bubbles: true }));
+        } else {
+          anchor.dispatchEvent(new KeyboardEvent("keydown", { key: "End", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+        }
+      });
+      await flushFrames();
+      const lastRow = extension === "Shift+click" ? 399 : 449;
+      expect(ui.container.querySelector<HTMLInputElement>('[aria-label="Name Box"]')!.value).toBe(`B2:D${lastRow + 1}`);
+      expect(document.activeElement).toBe(anchor);
+      expect(cell(lastRow, "c-notes").getAttribute("aria-selected")).toBe("true");
+      const data = new DataTransfer();
+      await act(async () => anchor.dispatchEvent(new ClipboardEvent("copy", { bubbles: true, cancelable: true, clipboardData: data })));
+      expect(data.getData("text/plain")).toBe(encodeTsv(Array.from({ length: lastRow }, (_, index) =>
+        [2, 3, 4].map(column => `R${index + 2}C${column}`))));
+      await act(async () => {
+        scroller.scrollTop = 0;
+        scroller.dispatchEvent(new Event("scroll"));
+      });
+      await flushFrames();
+      for (const rendered of ui.container.querySelectorAll<HTMLElement>("tbody td[data-work-entity]")) {
+        if (rendered.dataset.workEntity === DRAFT_ROW) continue;
+        const row = Number(rendered.dataset.workEntity!.slice(4));
+        const selected = row >= 1 && row <= lastRow && rendered.dataset.workField !== "c-title";
+        expect(rendered.getAttribute("aria-selected") === "true").toBe(selected);
+      }
+      expect(cell(1, "c-impact")).toBe(anchor);
+    } finally {
+      await dispose?.(); dispose = undefined;
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("accelerates fill auto-scroll beyond the edge and stops its timer on unmount", async () => {
     const ui = await mount();
     const grid = ui.container.querySelector<HTMLElement>(".ts-grid-scroll")!;
