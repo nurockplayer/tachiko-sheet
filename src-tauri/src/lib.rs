@@ -143,7 +143,11 @@ fn close_diagnostic(window: &WebviewWindow, event: &str) {
         .append(true)
         .open(path)
         .and_then(|mut file| {
-            writeln!(file, "UTC unix_ms={unix_ms} pid={} {event} {runtime}", std::process::id())
+            writeln!(
+                file,
+                "UTC unix_ms={unix_ms} pid={} {event} {runtime}",
+                std::process::id()
+            )
         });
     if let Err(error) = result {
         eprintln!("installer-smoke close diagnostics: {error}");
@@ -179,7 +183,13 @@ fn request_leave(window: &WebviewWindow, leave: Leave) {
         lock(&window.state::<LeaveGuard>().deciding)
     ));
     let guard = window.state::<LeaveGuard>();
-    close_diagnostic(window, &format!("requested leave={leave:?} state={:?}", lock(&guard.deciding)));
+    close_diagnostic(
+        window,
+        &format!(
+            "requested leave={leave:?} state={:?}",
+            lock(&guard.deciding)
+        ),
+    );
     let check = {
         let mut deciding = lock(&guard.deciding);
         match *deciding {
@@ -216,7 +226,10 @@ fn window_close_check(
     check: u64,
     unsaved: bool,
 ) {
-    close_diagnostic(&window, &format!("page-reply check={check} unsaved={unsaved}"));
+    close_diagnostic(
+        &window,
+        &format!("page-reply check={check} unsaved={unsaved}"),
+    );
     let mut deciding = lock(&guard.deciding);
     let Deciding::Checking(current, leave) = *deciding else {
         return;
@@ -250,7 +263,10 @@ fn window_close_check(
 }
 
 fn ask_then_leave(window: &WebviewWindow, leave: Leave, reason: &'static str) {
-    close_diagnostic(window, &format!("confirmation state=Asking leave={leave:?} reason={reason}"));
+    close_diagnostic(
+        window,
+        &format!("confirmation state=Asking leave={leave:?} reason={reason}"),
+    );
     let target = window.clone();
     tauri::async_runtime::spawn(async move {
         let discard = confirm_discard(&target, leave, reason).await;
