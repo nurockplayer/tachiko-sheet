@@ -295,12 +295,13 @@ export function scrollCellIntoGridNearest(cell: HTMLElement, scrollport: HTMLEle
     : frozen?.getBoundingClientRect().right ?? (port.left + (gutter?.getBoundingClientRect().width ?? 0));
   const wide = before.right - before.left > port.right - left;
   const tall = before.bottom - before.top > bodyBottom - bodyTop;
-  const visible = (rect: DOMRect) => (wide ? rect.left === left : rect.left >= left && rect.right <= port.right)
-    && (tall ? rect.top === bodyTop : rect.top >= bodyTop && rect.bottom <= bodyBottom);
-  if (wide || before.left < left) scrollport.scrollLeft -= left - before.left;
-  else if (before.right > port.right) scrollport.scrollLeft += before.right - port.right;
-  if (tall || before.top < bodyTop) scrollport.scrollTop -= bodyTop - before.top;
-  else if (before.bottom > bodyBottom) scrollport.scrollTop += before.bottom - bodyBottom;
+  const tolerance = 1;
+  const visible = (rect: DOMRect) => (wide ? Math.abs(rect.left - left) <= tolerance : rect.left >= left - tolerance && rect.right <= port.right + tolerance)
+    && (tall ? Math.abs(rect.top - bodyTop) <= tolerance : rect.top >= bodyTop - tolerance && rect.bottom <= bodyBottom + tolerance);
+  if (wide ? Math.abs(before.left - left) > tolerance : before.left < left - tolerance) scrollport.scrollLeft -= left - before.left;
+  else if (!wide && before.right > port.right + tolerance) scrollport.scrollLeft += before.right - port.right;
+  if (tall ? Math.abs(before.top - bodyTop) > tolerance : before.top < bodyTop - tolerance) scrollport.scrollTop -= bodyTop - before.top;
+  else if (!tall && before.bottom > bodyBottom + tolerance) scrollport.scrollTop += before.bottom - bodyBottom;
   return visible(cell.getBoundingClientRect());
 }
 
@@ -861,7 +862,7 @@ export function SheetShell(props: SheetShellProps) {
   const requestPrint = () => setPrinting(printRequestRef.current += 1);
   const gridScrollFrameRef = useRef<number | null>(null);
   const pasteRevealFrameRef = useRef<number | null>(null);
-  const pendingPasteRevealRef = useRef<{ position: GridPosition; collectionIdentity: string | null; intent: { generation: number; occurrence: string | null }; settled: boolean } | null>(null);
+  const pendingPasteRevealRef = useRef<{ position: GridPosition; collectionIdentity: string | null; intent: { generation: number; occurrence: string | null }; settled: boolean; frames: number } | null>(null);
   // A focus target waiting for its windowed row to mount, with the user-intent
   // generation at request time; any newer input cancels it.
   const pendingCellFocusRef = useRef<{ entity: string; field: string; generation: number } | null>(null);
@@ -1835,7 +1836,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function revealPastedCell(position: GridPosition, intent: ReturnType<typeof completionIntent>): void {
     if (!completionMayUpdateUi(intent)) return;
-    pendingPasteRevealRef.current = { position, collectionIdentity, intent, settled: false };
+    pendingPasteRevealRef.current = { position, collectionIdentity, intent, settled: false, frames: 0 };
     const rowIndex = rowIndexByEntity.get(position.entity);
     if (rowIndex !== undefined) revealGridRow(rowIndex);
     schedulePasteReveal();
@@ -1843,8 +1844,11 @@ export function SheetShell(props: SheetShellProps) {
 
   function schedulePasteReveal(): void {
     if (!pendingPasteRevealRef.current || pasteRevealFrameRef.current !== null) return;
+    // Eight frames allow the virtual window to mount, correct, and settle after layout changes.
+    if (pendingPasteRevealRef.current.frames >= 8) { pendingPasteRevealRef.current = null; return; }
     pasteRevealFrameRef.current = requestAnimationFrame(() => {
       pasteRevealFrameRef.current = null;
+      if (pendingPasteRevealRef.current) pendingPasteRevealRef.current.frames++;
       correctPasteReveal(true);
     });
   }
