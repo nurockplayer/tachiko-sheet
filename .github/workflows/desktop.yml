@@ -42,6 +42,9 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Test acceptance process cleanup
+        run: node --test tests/scripts/product-acceptance-step.test.mjs
+
       - name: Initialize bounded desktop evidence
         id: evidence-init
         run: node scripts/desktop-evidence.mjs init
