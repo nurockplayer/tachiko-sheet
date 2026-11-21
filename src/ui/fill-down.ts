@@ -24,7 +24,8 @@ export const FORMULA_COPY_AXES: Pick<FormulaCopy, "fixed_references" | "relative
  * `stored` is true when the displayed rows are in stored order (no sort or
  * filter). A reference to the formula's own row follows the row; a reference
  * to another row stays on that row. Formula fill is only offered when display
- * order and stored order agree.
+ * order and stored order agree. The optional source identifies a handle drag;
+ * horizontal copies delegate column offsets to Work as well.
  */
 export function fillDownPlan(rows: readonly TableRow[], columns: readonly TableColumn[], area: CellRectangle | null, native: boolean, stored = true, source?: CellRectangle): FillDownPlan {
   if (!area || (!source && area.bottom <= area.top)) throw new FillDownRefusal("Select at least two rows to fill down.");

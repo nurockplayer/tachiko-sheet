@@ -2004,7 +2004,9 @@ export function SheetShell(props: SheetShellProps) {
     for (const cell of row?.querySelectorAll<HTMLTableCellElement>("td[data-work-field]") ?? []) {
       if (cell.getBoundingClientRect().left <= pointerX) targetColumn = columns.findIndex(column => column.id === cell.dataset.workField);
     }
-    const horizontal = Math.abs(pointerX - drag.startX) > Math.abs(pointerY - drag.startY);
+    const horizontal = (targetColumn < drag.source.left || targetColumn > drag.source.right)
+      && (targetRow >= drag.source.top && targetRow <= drag.source.bottom
+        || Math.abs(pointerX - drag.startX) > Math.abs(pointerY - drag.startY));
     const target = fillDragTarget(drag.source, targetRow, targetColumn, horizontal);
     fillPreviewRef.current = target;
     setFillPreview(target);
