@@ -280,6 +280,7 @@ async function waitForExport() {
 // ---- run ---------------------------------------------------------------------
 
 const checks = [];
+let realClipboardPaste;
 const pass = (name) => checks.push(name);
 
 async function main() {
@@ -391,7 +392,7 @@ async function main() {
     },
   });
   const pasteSession = await launch({ closeAnswer: "cancel" });
-  await pasteRaces({ evaluate, work: pasteSession.dir });
+  realClipboardPaste = await pasteRaces({ evaluate, work: pasteSession.dir });
 }
 
 async function diagnostics(error) {
@@ -428,5 +429,5 @@ if (failed) {
   process.exitCode = 1;
 } else {
   for (const dir of roots) await rm(dir, { recursive: true, force: true });
-  console.log(JSON.stringify({ status: "PASS", platform, checks }));
+  console.log(JSON.stringify({ status: "PASS", platform, checks, realClipboardPaste }));
 }

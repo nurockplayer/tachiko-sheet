@@ -1,7 +1,7 @@
 # #471 native clipboard implementation checkpoint
 
-Acceptance row: none. PR #540 remains blocked pending Linux product authority;
-no OS clipboard PASS is claimed by this document.
+Acceptance row: none. Linux real clipboard Paste is explicitly BLOCKED by [#541](https://github.com/nurockplayer/tachiko-sheet/issues/541).
+macOS and Windows run the real clipboard checks; CI results belong on PR #540.
 
 The lead approved option 1 on #471: the app's own native-menu internal
 Windows/Linux input injection is allowed. Test-authored input injection,
@@ -9,8 +9,8 @@ constructed ClipboardEvent and navigator.clipboard stubs remain forbidden.
 
 ## Implementation
 
-The shared packaged check seeds a 2×2 TSV through pbcopy, PowerShell
-Set-Clipboard or xclip, invokes the e2e menu channel and compares all 25,218
+The shared packaged check seeds a 2×2 TSV through pbcopy or PowerShell
+Set-Clipboard, invokes the e2e menu channel and compares all 25,218
 cell values and stable targets, allowing exactly four changed values.
 It replaces the two synthetic paste checks. The full macOS lifecycle also
 compares its entire small fixture after a real clipboard Paste and emits PASS
@@ -23,11 +23,12 @@ The e2e-only native hook activates the actual installed item:
   responder chain. No Accessibility or CGEvent automation is used.
 - Windows: finds the native menu item's command ID and sends WM_COMMAND to
   the app window. Muda's installed handler owns the internal SendInput.
-- Linux: finds the installed GTK Paste item and calls gtk_menu_item_activate.
-  No test-authored key injection or alternative product path is used.
+- Linux: emits BLOCKED with the #541 URL in stdout, its receipt and the
+  smoke result JSON. It never claims clipboard PASS or attempts a replacement
+  paste path. The unused GTK activation adapter was removed.
 
-No dependency or install lifecycle script was added. Linux requires xclip
-available on the runner; no package installation was added implicitly.
+No dependency, libxdo feature enablement, package installation or install
+lifecycle script was added.
 
 ## Newly established Linux blocker
 
@@ -47,12 +48,10 @@ Enabling the feature only for e2e would test different Paste behavior from
 release builds. Substituting a WebView paste API or test key injection would
 also bypass the shipping menu. Neither was done.
 
-## Lead decision needed
+## Lead disposition
 
-Authorize enabling tauri/linux-libxdo in the shipping Linux build (including
-its additional locked dependencies), or keep the product unchanged and
-retain blocked Linux native Paste evidence. Recommendation: authorize the
-shipping feature, then verify all platforms through their packaged CI jobs.
-
-No macOS, Windows or Linux CI run yet proves this implementation passing.
-Attach actual run IDs after the Linux decision and successful packaged runs.
+The lead declined enabling tauri/linux-libxdo. Shipping Linux Paste is owned
+by #541 and is out of scope for PR #540. macOS/Windows clipboard coverage
+continues; Linux reports BLOCKED explicitly. No e2e-only libxdo enablement
+exists. Attach actual passing macOS and Windows packaged CI run IDs to
+PR #540 after the runs finish.

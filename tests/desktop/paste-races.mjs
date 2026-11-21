@@ -14,7 +14,7 @@ export function writeOsClipboard(text) {
     execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
       "$text = [Console]::In.ReadToEnd(); Set-Clipboard -Value $text"], { input: text });
   } else {
-    execFileSync("xclip", ["-selection", "clipboard"], { input: text, stdio: ["pipe", "ignore", "pipe"] });
+    throw new Error("Linux native clipboard Paste is BLOCKED by #541");
   }
 }
 
@@ -24,6 +24,15 @@ export const nativePaste = evaluate => evaluate(`
 `);
 
 export async function pasteRaces({ evaluate, work, extraChecks = [], receipt = async () => {} }) {
+  if (process.platform === "linux") {
+    const reason = "Linux native menu Paste is inert";
+    const issue = "https://github.com/nurockplayer/tachiko-sheet/issues/541";
+    console.log(`BLOCKED: linux real OS clipboard native-menu Paste — ${reason}; ${issue}`);
+    const timestamp = new Date().toISOString();
+    await receipt({ name: "real OS clipboard native-menu Paste", start: timestamp, end: timestamp,
+      outcome: "BLOCKED", reason, issue });
+    return { status: "BLOCKED", reason, issue };
+  }
   const failures = [];
   const check = async (name, run) => {
     const start = new Date().toISOString();
@@ -102,4 +111,5 @@ export async function pasteRaces({ evaluate, work, extraChecks = [], receipt = a
       "all 25,218 cell values and stable targets; exactly the four TSV cells changed");
   });
   if (failures.length) throw new AggregateError(failures, "native clipboard Paste checks failed");
+  return { status: "PASS", changedCells: 4, untouchedCellsIdentical: true };
 }
