@@ -646,16 +646,18 @@ describe("paste completion reveal", () => {
     let finish!: (result: { kind: "confirmed" }) => void;
     const onEditCells = vi.fn<NonNullable<SheetShellProps["onEditCells"]>>(() => new Promise(resolve => { finish = resolve; }));
     let height = 264;
-    const rowHeight = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function () {
+    const rowHeight = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
       return this.matches("tr.ts-row") ? 28 : this.matches("thead") ? 31 : 0;
     });
-    const geometry = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
+    const geometry = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
       const scroller = container.querySelector<HTMLElement>(".ts-grid-scroll");
       const row = this.closest("tr[aria-rowindex]");
       const top = this.matches("td[data-work-entity]") && row
         ? 290 + 31 + (Number(row.getAttribute("aria-rowindex")) - 2) * 28 - scroller!.scrollTop : 290;
       const boxHeight = this.matches("thead") ? 31 : this.matches(".ts-grid-scroll") ? height + 15 : 28;
-      return { top, bottom: top + boxHeight, left: 16, right: 969, width: 953, height: boxHeight } as DOMRect;
+      const left = this.matches("td[data-work-entity]") ? 64 : 16;
+      const width = this.matches(".ts-gutter-head") ? 48 : this.matches("td[data-work-entity]") ? 325 : 953;
+      return { top, bottom: top + boxHeight, left, right: left + width, width, height: boxHeight } as DOMRect;
     });
     try {
       await act(async () => root.render(createElement(SheetShell, makeProps({ view, onEditCells }))));
