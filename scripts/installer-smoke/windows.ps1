@@ -114,7 +114,7 @@ function CheckWindow($process, $launch) {
     $closeMs = [math]::Round(([DateTime]::UtcNow - $started).TotalMilliseconds)
     Write-Host "$launch close requested PID=$($process.Id) elapsed_ms=$closeMs"
     if (-not $process.CloseMainWindow()) { throw 'could not close main window' }
-    if (-not $process.WaitForExit(15000)) {
+    if ($true -or -not $process.WaitForExit(15000)) { # temporary #517 timeout-path proof
       try { CloseTimeoutDiagnostics $process $launch $started $visibleMs $closeMs }
       catch { Write-Host "close-timeout diagnostics failed: $_" }
       throw 'process did not exit within 15 seconds'
