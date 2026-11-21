@@ -270,6 +270,7 @@ describe("keyboard history queue", () => {
       const ui = await mount({ view, onEditCells });
       const scroller = ui.container.querySelector<HTMLElement>(".ts-grid-scroll")!;
       Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 100 });
+      Object.defineProperty(scroller, "clientWidth", { configurable: true, value: 200 });
       scroller.getBoundingClientRect = () => ({ top: 0, bottom: 100, left: 0, right: 200 } as DOMRect);
       await act(async () => ui.cell().dispatchEvent(new KeyboardEvent("keydown", { key: "End", ctrlKey: true, bubbles: true })));
       await flushFrames();
@@ -755,7 +756,7 @@ describe("paste completion reveal", () => {
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
     let scrollLeft = 0;
     const scrollport = {
-      scrollTop: 0, get scrollLeft() { return scrollLeft; }, set scrollLeft(value: number) { scrollLeft = outcome === "fractional" ? Math.round(value) : value; }, clientTop: 0, clientHeight: 83,
+      scrollTop: 0, get scrollLeft() { return scrollLeft; }, set scrollLeft(value: number) { scrollLeft = outcome === "fractional" ? Math.round(value) : value; }, clientTop: 0, clientHeight: 83, clientLeft: 0, clientWidth: 400,
       querySelector: () => null,
       getBoundingClientRect: () => ({ top: 0, bottom: 100, left: 0, right: 400 }),
     };
@@ -2247,10 +2248,26 @@ describe("session-only frozen first column", () => {
     expect(markup).toContain('aria-pressed="false"');
   });
 
+  it.each([0, 15])("reveals a cell within the client area with a %i px vertical scrollbar", scrollbarWidth => {
+    const scrollport = {
+      scrollLeft: 0, scrollTop: 0,
+      clientLeft: 2, clientWidth: 200 - scrollbarWidth, clientTop: 0, clientHeight: 400,
+      getBoundingClientRect: () => ({ left: 10, right: 214, top: 0, bottom: 400 }),
+      querySelector: () => null,
+    };
+    const cell = {
+      classList: { contains: () => false },
+      getBoundingClientRect: () => ({ left: 110 - scrollport.scrollLeft, right: 210 - scrollport.scrollLeft, top: 50, bottom: 82 }),
+    };
+    expect(scrollCellIntoGridNearest(cell as unknown as HTMLElement, scrollport as unknown as HTMLElement)).toBe(true);
+    expect(scrollport.scrollLeft).toBe(scrollbarWidth === 0 ? 0 : 13);
+    expect(cell.getBoundingClientRect().right).toBeLessThanOrEqual(10 + scrollport.clientLeft + scrollport.clientWidth);
+  });
+
   it("reveals a target behind the frozen strip", () => {
     let scrollLeft = 200;
     const scrollport = {
-      clientTop: 0, clientHeight: 400,
+      clientTop: 0, clientHeight: 400, clientLeft: 0, clientWidth: 600,
       getBoundingClientRect: () => ({ left: 0, right: 600, top: 0, bottom: 400 }),
       querySelector: (selector: string) => selector === "thead" ? null : ({ getBoundingClientRect: () => ({ right: 208, width: 48 }) }),
       get scrollLeft() { return scrollLeft; },

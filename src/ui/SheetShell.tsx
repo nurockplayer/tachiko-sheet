@@ -289,17 +289,18 @@ export function scrollCellIntoGridNearest(cell: HTMLElement, scrollport: HTMLEle
   const port = scrollport.getBoundingClientRect();
   const bodyTop = port.top + scrollport.clientTop + (scrollport.querySelector<HTMLElement>("thead")?.getBoundingClientRect().height ?? 0);
   const bodyBottom = port.top + scrollport.clientTop + scrollport.clientHeight;
+  const right = port.left + scrollport.clientLeft + scrollport.clientWidth;
   const frozen = scrollport.querySelector<HTMLElement>("thead .ts-frozen-first-column");
   const gutter = scrollport.querySelector<HTMLElement>(".ts-gutter-head");
   const left = cell.classList.contains("ts-frozen-first-column") ? port.left
     : frozen?.getBoundingClientRect().right ?? (port.left + (gutter?.getBoundingClientRect().width ?? 0));
-  const wide = before.right - before.left > port.right - left;
+  const wide = before.right - before.left > right - left;
   const tall = before.bottom - before.top > bodyBottom - bodyTop;
   const tolerance = 1;
-  const visible = (rect: DOMRect) => (wide ? Math.abs(rect.left - left) <= tolerance : rect.left >= left - tolerance && rect.right <= port.right + tolerance)
+  const visible = (rect: DOMRect) => (wide ? Math.abs(rect.left - left) <= tolerance : rect.left >= left - tolerance && rect.right <= right + tolerance)
     && (tall ? Math.abs(rect.top - bodyTop) <= tolerance : rect.top >= bodyTop - tolerance && rect.bottom <= bodyBottom + tolerance);
   if (wide ? Math.abs(before.left - left) > tolerance : before.left < left - tolerance) scrollport.scrollLeft -= left - before.left;
-  else if (!wide && before.right > port.right + tolerance) scrollport.scrollLeft += before.right - port.right;
+  else if (!wide && before.right > right + tolerance) scrollport.scrollLeft += before.right - right;
   if (tall ? Math.abs(before.top - bodyTop) > tolerance : before.top < bodyTop - tolerance) scrollport.scrollTop -= bodyTop - before.top;
   else if (!tall && before.bottom > bodyBottom + tolerance) scrollport.scrollTop += before.bottom - bodyBottom;
   return visible(cell.getBoundingClientRect());
