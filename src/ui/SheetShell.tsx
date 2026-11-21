@@ -1990,7 +1990,7 @@ export function SheetShell(props: SheetShellProps) {
     let targetRow = -1;
     for (const row of grid.querySelectorAll<HTMLTableRowElement>("tbody tr.ts-row")) {
       const bounds = row.getBoundingClientRect();
-      if (bounds.top > targetY || bounds.bottom <= grid.getBoundingClientRect().top) continue;
+      if (bounds.top > targetY) continue;
       const entity = row.querySelector<HTMLTableCellElement>("td[data-work-entity]")!.dataset.workEntity!;
       const index = rowIndexByEntity.get(entity)!;
       targetRow = Math.max(targetRow, index);
