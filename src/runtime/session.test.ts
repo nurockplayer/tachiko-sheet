@@ -1372,6 +1372,28 @@ describe("createSheetRuntime", () => {
       expect(await runtime.read()).toEqual(view);
     });
 
+  it.each(["lost", "refused"])("preserves resident work when the working-size inspection reply is %s", async reply => {
+    const { client, runtime, view } = await opened();
+    const refusal = new FakeDesignerRuntimeError("capacity_exceeded", client.currentRevision);
+    const inspectionError = reply === "lost" ? new Error("lost inspection reply")
+      : new FakeDesignerRuntimeError("invalid_project", client.currentRevision);
+    const inspect = vi.fn(async () => { throw inspectionError; });
+    const fallback = vi.fn();
+    Object.assign(client, {
+      importSpreadsheet: async () => { throw refusal; },
+      inspectSpreadsheet: inspect,
+      importSpreadsheetWorkingSize: fallback,
+    });
+
+    await expect(runtime.importSpreadsheet(new ArrayBuffer(4), "xlsx", { delimiter: ",", header: true },
+      { column_types: [], extra_columns: [] })).rejects.toBe(reply === "lost" ? refusal : inspectionError);
+    expect(inspect).toHaveBeenCalledExactlyOnceWith(expect.any(ArrayBuffer), "xlsx",
+      { delimiter: ",", header: true }, "working_size");
+    expect(fallback).not.toHaveBeenCalled();
+    await expect(runtime.exportOpaque(witnessOf(view))).resolves.toMatchObject({ revision: view.revision });
+    expect(await runtime.read()).toEqual(view);
+  });
+
   it("uses working-size inspection only after a typed capacity refusal", async () => {
     const { client, runtime } = await opened();
     const source = { sheets: [], ledger: [{ category: "lossy_on_export", code: "style_profile",
