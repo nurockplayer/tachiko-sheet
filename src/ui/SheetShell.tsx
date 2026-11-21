@@ -980,6 +980,8 @@ export function SheetShell(props: SheetShellProps) {
   const fillPreviewRef = useRef<CellRectangle | null>(null);
   const finishFillDragRef = useRef(finishFillDrag);
   finishFillDragRef.current = finishFillDrag;
+  const updateFillPreviewRef = useRef(updateFillPreviewAt);
+  updateFillPreviewRef.current = updateFillPreviewAt;
   const suppressClickRef = useRef(false);
   const [dragSelecting, setDragSelecting] = useState(false);
   // WebKit enables Edit > Cut, Copy and Paste on a cell only if these events are
@@ -993,7 +995,33 @@ export function SheetShell(props: SheetShellProps) {
     return () => { for (const type of ["beforecut", "beforecopy", "beforepaste"]) document.removeEventListener(type, enableGridClipboard, true); };
   }, []);
   useEffect(() => {
+    let scrollTimer: number | null = null;
+    let pointerY = 0;
+    const stopScroll = () => {
+      if (scrollTimer !== null) window.clearInterval(scrollTimer);
+      scrollTimer = null;
+    };
+    const scroll = () => {
+      const grid = gridScrollRef.current;
+      if (!fillDragRef.current || !grid) { stopScroll(); return; }
+      const bottom = grid.getBoundingClientRect().top + grid.clientTop + grid.clientHeight;
+      if (pointerY < bottom) { stopScroll(); return; }
+      grid.scrollTop += Math.min(60, 6 + (pointerY - bottom) * 0.4);
+      updateFillPreviewRef.current(pointerY);
+    };
+    const move = (event: MouseEvent) => {
+      if (!fillDragRef.current) return;
+      if (event.buttons === 0) { dropFillDrag(); return; }
+      pointerY = event.clientY;
+      updateFillPreviewRef.current(pointerY);
+      const grid = gridScrollRef.current!;
+      const bottom = grid.getBoundingClientRect().top + grid.clientTop + grid.clientHeight;
+      if (pointerY >= bottom) {
+        if (scrollTimer === null) scrollTimer = window.setInterval(scroll, 50);
+      } else stopScroll();
+    };
     const finish = () => {
+      stopScroll();
       // Text the drag selected natively would turn the next press into a text drag, which ends all mouse events.
       if (dragSelectRef.current?.moved) window.getSelection()?.removeAllRanges();
       suppressClickRef.current = dragSelectRef.current?.moved ?? false;
@@ -1007,6 +1035,7 @@ export function SheetShell(props: SheetShellProps) {
       if (preview && drag) finishFillDragRef.current(preview, drag);
     };
     const dropFillDrag = () => {
+      stopScroll();
       fillDragRef.current = null;
       fillPreviewRef.current = null;
       setFillPreview(null);
@@ -1021,10 +1050,15 @@ export function SheetShell(props: SheetShellProps) {
     // A button released outside the window sends no mouseup here, so the next
     // release anywhere would otherwise fill.
     window.addEventListener("mouseup", finish);
+    window.addEventListener("mousemove", move);
+    window.addEventListener("pointercancel", dropFillDrag);
     window.addEventListener("keydown", cancelFillDrag, true);
     window.addEventListener("blur", dropFillDrag);
     return () => {
+      stopScroll();
       window.removeEventListener("mouseup", finish);
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("pointercancel", dropFillDrag);
       window.removeEventListener("keydown", cancelFillDrag, true);
       window.removeEventListener("blur", dropFillDrag);
     };
@@ -1947,6 +1981,25 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   /** The drag's rows are positions in the view it started on, so they only mean the same cells on that view. */
+  function updateFillPreviewAt(pointerY: number): void {
+    const grid = gridScrollRef.current;
+    const drag = fillDragRef.current;
+    if (!grid || !drag) return;
+    const bottom = grid.getBoundingClientRect().top + grid.clientTop + grid.clientHeight;
+    const targetY = Math.min(pointerY, bottom - 1);
+    let targetRow = -1;
+    for (const row of grid.querySelectorAll<HTMLTableRowElement>("tbody tr.ts-row")) {
+      const bounds = row.getBoundingClientRect();
+      if (bounds.top > targetY || bounds.bottom <= grid.getBoundingClientRect().top) continue;
+      const entity = row.querySelector<HTMLTableCellElement>("td[data-work-entity]")!.dataset.workEntity!;
+      const index = rowIndexByEntity.get(entity)!;
+      targetRow = Math.max(targetRow, index);
+    }
+    const target = fillDragTarget(drag.source, targetRow);
+    fillPreviewRef.current = target;
+    setFillPreview(target);
+  }
+
   function finishFillDrag(area: CellRectangle, drag: { identity: string | null; revision: string | undefined }): void {
     if (drag.identity !== collectionIdentity || drag.revision !== view?.revision) {
       announceClipboard("The table changed during the drag. Nothing was filled.", true, true);
