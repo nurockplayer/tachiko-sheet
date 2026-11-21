@@ -1407,6 +1407,17 @@ export function SheetShell(props: SheetShellProps) {
 
   const widthPublishingRef = useRef(false);
   const [widthPublishing, setWidthPublishing] = useState(false);
+  const [widthSelectionRebind, setWidthSelectionRebind] = useState<{ identity: string | null; revision: string } | null>(null);
+  useLayoutEffect(() => {
+    if (!widthSelectionRebind || !view) return;
+    // Only a confirmed width command can carry a range into its new revision.
+    // Keep a newer selection (or an explicit deselection) as the user left it.
+    if (widthSelectionRebind.identity === collectionIdentity && currentness === "current") {
+      setCellSelection(current => current?.identity === widthSelectionRebind.identity && current.revision === widthSelectionRebind.revision
+        ? { ...current, revision: view.revision } : current);
+    }
+    setWidthSelectionRebind(null);
+  }, [widthSelectionRebind, collectionIdentity, currentness, view]);
   const [deferredWidths, setDeferredWidths] = useState<Array<{ occurrence: string; collection: string; field: string; width: number }>>([]);
   const widthIdentityRef = useRef(collectionIdentity);
   widthIdentityRef.current = collectionIdentity;
@@ -4843,6 +4854,7 @@ export function SheetShell(props: SheetShellProps) {
     };
     void onSetColumnWidth(witness, next.collection, next.field, columnWidthToUnits(next.width)).then(result => {
       if (result.kind !== "confirmed") failed(result.kind === "refused" ? result.message : "Column width could not be changed.");
+      else setWidthSelectionRebind({ identity, revision: witness.revision });
     }).catch(() => failed("Column width could not be changed.")).finally(() => {
       widthPublishingRef.current = false;
       setWidthPublishing(false);
