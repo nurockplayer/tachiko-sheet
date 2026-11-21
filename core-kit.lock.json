@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "348d6f766e553fff5bc9de6f045e13d24b89098c",
+  "sourceCommit": "f5d3b2b59d695d95244b21647cc53bf4b302de9c",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "a3972e56235482a3ef9bb56a6572c50b6a8844eb4a55b5676ede09b0fc90f017",
+  "artifactManifestSha256": "083ddbe71bcf4f2c3dbc88754c4abc5894ece99af7305678afb024f2d9690359",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7046992039",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7053682675",
   "qualificationArtifactReview": {
-    "sourceCommit": "348d6f766e553fff5bc9de6f045e13d24b89098c",
-    "artifactManifestSha256": "a3972e56235482a3ef9bb56a6572c50b6a8844eb4a55b5676ede09b0fc90f017",
+    "sourceCommit": "f5d3b2b59d695d95244b21647cc53bf4b302de9c",
+    "artifactManifestSha256": "083ddbe71bcf4f2c3dbc88754c4abc5894ece99af7305678afb024f2d9690359",
     "url": "https://github.com/nurockplayer/tachiko-sheet/pull/514"
   },
-  "notes": "Re-pin to Work 348d6f76: stored row ranks and scoped recalculation. Two clean detached exports match byte for byte; receipt on issue #246. Sheet does not adopt row ranks or InsertRow position. Product acceptance remains separate."
+  "notes": "Re-pin to Work f5d3b2b5: stored row ranks, scoped recalculation and range statistics. Two clean detached exports match byte for byte; receipt on issue #246. Sheet does not adopt row ranks, InsertRow position or range selection statistics. Product acceptance remains separate."
 }

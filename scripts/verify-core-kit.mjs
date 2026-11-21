@@ -14,11 +14,11 @@ import { fileURLToPath } from 'node:url';
 const qualifiedArtifacts = [
   {
     // Re-pin: two clean detached exports match; producer receipt on #246.
-    // PR #514 owns the review gate; row ranks and InsertRow position are not adopted.
-    sourceCommit: '348d6f766e553fff5bc9de6f045e13d24b89098c',
-    artifactManifestSha256: 'a3972e56235482a3ef9bb56a6572c50b6a8844eb4a55b5676ede09b0fc90f017',
+    // PR #514 owns the review gate; row ranks, InsertRow position and range selection statistics are not adopted.
+    sourceCommit: 'f5d3b2b59d695d95244b21647cc53bf4b302de9c',
+    artifactManifestSha256: '083ddbe71bcf4f2c3dbc88754c4abc5894ece99af7305678afb024f2d9690359',
     review: 'https://github.com/nurockplayer/tachiko-sheet/pull/514',
-    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7046992039',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7053682675',
   },
   {
     // Re-pin: #246 records the producer handback; PR #507 carries the independent review.
