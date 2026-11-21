@@ -58,7 +58,8 @@ try {
 
   // A real cross-row A1 formula produces Work's copy warning. Hold a real
   // Undo reply to expose the simultaneous operation-in-progress reason.
-  await page.setViewportSize({ width: 390, height: 900 });
+  for (const width of [390, 1440]) {
+  await page.setViewportSize({ width, height: 900 });
   const geometry = async label => {
     const measured = await page.evaluate(() => {
     const row = document.querySelector('tbody tr.ts-row');
@@ -68,11 +69,13 @@ try {
       barBottom: bar.getBoundingClientRect().bottom, scrollY: window.scrollY,
       gridScrollTop: grid?.scrollTop, gridScrollLeft: grid?.scrollLeft };
     });
-    console.log(`GEOMETRY ${label} ${JSON.stringify(measured)}`);
+    console.log(`GEOMETRY ${width} ${label} ${JSON.stringify(measured)}`);
     return measured;
   };
   const before = await geometry("before");
   const assertGeometry = (after, message) => {
+    assert.equal(after.barY, before.barY, `${width} ${message}: formula bar viewport y`);
+    assert.equal(after.rowY, before.rowY, `${width} ${message}: first row viewport y`);
     assert.ok(Math.abs((after.barBottom - after.barY) - (before.barBottom - before.barY)) < 1, `${message}: formula bar height`);
     assert.ok(Math.abs((after.rowY - after.barBottom) - (before.rowY - before.barBottom)) < 1, `${message}: row position relative to bar`);
   };
@@ -89,7 +92,7 @@ try {
     const active = document.activeElement;
     return active?.matches(`td[data-work-field="${field}"]`);
   }, fields.confirmed);
-  await geometry("confirmed-focused");
+  assertGeometry(await geometry("confirmed-focused"), "before pending Undo");
   await page.evaluate(() => { window.__r3.arm = "undo"; });
   await page.keyboard.press("Control+z");
   await page.waitForFunction(() => Boolean(window.__r3.held));
@@ -99,6 +102,13 @@ try {
     return input?.readOnly && text.includes("An operation is in progress") && text.includes("Copying this formula");
   });
   assert.equal(await bar.evaluate(node => node.readOnly), true);
+  const pendingNote = page.getByRole("note").filter({ hasText: "An operation is in progress; editing is disabled until it finishes." });
+  assert.equal(await pendingNote.isVisible(), true, "pending status remains visible");
+  assert.equal(await pendingNote.evaluate(node => {
+    const box = node.getBoundingClientRect();
+    return box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight &&
+      node.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+  }), true, "pending status is inside the viewport and unobscured");
   const full = await reason.textContent();
   assert.match(full, /An operation is in progress/);
   assert.match(full, /Copying this formula/);
@@ -106,17 +116,19 @@ try {
   assert.equal(await reason.getAttribute("aria-label"), full);
   assert.ok((await bar.getAttribute("aria-describedby")).split(" ").includes(await reason.getAttribute("id")));
   assert.equal((await reason.boundingBox()).height, 18);
-  assert.equal(await reason.evaluate(node => node.scrollWidth > node.clientWidth), true, "long combined message is ellipsized");
+  if (width === 390) assert.equal(await reason.evaluate(node => node.scrollWidth > node.clientWidth), true, "long combined message is ellipsized");
   assertGeometry(await geometry("combined-warning"), "combined warning appearance");
   await page.evaluate(() => { const e = window.__r3; e.worker.dispatchEvent(new MessageEvent("message", { data: e.held })); e.held = null; });
   await ready(page);
+  assertGeometry(await geometry("undo-completed"), "after pending Undo");
   await cell(0, "impact").click();
   await bar.fill("=1+2");
   await page.waitForFunction(() => document.querySelector('[data-testid="formula-bar-reason"]')?.textContent === "");
   assert.equal(await reason.textContent(), "");
   assertGeometry(await geometry("warning-cleared"), "warning clearing");
   await bar.press("Escape");
-  console.log("PASS: reason and translation warning share an accessible fixed-height line; grid stays still");
+  console.log(`PASS: ${width}×900 pending Undo status stays visible; formula bar and first row keep their viewport y before, during and after`);
+  }
 
   await page.setViewportSize({ width: 1200, height: 900 });
   await cell(0, "impact").dblclick();

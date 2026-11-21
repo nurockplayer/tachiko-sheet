@@ -1093,6 +1093,22 @@ body { margin: 0; }
   scrollbar-width: thin;
 }
 
+/* Pending work must not insert chrome above the formula bar and grid. */
+.ts-operation-notice {
+  position: fixed;
+  inset-inline-end: 12px;
+  bottom: 48px;
+  z-index: 20;
+  box-sizing: border-box;
+  max-width: calc(100vw - 24px);
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: var(--ts-radius);
+  background: var(--ts-surface-chrome);
+  box-shadow: var(--ts-shadow);
+}
+
 .ts-workspace-footer {
   order: 2;
   flex: 0 0 auto;

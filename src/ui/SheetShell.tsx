@@ -6589,7 +6589,7 @@ export function SheetShell(props: SheetShellProps) {
           <button type="button" className="ts-button" disabled={controlsLocked} onClick={() => { setTab("table"); if (columns[0]) focusDraftAfterRender(columns[0].id, completionIntent()); }}>Review new row</button>
         </div> : null}
         {controlsLocked ? (
-          <p className="ts-hint" id={lockNoteId} role="note">
+          <p className="ts-hint ts-operation-notice" id={lockNoteId} role="note">
             {currentness === "unknown" ? "The current work is not confirmed. Use Refresh to recheck it before editing." : "An operation is in progress; editing is disabled until it finishes."}
           </p>
         ) : null}
