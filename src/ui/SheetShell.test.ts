@@ -224,9 +224,9 @@ describe("keyboard history queue", () => {
     const view = makeView();
     view.table.native_table_profile = true;
     view.table.rows = Array.from({ length: 450 }, (_, index) => ({
-      id: `row-${index}`, key: `row-${index}`,
-      fields: view.table.columns.map((column, field) => projected(`row-${index}`, column.id, {
-        kind: "text", value: `R${index + 1}C${field + 1}`,
+      id: index === 0 ? entityA : `row-${index}`, key: `row-${index}`,
+      fields: view.table.columns.map((column, field) => projected(index === 0 ? entityA : `row-${index}`, column.id, {
+        kind: "text", value: `R${index + 2}C${field + 1}`,
       })),
     }));
     const frames: FrameRequestCallback[] = [];
@@ -242,14 +242,14 @@ describe("keyboard history queue", () => {
       const ui = await mount({ view });
       const scroller = ui.container.querySelector<HTMLElement>(".ts-grid-scroll")!;
       Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 320 });
-      const cell = (row: number, field: string) => ui.container.querySelector<HTMLElement>(`[data-testid="cell:row-${row}:${field}"]`)!;
-      const anchor = cell(1, "c-impact");
+      const cell = (row: number, field: string) => ui.container.querySelector<HTMLElement>(`[data-testid="cell:${row === 0 ? entityA : `row-${row}`}:${field}"]`)!;
+      const anchor = cell(0, "c-impact");
       await act(async () => anchor.click());
       expect(document.activeElement).toBe(anchor);
       const initiallyMounted = cell(10, "c-title");
       expect(initiallyMounted).not.toBeNull();
       await act(async () => {
-        scroller.scrollTop = 399 * 32;
+        scroller.scrollTop = 398 * 32;
         scroller.dispatchEvent(new Event("scroll"));
       });
       await flushFrames();
@@ -260,19 +260,19 @@ describe("keyboard history queue", () => {
       expect(document.activeElement).toBe(anchor);
       await act(async () => {
         if (extension === "Shift+click") {
-          cell(399, "c-notes").dispatchEvent(new MouseEvent("click", { shiftKey: true, bubbles: true }));
+          cell(398, "c-notes").dispatchEvent(new MouseEvent("click", { shiftKey: true, bubbles: true }));
         } else {
           anchor.dispatchEvent(new KeyboardEvent("keydown", { key: "End", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
         }
       });
       await flushFrames();
-      const lastRow = extension === "Shift+click" ? 399 : 449;
-      expect(ui.container.querySelector<HTMLInputElement>('[aria-label="Name Box"]')!.value).toBe(`B2:D${lastRow + 1}`);
+      const lastRow = extension === "Shift+click" ? 398 : 449;
+      expect(ui.container.querySelector<HTMLInputElement>('[aria-label="Name Box"]')!.value).toBe("B2");
       expect(document.activeElement).toBe(anchor);
       expect(cell(lastRow, "c-notes").getAttribute("aria-selected")).toBe("true");
       const data = new DataTransfer();
       await act(async () => anchor.dispatchEvent(new ClipboardEvent("copy", { bubbles: true, cancelable: true, clipboardData: data })));
-      expect(data.getData("text/plain")).toBe(encodeTsv(Array.from({ length: lastRow }, (_, index) =>
+      expect(data.getData("text/plain")).toBe(encodeTsv(Array.from({ length: lastRow + 1 }, (_, index) =>
         [2, 3, 4].map(column => `R${index + 2}C${column}`))));
       await act(async () => {
         scroller.scrollTop = 0;
@@ -281,11 +281,11 @@ describe("keyboard history queue", () => {
       await flushFrames();
       for (const rendered of ui.container.querySelectorAll<HTMLElement>("tbody td[data-work-entity]")) {
         if (rendered.dataset.workEntity === DRAFT_ROW) continue;
-        const row = Number(rendered.dataset.workEntity!.slice(4));
-        const selected = row >= 1 && row <= lastRow && rendered.dataset.workField !== "c-title";
+        const row = rendered.dataset.workEntity === entityA ? 0 : Number(rendered.dataset.workEntity!.slice(4));
+        const selected = row >= 0 && row <= lastRow && rendered.dataset.workField !== "c-title";
         expect(rendered.getAttribute("aria-selected") === "true").toBe(selected);
       }
-      expect(cell(1, "c-impact")).toBe(anchor);
+      expect(cell(0, "c-impact")).toBe(anchor);
     } finally {
       await dispose?.(); dispose = undefined;
       vi.unstubAllGlobals();
