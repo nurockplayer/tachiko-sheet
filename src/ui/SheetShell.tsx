@@ -822,6 +822,26 @@ export function SheetShell(props: SheetShellProps) {
   const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean; polite?: boolean } | null>(null);
   // Excel's Ctrl+`: a view choice like zoom, not saved with the work.
   const [showFormulas, setShowFormulas] = useState(false);
+  const [gridZoom, setGridZoom] = useState(100);
+  const gridScale = gridZoom / 100;
+  function stepGridZoom(delta: number): void {
+    setGridZoom(current => Math.max(50, Math.min(200, current + delta)));
+  }
+  // Native listener: React's passive wheel listener cannot cancel webview zoom.
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const wheel = (event: WheelEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || !gridScrollRef.current?.contains(event.target as Node) || event.deltaY === 0) return;
+      event.preventDefault();
+      stepGridZoom(event.deltaY < 0 ? 10 : -10);
+    };
+    shell.addEventListener("wheel", wheel, { passive: false });
+    return () => shell.removeEventListener("wheel", wheel);
+  }, []);
+  useLayoutEffect(() => {
+    if (gridWindowed) syncGridWindow();
+  }, [gridZoom]);
   const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition; fromFillHandle?: boolean } | null>(null);
   const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition; activeCell?: GridPosition; pasteSpecial?: boolean; column?: string; trigger?: HTMLElement } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
@@ -1464,7 +1484,7 @@ export function SheetShell(props: SheetShellProps) {
     const stored = pendingColumnWidths[field] ?? (projected != null ? clampColumnWidth(columnWidthToPx(projected)) : settings.widths?.[field]);
     if (stored !== undefined) return stored;
     if (sizedGrid && drawnColumnWidths[field] !== undefined) return drawnColumnWidths[field];
-    return th ? Math.round(th.getBoundingClientRect().width) : SIZED_COLUMN_DEFAULT_WIDTH;
+    return th ? Math.round(th.getBoundingClientRect().width / gridScale) : SIZED_COLUMN_DEFAULT_WIDTH;
   }
 
   /** Every column's width as drawn now, in column order after the row gutter. */
@@ -1473,7 +1493,7 @@ export function SheetShell(props: SheetShellProps) {
     const widths: Record<string, number> = {};
     columns.forEach((column, index) => {
       const th = headers[index];
-      if (th) widths[column.id] = clampColumnWidth(th.getBoundingClientRect().width);
+      if (th) widths[column.id] = clampColumnWidth(th.getBoundingClientRect().width / gridScale);
     });
     return widths;
   }
@@ -1563,7 +1583,7 @@ export function SheetShell(props: SheetShellProps) {
     const session = columnResizeRef.current;
     if (!session) return;
     event.stopPropagation();
-    session.width = clampColumnWidth(session.startWidth + event.clientX - session.startX);
+    session.width = clampColumnWidth(session.startWidth + (event.clientX - session.startX) / gridScale);
     session.th.style.width = `${session.width}px`;
   }
 
@@ -3506,7 +3526,7 @@ export function SheetShell(props: SheetShellProps) {
   function syncGridWindow(): void {
     const scroller = gridScrollRef.current;
     if (!scroller || !table) return;
-    const next = gridWindowRange(scroller.scrollTop, scroller.clientHeight, gridRowHeightRef.current, displayRows.length);
+    const next = gridWindowRange(scroller.scrollTop / gridScale, scroller.clientHeight / gridScale, gridRowHeightRef.current, displayRows.length);
     setGridRange((current) => current.start === next.start && current.end === next.end ? current : next);
   }
 
@@ -3523,15 +3543,15 @@ export function SheetShell(props: SheetShellProps) {
     const scroller = gridScrollRef.current;
     const heights = [...(scroller?.querySelectorAll<HTMLElement>("tbody tr.ts-row") ?? [])].map((row) => row.offsetHeight);
     const pitch = measuredRowPitch(heights) ?? gridRowHeightRef.current;
-    const body = scroller ? Math.max(0, scroller.clientHeight - gridHeaderHeightRef.current) : 0;
+    const body = scroller ? Math.max(0, scroller.clientHeight / gridScale - gridHeaderHeightRef.current) : 0;
     return Math.max(1, Math.floor(body / Math.max(1, pitch)) - 1);
   }
 
   function revealGridRow(index: number): void {
     const scroller = gridScrollRef.current;
     if (scroller) {
-      const top = scrollTopToReveal(index, gridRowHeightRef.current, gridHeaderHeightRef.current, scroller.scrollTop, scroller.clientHeight);
-      if (top !== null) scroller.scrollTop = top;
+      const top = scrollTopToReveal(index, gridRowHeightRef.current, gridHeaderHeightRef.current, scroller.scrollTop / gridScale, scroller.clientHeight / gridScale);
+      if (top !== null) scroller.scrollTop = top * gridScale;
     }
     const rowCount = displayRows.length;
     setGridRange((current) => gridWindowAround(index, current, rowCount));
@@ -5446,7 +5466,7 @@ export function SheetShell(props: SheetShellProps) {
     // the dense header actions are.
     const resizable = !compactColumnActions && !salesCatalog;
     const gridTable = (
-      <table className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table" onCopy={event => copyGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onCut={event => cutGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
+      <table style={{ zoom: gridScale }} className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table" onCopy={event => copyGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onCut={event => cutGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             {/* The gutter reads "Row" in the DOM (frozen seeds and accessible
@@ -5707,7 +5727,7 @@ export function SheetShell(props: SheetShellProps) {
                   scrollTop against a temporarily shorter table during that commit.
                   A table min-height would instead stretch the rendered row heights. */}
               {gridWindowed
-                ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(displayRows.length, gridRowHeight, gridHeaderHeight, gridFooterHeight) }}>{gridTable}</div>
+                ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(displayRows.length, gridRowHeight, gridHeaderHeight, gridFooterHeight) * gridScale }}>{gridTable}</div>
                 : gridTable}
             </div>
         {cellMenu ? <CellContextMenu x={cellMenu.x} y={cellMenu.y} items={cellMenu.column && cellMenu.trigger ? columnMenuItems(cellMenu.column, cellMenu.trigger) : cellMenu.pasteSpecial ? pasteSpecialItems(cellMenu.position) : cellMenuItems(cellMenu.position)} label={cellMenu.column ? "Column actions" : undefined} onClose={closeCellMenu} /> : null}
@@ -6720,7 +6740,15 @@ export function SheetShell(props: SheetShellProps) {
               title={interop?.metadata && !importedXlsx ? "Adding sheets to imported work is not available yet." : "Add sheet (Shift+F11)"}
               onClick={() => void addSheet()}>+</button>
           </div>
-          <div className="ts-workbook-status">{renderStatusStrip()}</div>
+          <div className="ts-workbook-status">{renderStatusStrip()}
+            <div className="ts-grid-zoom" role="group" aria-label="Grid zoom">
+              <button type="button" aria-label="Zoom out grid" disabled={gridZoom === 50} onClick={() => stepGridZoom(-10)}>−</button>
+              <input type="range" aria-label="Grid zoom percentage" min="50" max="200" step="5" value={gridZoom} onChange={event => setGridZoom(Number(event.target.value))} />
+              <button type="button" aria-label="Zoom in grid" disabled={gridZoom === 200} onClick={() => stepGridZoom(10)}>+</button>
+              <output aria-live="polite">{gridZoom}%</output>
+              <button type="button" aria-label="Reset grid zoom" onClick={() => setGridZoom(100)}>Reset</button>
+            </div>
+          </div>
         </footer>
       </div>
     );

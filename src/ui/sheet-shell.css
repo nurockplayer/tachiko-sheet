@@ -1093,6 +1093,17 @@ body { margin: 0; }
   scrollbar-width: thin;
 }
 
+.ts-grid-zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: auto;
+  padding-inline-start: 12px;
+  flex-shrink: 0;
+}
+.ts-grid-zoom input { width: 100px; }
+.ts-grid-zoom output { min-width: 4ch; text-align: end; }
+
 /* Pending work must not insert chrome above the formula bar and grid. */
 .ts-operation-notice {
   position: fixed;
