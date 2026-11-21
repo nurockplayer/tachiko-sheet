@@ -1372,12 +1372,17 @@ describe("createSheetRuntime", () => {
       expect(await runtime.read()).toEqual(view);
     });
 
-  it.each(["lost", "refused"])("preserves resident work when the working-size inspection reply is %s", async reply => {
+  it.each(["lost", "refused", "capacity"].flatMap(reply =>
+    ["inspect", "import"].map(entry => ({ reply, entry })),
+  ))("preserves resident work when $entry working-size inspection is $reply", async ({ reply, entry }) => {
     const { client, runtime, view } = await opened();
     const refusal = new FakeDesignerRuntimeError("capacity_exceeded", client.currentRevision);
     const inspectionError = reply === "lost" ? new Error("lost inspection reply")
-      : new FakeDesignerRuntimeError("invalid_project", client.currentRevision);
-    const inspect = vi.fn(async () => { throw inspectionError; });
+      : new FakeDesignerRuntimeError(reply === "capacity" ? "capacity_exceeded" : "invalid_project", client.currentRevision);
+    const inspect = vi.fn(async (_bytes: ArrayBuffer, _format: string, _options: unknown, profile?: string) => {
+      if (!profile) throw refusal;
+      throw inspectionError;
+    });
     const fallback = vi.fn();
     Object.assign(client, {
       importSpreadsheet: async () => { throw refusal; },
@@ -1385,9 +1390,19 @@ describe("createSheetRuntime", () => {
       importSpreadsheetWorkingSize: fallback,
     });
 
-    await expect(runtime.importSpreadsheet(new ArrayBuffer(4), "xlsx", { delimiter: ",", header: true },
-      { column_types: [], extra_columns: [] })).rejects.toBe(reply === "lost" ? refusal : inspectionError);
-    expect(inspect).toHaveBeenCalledExactlyOnceWith(expect.any(ArrayBuffer), "xlsx",
+    const args = [new ArrayBuffer(4), "xlsx", { delimiter: ",", header: true }] as const;
+    const result = entry === "inspect" ? runtime.inspectSpreadsheet(...args)
+      : runtime.importSpreadsheet(...args, { column_types: [], extra_columns: [] });
+    if (reply === "lost") {
+      await expect(result).rejects.toMatchObject({
+        message: "Spreadsheet inspection is unavailable. Please try again.",
+        cause: expect.any(UnknownOperationOutcomeError),
+      });
+    } else {
+      await expect(result).rejects.toBe(inspectionError);
+    }
+    expect(inspect).toHaveBeenCalledTimes(entry === "inspect" ? 2 : 1);
+    expect(inspect).toHaveBeenLastCalledWith(expect.any(ArrayBuffer), "xlsx",
       { delimiter: ",", header: true }, "working_size");
     expect(fallback).not.toHaveBeenCalled();
     await expect(runtime.exportOpaque(witnessOf(view))).resolves.toMatchObject({ revision: view.revision });
