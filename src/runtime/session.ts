@@ -1554,7 +1554,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     options: ImportOptions, capacityRefusal: unknown,
   ): Promise<SourceWorkbook> {
     const inspect = capability(client.inspectSpreadsheet, "spreadsheet inspection");
-    const source = await dispatch(kit, () => inspect.call(client, bytes.slice(0), format, options, "working_size"));
+    let source;
+    try {
+      source = await dispatch(kit, () => inspect.call(client, bytes.slice(0), format, options, "working_size"));
+    } catch {
+      // This read-only failure cannot change the definitively refused import.
+      throw capacityRefusal;
+    }
     // Working-size metadata carries no presentation. Only use it when there
     // is no source presentation to lose; retain Work's original refusal otherwise.
     // Work excludes header cells from rows and reports their styling in the ledger.
