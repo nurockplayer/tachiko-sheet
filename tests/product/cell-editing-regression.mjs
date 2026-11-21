@@ -579,6 +579,28 @@ const cases = [
     await page.keyboard.press("F2"); await editor(page).fill("Arrow reset"); await editor(page).press("Enter");
     await page.waitForFunction(id => document.activeElement?.dataset.testid === id, areaDestination);
   }],
+  ...["Enter", "Next match"].map(navigate => [`Find via ${navigate} ends the Tab run before editing C1 and Enter moves to C2`, async page => {
+    const rows = page.locator("tbody tr.ts-row");
+    const at = (row, column) => rows.nth(row).locator("td[data-work-field]").nth(column);
+    await at(0, 2).click(); await page.keyboard.press("F2");
+    await editor(page).fill("7391"); await editor(page).press("Enter");
+    await editor(page).waitFor({ state: "hidden" });
+    assert.equal((await at(0, 2).textContent()).trim(), "7391");
+    await at(0, 0).click(); await page.keyboard.press("Tab");
+    assert.equal(await focused(at(0, 1)), true, "Tab starts the run at A1 and moves to B1");
+    await page.keyboard.press("ControlOrMeta+f");
+    const find = page.getByRole("searchbox", { name: "Find in table" });
+    await find.fill("7391");
+    if (navigate === "Enter") await find.press("Enter");
+    else await page.getByRole("button", { name: navigate, exact: true }).click();
+    await page.getByTestId("find-bar").getByRole("button", { name: "Close", exact: true }).click();
+    await page.waitForFunction(node => document.activeElement === node, await at(0, 2).elementHandle());
+    const count = await dispatches(page);
+    await page.keyboard.press("F2"); await editor(page).fill("7392"); await editor(page).press("Enter");
+    await page.waitForFunction(node => document.activeElement === node, await at(1, 2).elementHandle());
+    assert.equal((await at(0, 2).textContent()).trim(), "7392");
+    assert.equal(await dispatches(page), count + 1, "the found cell edit publishes once");
+  }]),
   ["Tab and Shift+Tab publish complete scalars once before moving grid focus", async (page) => {
     let input = await entry(page, "impact", "F2"); await replace(input, "12345");
     await published(page, input, "impact", "12345", "Tab");
