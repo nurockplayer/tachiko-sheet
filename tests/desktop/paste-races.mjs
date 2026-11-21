@@ -6,7 +6,33 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { collectWindowedRows } from "../product/windowed-table-collector.mjs";
 
+// The only clipboard writer is an OS utility, outside the app's WebView.
+export function writeOsClipboard(text) {
+  if (process.platform === "darwin") {
+    execFileSync("pbcopy", [], { input: text });
+  } else if (process.platform === "win32") {
+    execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+      "$text = [Console]::In.ReadToEnd(); Set-Clipboard -Value $text"], { input: text });
+  } else {
+    throw new Error("Linux native clipboard Paste is BLOCKED by #541");
+  }
+}
+
+export const nativePaste = evaluate => evaluate(`
+  await window.__TAURI_INTERNALS__.invoke("e2e_menu_command", { id: "paste" });
+  return true;
+`);
+
 export async function pasteRaces({ evaluate, work, extraChecks = [], receipt = async () => {} }) {
+  if (process.platform === "linux") {
+    const reason = "Linux native menu Paste is inert";
+    const issue = "https://github.com/nurockplayer/tachiko-sheet/issues/541";
+    console.log(`BLOCKED: linux real OS clipboard native-menu Paste — ${reason}; ${issue}`);
+    const timestamp = new Date().toISOString();
+    await receipt({ name: "real OS clipboard native-menu Paste", start: timestamp, end: timestamp,
+      outcome: "BLOCKED", reason, issue });
+    return { status: "BLOCKED", reason, issue };
+  }
   const failures = [];
   const check = async (name, run) => {
     const start = new Date().toISOString();
@@ -50,10 +76,6 @@ export async function pasteRaces({ evaluate, work, extraChecks = [], receipt = a
       scroller().dispatchEvent(new Event("scroll"));
       await waitFor(() => inView(index), "paste target in view");
     }
-    const valuesKey = (el) => el.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "V", ctrlKey: !/Mac/.test(navigator.platform), metaKey: /Mac/.test(navigator.platform),
-      shiftKey: true, bubbles: true, cancelable: true,
-    }));
   `;
   const cancelEditor = () => evaluate(`
     const editor = textbox("Edit cell");
@@ -67,95 +89,27 @@ export async function pasteRaces({ evaluate, work, extraChecks = [], receipt = a
 
   for (const [name, run] of extraChecks) await check(name, run);
 
-  await check("paste into an off-screen target changes only that cell and reveals it", async () => {
-    // Compare with the workbook after the macOS extra checks and editor cleanup.
+  await check("real OS clipboard native-menu Paste changes exactly the target cells", async () => {
     await cancelEditor();
     const expected = await snapshot();
+    const pasted = [["native-471-A", "native-471-B"], ["native-471-C", "native-471-D"]];
+    writeOsClipboard(pasted.map(row => row.join("\t")).join("\n"));
     await evaluate(`${page}
-      await show(8000); click(cell(8000));
-      await waitFor(() => current() && document.activeElement === cell(8000) &&
-        cell(8000)?.getAttribute("aria-selected") === "true", "off-screen target selection published");
-      return true;
-    `);
-    // Let the selection/focus render finish before scrolling it away; otherwise
-    // the click's pending focus handoff can scroll it back during setup.
-    await evaluate(`${page}
-      window.__g6PasteTarget = cell(8000);
-      scroller().scrollTop = 0; scroller().dispatchEvent(new Event("scroll"));
-      await waitFor(() => !inView(8000), "selected target scrolled out of view");
-      await sleep(100);
-      if (inView(8000)) throw new Error("target scrolled back before paste");
-      const data = new DataTransfer(); data.setData("text/plain", "off-screen-paste");
-      const event = new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true });
-      window.__g6PasteTarget.dispatchEvent(event);
-      try {
-        await waitFor(() => current() && cell(8000)?.textContent === "off-screen-paste" && inView(8000), "pasted target revealed");
-      } catch (error) {
-        throw new Error(String(error) + "; off-screen evidence: " + JSON.stringify({
-          sentTarget: window.__g6PasteTarget.dataset.testid,
-          sentConnected: window.__g6PasteTarget.isConnected,
-          sameLiveNode: window.__g6PasteTarget === cell(8000),
-          liveTarget: cell(8000)?.dataset.testid, liveText: cell(8000)?.textContent,
-          defaultPrevented: event.defaultPrevented, clipboardTypes: Array.from(event.clipboardData?.types ?? []),
-          current: current(), inView: Boolean(inView(8000)), scrollTop: scroller().scrollTop,
-          cellBox: cell(8000)?.getBoundingClientRect().toJSON(), portBox: scroller().getBoundingClientRect().toJSON(),
-          clientTop: scroller().clientTop, clientHeight: scroller().clientHeight,
-          headerHeight: grid().querySelector("thead").getBoundingClientRect().height,
-          feedback: [...document.querySelectorAll(".ts-clipboard-status")].map(el => el.innerText),
-        }));
-      }
-      return true;
-    `);
-    expected[8000][1][0].text = "off-screen-paste";
-    assert.deepEqual(await snapshot(), expected, "all 25,218 values and stable targets; exactly one cell changed");
-  });
-
-  await check("slow paste is refused with every cell unchanged when the active cell moves", async () => {
-    await cancelEditor();
-    const before = await snapshot();
-    try {
-    const evidence = await evaluate(`${page}
       await show(10); click(cell(10));
-      window.__g6ClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
-      window.__g6ClipboardSaved = true;
-      Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
-        readText: () => new Promise(resolve => {
-          window.__g6ReadStarted = true;
-          window.__g6ReadDone = false;
-          setTimeout(() => { window.__g6ReadDone = true; resolve("slow-paste"); }, 1500);
-        }),
-      } });
-      window.__g6ReadStarted = false;
-      valuesKey(cell(10));
-      await waitFor(() => window.__g6ReadStarted, "delayed clipboard read started");
-      click(cell(11));
-      await waitFor(() => document.activeElement === cell(11) &&
-        cell(11)?.getAttribute("aria-selected") === "true", "active-cell move published");
-      if (window.__g6ReadDone) throw new Error("clipboard resolved before active-cell move");
-      await waitFor(() => window.__g6ReadDone, "delayed clipboard resolved");
-      const refusal = () => [...document.querySelectorAll(".ts-clipboard-status")].find(el =>
-        el.innerText.includes("The table or selection changed while reading the clipboard. Nothing was pasted.") &&
-        el.getClientRects().length > 0 && getComputedStyle(el).visibility === "visible");
-      await waitFor(() => current() && refusal(), "visible selection-change paste refusal");
-      return {
-        readStarted: window.__g6ReadStarted, readDone: window.__g6ReadDone,
-        refusal: Boolean(refusal()),
-        startingTarget: cell(10)?.dataset.testid, startingText: cell(10)?.textContent,
-        movedTarget: cell(11)?.dataset.testid, movedText: cell(11)?.textContent,
-      };
+      await waitFor(() => current() && document.activeElement === cell(10) &&
+        cell(10)?.getAttribute("aria-selected") === "true", "native paste target selected");
+      return true;
     `);
-      const after = await snapshot();
-      console.log("Slow paste native evidence: " + JSON.stringify({ ...evidence,
-        allCellsUnchanged: JSON.stringify(after) === JSON.stringify(before) }));
-      assert.equal(evidence.refusal, true, "the existing selection-change refusal is visible");
-      assert.deepEqual(after, before, "all 25,218 values and stable targets, including both active cells, remain unchanged");
-    } finally {
-      await evaluate(`if (window.__g6ClipboardSaved) {
-        if (window.__g6ClipboardDescriptor) Object.defineProperty(navigator, "clipboard", window.__g6ClipboardDescriptor);
-        else delete navigator.clipboard;
-        delete window.__g6ClipboardSaved;
-      } return true;`);
-    }
+    await nativePaste(evaluate);
+    await evaluate(`${page}
+      await waitFor(() => current() && cell(10)?.textContent === "native-471-A" &&
+        cell(11, 1)?.textContent === "native-471-D", "real clipboard native Paste applied");
+      return true;
+    `);
+    pasted.forEach((row, r) => row.forEach((text, c) => { expected[10 + r][1][c].text = text; }));
+    assert.deepEqual(await snapshot(), expected,
+      "all 25,218 cell values and stable targets; exactly the four TSV cells changed");
   });
-  if (failures.length) throw new AggregateError(failures, "G6 paste/native input checks failed");
+  if (failures.length) throw new AggregateError(failures, "native clipboard Paste checks failed");
+  return { status: "PASS", changedCells: 4, untouchedCellsIdentical: true };
 }

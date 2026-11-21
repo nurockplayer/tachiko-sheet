@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { boundedText } from "../../scripts/desktop-evidence.mjs";
 import { collectWindowedRows } from "../product/windowed-table-collector.mjs";
 import { formulaPersistence } from "./formula-persistence.mjs";
-import { pasteRaces } from "./paste-races.mjs";
+import { pasteRaces, writeOsClipboard, nativePaste } from "./paste-races.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const requestedApp = path.resolve(process.argv[2] ?? "");
@@ -991,7 +991,7 @@ async function macShortcutLabels() {
 }
 
 // R6 runs Replace and dispatched composition against packaged WebKit/native Work.
-// Real clipboard coverage remains open as #348.1; no native input is sent here.
+// Real clipboard Paste uses the installed native menu action, without OS input automation.
 async function nativeCoverage() {
   const host = await coldHome();
   assert.equal(host.protocol, "tauri:", "R6 runs in the packaged app");
@@ -1120,19 +1120,27 @@ async function nativeCoverage() {
     assert.deepEqual(await snapshot(), before, "Name Box never edits cells");
     assert.equal(await noUndo(), true, "Name Box adds no history");
   });
-  const nativeInputAuthorized = JSON.parse(execFileSync("python3", ["-c", [
-    "import ctypes, json",
-    'core = ctypes.CDLL("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")',
-    "core.CGPreflightPostEventAccess.restype = ctypes.c_bool",
-    "print(json.dumps(core.CGPreflightPostEventAccess()))",
-  ].join("\n")], { encoding: "utf8" }));
-  // The authorized native-input driver is deliberately not implemented yet.
-  const reason = nativeInputAuthorized ? "native input driver not implemented" : "native input not authorized on this host";
-  console.log(`NOT RUN: real-clipboard Paste values (#348.1) — ${reason}`);
+  const expectedPaste = await snapshot();
+  writeOsClipboard("native-471-A\tnative-471-B\nnative-471-C\tnative-471-D");
+  await evaluate(`
+    click(cellAt(0, 0));
+    await waitFor(() => current() && document.activeElement === cellAt(0, 0), "native Paste focus");
+    return true;
+  `);
+  await nativePaste(evaluate);
+  await evaluate(`
+    await waitFor(() => current() && cellAt(0, 0)?.textContent === "native-471-A" &&
+      cellAt(1, 1)?.textContent === "native-471-D", "real clipboard Paste applied");
+    return true;
+  `);
+  [["native-471-A", "native-471-B"], ["native-471-C", "native-471-D"]].forEach((row, r) =>
+    row.forEach((text, c) => { expectedPaste[r][c].text = text; }));
+  assert.deepEqual(await snapshot(), expectedPaste, "native clipboard Paste: four changed cells, untouched cells and identities identical");
+  console.log("PASS: darwin real OS clipboard native-menu Paste; four changed cells correct, untouched cells identical");
   return {
     nativeReplace: true,
     nameBoxDispatchedComposition: true,
-    realClipboardPasteValues: { status: "NOT RUN", issue: "#348.1", nativeInputAuthorized, reason },
+    realClipboardPaste: { status: "PASS", issue: "#471", entry: "native Edit > Paste responder chain" },
   };
 }
 
@@ -1270,7 +1278,7 @@ try {
   }
   directResult = {
     case: process.env.DESKTOP_NATIVE_ONLY === "1" ? "desktop native subcases" : "desktop packaged lifecycle (native runtime)",
-    journeys: process.env.DESKTOP_NATIVE_ONLY === "1" ? { nativeSubcases: true } : { ...nativeCoverageResults, namedTablePortableLocalCopy: true, sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats, mixed320x2and1000x16: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
+    journeys: process.env.DESKTOP_NATIVE_ONLY === "1" ? { nativeSubcases: true, realClipboardPaste: { status: "PASS", issue: "#471" } } : { ...nativeCoverageResults, namedTablePortableLocalCopy: true, sales: process.env.DESKTOP_JOURNEYS !== "capacity", capacity8406x3: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats, mixed320x2and1000x16: process.env.DESKTOP_JOURNEYS === "sales" ? [] : formats },
     status: "PASS",
     app,
     machine: execFileSync("uname", ["-mrs"], { encoding: "utf8" }).trim(),
