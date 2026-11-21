@@ -1,6 +1,5 @@
 param(
-    [Parameter(Mandatory=$true)][int]$AppPid,
-    [ValidateSet('V','Q')][string]$Key = 'V'
+    [Parameter(Mandatory=$true)][int]$AppPid
 )
 $ErrorActionPreference = 'Stop'
 trap { Write-Error "AltGr native input NOT DELIVERED: $_"; exit 1 }
@@ -10,6 +9,8 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
 public static class AltGrInput {
+    [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr LoadKeyboardLayoutW([MarshalAs(UnmanagedType.LPWStr)] string id, uint flags);
+    [DllImport("user32.dll")] public static extern bool UnloadKeyboardLayout(IntPtr layout);
     [DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint thread);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
     [DllImport("user32.dll", SetLastError=true)] public static extern bool PostMessageW(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
@@ -57,13 +58,6 @@ public static class AltGrInput {
         for (int i = 0; i < actual; i++) values[i] = layouts[i].ToInt64().ToString("X");
         return String.Join(",", values);
     }
-    public static IntPtr GermanLayout() {
-        int count = GetKeyboardLayoutList(0, null); var layouts = new IntPtr[count];
-        int actual = GetKeyboardLayoutList(count, layouts);
-        for (int i = 0; i < actual; i++)
-            if ((layouts[i].ToInt64() & 0xFFFF) == 0x0407) return layouts[i];
-        throw new InvalidOperationException("German keyboard layout unavailable; install German keyboard layout for this user");
-    }
     [DllImport("user32.dll", SetLastError=true)] static extern uint SendInput(uint count, INPUT[] inputs, int size);
     [StructLayout(LayoutKind.Sequential)] struct KEYBDINPUT {
         public ushort vk, scan; public uint flags, time; public UIntPtr extra;
@@ -96,9 +90,22 @@ $window = $process.MainWindowHandle
 if ($window -eq [IntPtr]::Zero) { throw "PID $AppPid has no main window" }
 [uint32]$owner = 0
 $thread = [AltGrInput]::GetWindowThreadProcessId($window, [ref]$owner)
-# Use the runner's loaded German layout without stealing app focus for a loader.
-$layout = [AltGrInput]::GermanLayout()
+Add-Type -AssemblyName System.Windows.Forms
+$loader = New-Object System.Windows.Forms.Form
+$loader.Text = 'AltGr layout setup'
+$loader.ShowInTaskbar = $false
+$loader.Show()
+$layout = [IntPtr]::Zero
 try {
+    # Load once while this helper owns focus; keep it alive for both chords.
+    [AltGrInput]::Activate($loader.Handle)
+    $layout = [AltGrInput]::LoadKeyboardLayoutW('00000407', 0)
+    if ($layout -eq [IntPtr]::Zero -or ($layout.ToInt64() -band 0xFFFF) -ne 0x0407) { throw 'German keyboard layout unavailable' }
+    [AltGrInput]::Activate($window)
+    Write-Host 'AltGr native input ready'
+    $previous = [IntPtr]::Zero
+    while ($null -ne ($Key = [Console]::ReadLine())) {
+    if ($Key -notin @('V', 'Q')) { throw "Unknown AltGr input request: $Key" }
 [AltGrInput]::Activate($window)
 Start-Sleep -Milliseconds 200
 $info = New-Object AltGrInput+GUITHREADINFO
@@ -107,9 +114,10 @@ $gotInfo = [AltGrInput]::GetGUIThreadInfo($thread, [ref]$info)
 $focus = $info.focus
 [uint32]$focusOwner = 0
 $focusedThread = if ($focus -ne [IntPtr]::Zero) { [AltGrInput]::GetWindowThreadProcessId($focus, [ref]$focusOwner) } else { 0 }
-$previous = if ($focusedThread) { [AltGrInput]::GetKeyboardLayout($focusedThread) } else { [IntPtr]::Zero }
+$focusedLayout = if ($focusedThread) { [AltGrInput]::GetKeyboardLayout($focusedThread) } else { [IntPtr]::Zero }
+if ($previous -eq [IntPtr]::Zero) { $previous = $focusedLayout }
 $layouts = [AltGrInput]::Layouts()
-Write-Host "AltGr diagnostics: focusedHWND=$($focus.ToInt64().ToString('X')) focusedThread=$focusedThread focusedHKL=$($previous.ToInt64().ToString('X')) appSession=$($process.SessionId) helperSession=$((Get-Process -Id $PID).SessionId) inputDesktop=$([AltGrInput]::InputDesktopName()) layouts=$layouts"
+Write-Host "AltGr diagnostics: focusedHWND=$($focus.ToInt64().ToString('X')) focusedThread=$focusedThread focusedHKL=$($focusedLayout.ToInt64().ToString('X')) appSession=$($process.SessionId) helperSession=$((Get-Process -Id $PID).SessionId) inputDesktop=$([AltGrInput]::InputDesktopName()) layouts=$layouts"
 if ([AltGrInput]::GetForegroundWindow() -ne $window) { throw "SetForegroundWindow could not focus app PID $AppPid" }
 if (-not $gotInfo -or -not $focusedThread) { throw "GetGUIThreadInfo could not resolve the focused input window for app thread $thread" }
 # WebView2's focused child HWND can belong to its separate browser process.
@@ -124,6 +132,10 @@ if ($focus -ne $window -and -not [AltGrInput]::IsChild($window, $focus)) { throw
     [AltGrInput]::Send($window, $(if ($Key -eq 'Q') { 0x10 } else { 0x2f }))
     Start-Sleep -Milliseconds 300
     Write-Host "AltGr native input queued: PID $AppPid, layout 00000407, Right-Alt+$Key via SendInput (4/4); foreground/focus verified; app receipt still required"
+    }
 } finally {
     if ($focus -and $previous) { [void][AltGrInput]::PostMessageW($focus, 0x50, [IntPtr]::Zero, $previous) }
+    Start-Sleep -Milliseconds 200
+    if ($layout -ne [IntPtr]::Zero) { [void][AltGrInput]::UnloadKeyboardLayout($layout) }
+    $loader.Dispose()
 }
