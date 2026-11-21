@@ -23,7 +23,7 @@ use std::sync::{Mutex, MutexGuard};
 use rfd::{AsyncFileDialog, AsyncMessageDialog, MessageButtons, MessageDialogResult, MessageLevel};
 use saves::{Claim, Published, Saves, WriteError};
 use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem};
-use tauri::webview::DownloadEvent;
+use tauri::webview::{DownloadEvent, PageLoadEvent};
 use tauri::{
     AppHandle, Manager, State, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
@@ -915,12 +915,18 @@ pub fn run() {
                     .inner_size(1280.0, 820.0)
                     .min_inner_size(880.0, 600.0)
                     .on_navigation(move |url| on_navigation(&handle, url))
-                    .on_download(|_webview, event| on_download(&event));
+                    .on_download(|_webview, event| on_download(&event))
+                    .on_page_load(|window, payload| {
+                        if payload.event() == PageLoadEvent::Finished {
+                            close_diagnostic(&window, "page-loaded");
+                        }
+                    });
             // The packaged e2e run must not stall when its window is covered.
             #[cfg(feature = "e2e")]
             let window = window
                 .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
             let window = window.build()?;
+            close_diagnostic(&window, "window-built");
             let guarded = window.clone();
             window.on_window_event(move |event| match event {
                 WindowEvent::CloseRequested { api, .. }
