@@ -14,7 +14,8 @@ export function writeOsClipboard(text) {
     execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
       "$text = [Console]::In.ReadToEnd(); Set-Clipboard -Value $text"], { input: text });
   } else {
-    execFileSync("xclip", ["-selection", "clipboard"], { input: text, stdio: ["pipe", "ignore", "ignore"] });
+    // WebKit exposes safe MIME names, not xclip's default UTF8_STRING atom.
+    execFileSync("xclip", ["-selection", "clipboard", "-target", "text/plain"], { input: text, stdio: ["pipe", "ignore", "ignore"] });
   }
 }
 
