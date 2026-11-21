@@ -616,6 +616,105 @@ describe("keyboard history queue", () => {
 });
 
 describe("paste completion reveal", () => {
+  it("keeps an asynchronously published windowed target visible when the grid resizes after reveal settles", async () => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
+    const observers = new Map<ResizeObserver, { callback: ResizeObserverCallback; elements: Set<Element> }>();
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: ResizeObserverCallback) { observers.set(this as unknown as ResizeObserver, { callback, elements: new Set() }); }
+      observe(element: Element) { observers.get(this as unknown as ResizeObserver)!.elements.add(element); }
+      disconnect() { observers.delete(this as unknown as ResizeObserver); }
+    });
+    const flushFrames = async () => {
+      for (let count = 0; frames.length && count < 20; count++) {
+        const batch = frames.splice(0);
+        await act(async () => { batch.forEach(callback => callback(0)); });
+      }
+      expect(frames).toHaveLength(0);
+    };
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.columns = view.table.columns.slice(0, 1);
+    view.table.rows = Array.from({ length: 300 }, (_, index) => ({
+      id: `row-${index}`, key: `row-${index}`,
+      fields: [projected(`row-${index}`, "c-title", { kind: "text", value: `Row ${index}` })],
+    }));
+    let finish!: (result: { kind: "confirmed" }) => void;
+    const onEditCells = vi.fn<NonNullable<SheetShellProps["onEditCells"]>>(() => new Promise(resolve => { finish = resolve; }));
+    let height = 264;
+    const rowHeight = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function () {
+      return this.matches("tr.ts-row") ? 28 : this.matches("thead") ? 31 : 0;
+    });
+    const geometry = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
+      const scroller = container.querySelector<HTMLElement>(".ts-grid-scroll");
+      const row = this.closest("tr[aria-rowindex]");
+      const top = this.matches("td[data-work-entity]") && row
+        ? 290 + 31 + (Number(row.getAttribute("aria-rowindex")) - 2) * 28 - scroller!.scrollTop : 290;
+      const boxHeight = this.matches("thead") ? 31 : this.matches(".ts-grid-scroll") ? height + 15 : 28;
+      return { top, bottom: top + boxHeight, left: 16, right: 969, width: 953, height: boxHeight } as DOMRect;
+    });
+    try {
+      await act(async () => root.render(createElement(SheetShell, makeProps({ view, onEditCells }))));
+      const scroller = container.querySelector<HTMLElement>(".ts-grid-scroll")!;
+      Object.defineProperty(scroller, "clientHeight", { configurable: true, get: () => height });
+      const first = container.querySelector<HTMLElement>('[data-testid="cell:row-0:c-title"]')!;
+      await act(async () => {
+        first.focus();
+        first.dispatchEvent(new KeyboardEvent("keydown", { key: "End", ctrlKey: true, bubbles: true }));
+      });
+      await flushFrames();
+      const target = container.querySelector<HTMLElement>('[data-testid="cell:row-299:c-title"]')!;
+      expect(document.activeElement).toBe(target);
+      await act(async () => {
+        scroller.scrollTop = 0;
+        scroller.dispatchEvent(new Event("scroll"));
+      });
+      await flushFrames();
+      expect(target.getBoundingClientRect().top).toBeGreaterThan(290 + height);
+      expect(container.querySelectorAll("tbody tr.ts-row").length).toBeLessThan(100);
+      const prePublicationRow = container.querySelector('[data-testid="cell:row-1:c-title"]')!;
+      const data = new DataTransfer(); data.setData("text/plain", "off-screen-paste");
+      await act(async () => target.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data })));
+      expect(onEditCells).toHaveBeenCalledOnce();
+      expect(onEditCells.mock.calls[0]![1]).toMatchObject([{ target: { entity: "row-299", field: "c-title" } }]);
+      expect(scroller.scrollTop).toBe(0);
+      const published = { ...view, revision: "rev-2", table: { ...view.table, revision: "rev-2", rows: view.table.rows.map((row, index) => index !== 299 ? row : {
+        ...row, fields: [projected("row-299", "c-title", { kind: "text", value: "off-screen-paste" })],
+      }) } };
+      await act(async () => {
+        root.render(createElement(SheetShell, makeProps({ view: published, onEditCells })));
+        finish({ kind: "confirmed" });
+      });
+      await flushFrames();
+      expect(prePublicationRow.isConnected).toBe(false);
+      expect(target.textContent).toBe("off-screen-paste");
+      expect(target.getBoundingClientRect().bottom).toBeLessThanOrEqual(290 + height);
+      // The published feedback/layout reduces the client body by one 28px row,
+      // after the old reveal's stable frame has already released its request.
+      height = 236;
+      await act(async () => {
+        for (const [observer, entry] of observers) if (entry.elements.has(scroller)) entry.callback([], observer);
+      });
+      await flushFrames();
+      expect(target.getBoundingClientRect().top).toBeGreaterThanOrEqual(321);
+      expect(target.getBoundingClientRect().bottom).toBeLessThanOrEqual(526);
+      expect(document.activeElement).toBe(target);
+      // Ordinary later scrolling is free once the reveal has settled.
+      await act(async () => { scroller.scrollTop = 0; scroller.dispatchEvent(new Event("scroll")); });
+      await flushFrames();
+      expect(scroller.scrollTop).toBe(0);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      rowHeight.mockRestore(); geometry.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each(["confirmed", "refused", "cancelled", "offset/window changes", "wheel", "touch", "wide", "tall", "fractional", "nonconverging"])("reveals an off-screen target only after confirmed paste (%s)", async outcome => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
