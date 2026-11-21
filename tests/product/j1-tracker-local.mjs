@@ -1,3 +1,4 @@
+import { expect } from "@playwright/test";
 import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 // J1 product acceptance: author, constrain, sort/filter, edit, save and reopen a tracker.
 import assert from "node:assert/strict";
@@ -227,6 +228,7 @@ try {
   await editor.fill("5"); await editor.press("Enter"); await ready();
   table = await projection();
   assert.deepEqual(values(table), [["試算", "Doing", 1], ["驗收", "Todo", 2], ["入庫", "Todo", 5]]);
+  await expect(rowByName("入庫").locator(".ts-cell").nth(2)).toHaveText("5");
   assert.equal(table.rows.find(row => row.fields.find(field => field.target.field === table.columns[0].id)?.stored?.value === "入庫").fields[0].target.entity,
     originalIds.get("入庫"));
   checks.push("6 Edited 入庫 Priority under the active sort/filter; only its value changed and its entity id is stable.");
@@ -244,6 +246,7 @@ try {
   // Work refused it: the projection, including its revision, is unchanged.
   await editor.press("Escape"); await editor.waitFor({ state: "detached" });
   assert.equal(values(await projection()).find(row => row[0] === "入庫")[2], 5);
+  await expect(rowByName("入庫").locator(".ts-cell").nth(2)).toHaveText("5");
 
   editor = await editDisplayed("驗收", "Status", "");
   assert.equal(await editor.getAttribute("placeholder"), "Doing / Done / Todo");

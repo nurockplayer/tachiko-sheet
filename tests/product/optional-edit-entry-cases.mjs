@@ -1,3 +1,4 @@
+import { expect } from "@playwright/test";
 import assert from "node:assert/strict";
 import { homeImportInput } from "./home-entry.mjs";
 import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
@@ -30,7 +31,7 @@ export async function runOptionalEditEntryCases(page, { close, checks }) {
     assert.ok(row.blank_fields.includes(ids[index]));
     assert.equal(row.fields.some(field => field.target.field === ids[index]), false, "blank is sparse, not empty Text");
     const element = page.getByTestId(`cell:${row.id}:${ids[index]}`);
-    assert.equal(await element.textContent(), "");
+    await expect(element).toHaveText("");
     assert.equal(await element.getAttribute("aria-description"), "Blank");
     assert.equal(await element.locator(".ts-cell--empty-text, .ts-empty-text-marker").count(), 0);
     assert.equal((await element.getAttribute("class")).includes("ts-cell--empty-text"), false);
@@ -65,6 +66,7 @@ export async function runOptionalEditEntryCases(page, { close, checks }) {
   assert.deepEqual(scalar, { type: "edit_scalar", expected_revision: baseline.revision, target: target(0, 1), input: { kind: "text", value: "Typed blank" } });
   assert.equal(typed.rows[0].fields.find(field => field.target.field === ids[1]).stored.value, "Typed blank");
   assert.ok(!typed.rows[0].blank_fields.includes(ids[1]));
+  await expect(cell(0, 1)).toHaveText("Typed blank");
   await undo(); assert.deepEqual((await projection()).rows, baseline.rows); await noUndo();
   await assertBlank((await projection()).rows[0], 1);
 
@@ -89,6 +91,7 @@ export async function runOptionalEditEntryCases(page, { close, checks }) {
   await assertBlank(pasted.rows[0], 1);
   assert.equal(pasted.rows[0].fields.find(field => field.target.field === ids[2]).stored.value, 7);
   assert.equal(pasted.rows[0].fields.find(field => field.target.field === ids[3]).stored.value, "Pasted");
+  for (const [r, c, text] of [[0, 2, "7"], [0, 3, "Pasted"], [1, 1, "updated"], [1, 2, "3"]]) await expect(cell(r, c)).toHaveText(text);
   await assertBlank(pasted.rows[1], 3);
   // Linked facts must share the grid's column-aware presence rendering.
   await cell(1, 3).click();
@@ -105,6 +108,7 @@ export async function runOptionalEditEntryCases(page, { close, checks }) {
   assert.equal(await blankFact.getAttribute("aria-description"), "Blank");
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   await undo(); assert.deepEqual((await projection()).rows, baseline.rows); await noUndo();
+  for (const [r, c, text] of [[0, 1, ""], [0, 2, ""], [0, 3, ""], [1, 1, "kept"], [1, 2, "2"], [1, 3, "present-extra"]]) await expect(cell(r, c)).toHaveText(text);
   checks.push("Brief linked facts share grid cleared optional Text accessibility and sparse blank rendering");
   checks.push("P1-a actual imported optional sparse slots: navigation/range selection; blank editor/no-op; exact typed target; atomic mixed blank/present paste; empty-on-blank unchanged; one-step Undo restores every blank/value/ID");
 
@@ -138,6 +142,10 @@ export async function runOptionalEditEntryCases(page, { close, checks }) {
   assert.ok(zeroAppend);
   assert.deepEqual(zeroAppend.fields.find(field => field.target.field === ids[1]).stored, { kind: "text", value: " " });
   assert.deepEqual(zeroAppend.fields.find(field => field.target.field === ids[2]).stored, { kind: "number", value: 0 });
+  await expect(page.getByTestId(`cell:${blankAppend.id}:${ids[0]}`)).toHaveText("appended");
+  await expect(page.getByTestId(`cell:${zeroAppend.id}:${ids[0]}`)).toHaveText("zero");
+  await expect(page.getByTestId(`cell:${zeroAppend.id}:${ids[1]}`)).toHaveText(" ");
+  await expect(page.getByTestId(`cell:${zeroAppend.id}:${ids[2]}`)).toHaveText("0");
   await assertBlank(zeroAppend, 3);
   await undo(); assert.deepEqual((await projection()).rows, baseline.rows); await noUndo();
   checks.push("append-paste real optional Text/Number blanks use explicit absence; existing records unchanged; whitespace/zero values preserved; one request and one Undo removes both appended records");

@@ -1,3 +1,4 @@
+import { expect } from "@playwright/test";
 import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
@@ -63,6 +64,8 @@ try {
   }
   let table = await projection();
   const original = table.rows;
+  const originalText = [["one", "two"], ["three", "four"], ["five", "six"]];
+  for (const [r, row] of originalText.entries()) for (const [c, text] of row.entries()) await expect(cell(table, r, c)).toHaveText(text);
   // Focus the grid, then use only arrow keys to reach the target cell.
   await cell(table, 0, 0).focus();
   await page.keyboard.press("ArrowRight");
@@ -73,8 +76,10 @@ try {
   await page.locator('.ts-clipboard-status').filter({ hasText: "Cut 1 cell" }).waitFor(); await ready();
   table = await projection();
   assert.ok(!table.rows[0].fields.some(field => field.target.field === table.columns[1].id && field.stored?.value));
+  await expect(cell(table, 0, 1)).toHaveText("");
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
   table = await projection(); assert.deepEqual(table.rows, original);
+  for (const [r, row] of originalText.entries()) for (const [c, text] of row.entries()) await expect(cell(table, r, c)).toHaveText(text);
   await drag(cell(table, 0, 0), cell(table, 1, 1));
   assert.equal(await page.locator('.ts-cell--range-selected').count(), 4);
   await page.keyboard.press("ControlOrMeta+C");
@@ -90,13 +95,17 @@ try {
   assert.equal(await count(), before + 1); assert.equal(await publications(), beforePublications + 1);
   table = await projection();
   for (const row of table.rows.slice(0, 2)) for (const column of table.columns.slice(0, 2)) assert.ok(!row.fields.some(field => field.target.field === column.id && field.stored?.value));
+  for (const r of [0, 1]) for (const c of [0, 1]) await expect(cell(table, r, c)).toHaveText("");
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
   table = await projection(); assert.deepEqual(table.rows, original);
+  for (const [r, row] of originalText.entries()) for (const [c, text] of row.entries()) await expect(cell(table, r, c)).toHaveText(text);
   await drag(cell(table, 0, 0), cell(table, 2, 1));
   await page.getByRole("button", { name: "Delete 3 rows", exact: true }).click(); await ready();
   assert.equal((await projection()).rows.length, 0);
+  for (const r of [0, 1, 2]) for (const c of [0, 1]) await expect(cell(table, r, c)).toHaveCount(0);
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
   assert.deepEqual((await projection()).rows, original);
+  for (const [r, row] of originalText.entries()) for (const [c, text] of row.entries()) await expect(cell(table, r, c)).toHaveText(text);
   await page.getByRole("button", { name: "Close project", exact: true }).click();
   const unsaved = page.getByRole("dialog", { name: "Unsaved work", exact: true });
   if (await unsaved.count()) await unsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
