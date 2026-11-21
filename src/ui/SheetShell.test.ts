@@ -220,6 +220,36 @@ describe("keyboard history queue", () => {
     return { container, update, key, cell, view };
   }
 
+  it("accelerates fill auto-scroll beyond the edge and stops its timer on unmount", async () => {
+    const ui = await mount();
+    const grid = ui.container.querySelector<HTMLElement>(".ts-grid-scroll")!;
+    vi.spyOn(grid, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 200, 100));
+    Object.defineProperty(grid, "clientHeight", { value: 100, configurable: true });
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        ui.container.querySelector<HTMLElement>('[data-testid="fill-handle"]')!.dispatchEvent(new MouseEvent("mousedown", { button: 0, buttons: 1, detail: 1, bubbles: true }));
+        window.dispatchEvent(new MouseEvent("mousemove", { buttons: 1, clientY: 100 }));
+        vi.advanceTimersByTime(50);
+      });
+      const near = grid.scrollTop;
+      expect(near).toBeGreaterThan(0);
+      await act(async () => {
+        window.dispatchEvent(new MouseEvent("mousemove", { buttons: 1, clientY: 160 }));
+        vi.advanceTimersByTime(50);
+      });
+      expect(grid.scrollTop - near).toBeGreaterThan(near);
+      await dispose!();
+      dispose = undefined;
+      const stopped = grid.scrollTop;
+      vi.advanceTimersByTime(150);
+      expect(grid.scrollTop).toBe(stopped);
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+
   it("preserves Select All when a pending column width publishes a new revision", async () => {
     let finish!: (result: { kind: "confirmed" }) => void;
     const onSetColumnWidth = vi.fn<NonNullable<SheetShellProps["onSetColumnWidth"]>>(() => new Promise(resolve => { finish = resolve; }));

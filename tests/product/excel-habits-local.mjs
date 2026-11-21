@@ -729,6 +729,67 @@ const cases = [
     await settle(page);
     assert.deepEqual(await values(), ["1", "2", "3", "4"], "releasing after the window lost focus still filled");
 
+    // A short viewport leaves rows below it: holding outside must reveal them.
+    const grid = page.locator(".ts-grid-scroll");
+    const viewport = await grid.evaluate((node) => {
+      const header = node.querySelector("thead").getBoundingClientRect().height;
+      const rowHeight = node.querySelector("tr.ts-row").getBoundingClientRect().height;
+      node.style.minHeight = "0";
+      node.style.maxHeight = `${header + rowHeight * 1.5}px`;
+      node.scrollTop = 0;
+      const bounds = node.getBoundingClientRect();
+      return { bottom: bounds.top + node.clientHeight, rowHeight };
+    });
+    const beginEdgeDrag = async () => {
+      await grid.evaluate(node => { node.scrollTop = 0; });
+      await page.getByTestId(cellIdFor(table, 0, 0)).click();
+      const handle = await fillHandleBox(page);
+      const x = handle.x + handle.width / 2;
+      await page.mouse.move(x, handle.y + handle.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(x, viewport.bottom + 8, { steps: 8 });
+      await page.waitForFunction((height) => document.querySelector(".ts-grid-scroll").scrollTop >= height, viewport.rowHeight);
+      return x;
+    };
+    const x = await beginEdgeDrag();
+    await page.waitForFunction(() => {
+      const node = document.querySelector(".ts-grid-scroll");
+      return node.scrollTop + node.clientHeight >= node.scrollHeight - 1;
+    });
+    const preview = await page.locator(".ts-cell--fill-preview").evaluateAll(nodes => nodes.map(node => node.dataset.testid));
+    assert.ok(preview.includes(cellIdFor(table, 2, 0)), "the preview did not reach beyond the first viewport");
+    await page.mouse.up();
+    await settle(page);
+    assert.deepEqual(await values(), [0, 1, 2, 3].map(row => row === 0 || preview.includes(cellIdFor(table, row, 0)) ? "1" : String(row + 1)), "release did not fill exactly the preview");
+    const released = await grid.evaluate(node => node.scrollTop);
+    await page.waitForTimeout(250);
+    assert.equal(await grid.evaluate(node => node.scrollTop), released, "release left auto-scroll running");
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.deepEqual(await values(), ["1", "2", "3", "4"], "Undo did not restore the auto-scrolled fill");
+
+    await beginEdgeDrag();
+    await page.mouse.move(x, viewport.bottom - 4);
+    const stopped = await grid.evaluate(node => node.scrollTop);
+    await page.waitForTimeout(250);
+    assert.equal(await grid.evaluate(node => node.scrollTop), stopped, "moving back inside did not stop scrolling");
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    assert.deepEqual(await values(), ["1", "2", "3", "4"], "Escape still filled on release");
+
+    for (const event of ["blur", "pointercancel"]) {
+      await beginEdgeDrag();
+      await page.evaluate(type => window.dispatchEvent(new Event(type)), event);
+      const cancelled = await grid.evaluate(node => node.scrollTop);
+      await page.waitForTimeout(250);
+      assert.equal(await grid.evaluate(node => node.scrollTop), cancelled, `${event} left auto-scroll running`);
+      assert.equal(await page.locator(".ts-cell--fill-preview").count(), 0, `${event} left the preview active`);
+      await page.mouse.up();
+      await settle(page);
+      assert.deepEqual(await values(), ["1", "2", "3", "4"], `${event} still filled on release`);
+    }
+    await grid.evaluate(node => { node.style.minHeight = ""; node.style.maxHeight = ""; node.scrollTop = 0; });
+
     // A right-press on the handle opens the cell menu and starts no drag.
     await page.getByTestId(cellIdFor(table, 0, 0)).click();
     const rightHandle = await fillHandleBox(page);
