@@ -366,7 +366,13 @@ $filename = Wait-For 'native Save As filename (FileNameControlHost > 1001/Edit)'
     if ($filenameHost) { $filenameHost.FindFirst($scope, $condition) }
 }
 $savedPath = Join-Path $work 'edited.ro'
-Focus-Input $filename $save
+Click-Input $filename $save
+Write-Host 'Case 3 input delivery: native click on Save As filename field completed'
+$filenameHandle = [IntPtr]$filename.Current.NativeWindowHandle
+Wait-For "input delivery: keyboard focus on Save As filename (HWND=$filenameHandle)" {
+    $filename.Current.HasKeyboardFocus -or
+        ($filenameHandle -ne [IntPtr]::Zero -and [InstalledSmokeInput]::FocusedHandle() -eq $filenameHandle)
+} | Out-Null
 [InstalledSmokeInput]::Ctrl(0x41)
 [InstalledSmokeInput]::Text($savedPath)
 [InstalledSmokeInput]::Key(0x0D)
