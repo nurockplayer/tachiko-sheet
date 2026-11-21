@@ -220,6 +220,39 @@ describe("keyboard history queue", () => {
     return { container, update, key, cell, view };
   }
 
+  it("preserves Select All when a pending column width publishes a new revision", async () => {
+    let finish!: (result: { kind: "confirmed" }) => void;
+    const onSetColumnWidth = vi.fn<NonNullable<SheetShellProps["onSetColumnWidth"]>>(() => new Promise(resolve => { finish = resolve; }));
+    const ui = await mount({ onSetColumnWidth });
+    const separator = ui.container.querySelector<HTMLElement>('[role="separator"]')!;
+    await act(async () => {
+      separator.focus();
+      separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+    // Blur commits the keyboard preview, but the Work reply remains pending.
+    await act(async () => ui.cell().focus());
+    expect(onSetColumnWidth).toHaveBeenCalledOnce();
+    await ui.key("a");
+    const snapshot = () => {
+      const cells = [...ui.container.querySelectorAll<HTMLElement>('td[data-work-field]:not([data-entry-field])')];
+      return { revision: cells[0]!.dataset.workRevision, selected: cells.filter(cell => cell.getAttribute("aria-selected") === "true").map(cell => cell.dataset.testid), total: cells.length,
+        range: ui.container.querySelector<HTMLInputElement>('[aria-label="Name Box"]')!.value };
+    };
+    const before = snapshot();
+    expect(before.selected).toHaveLength(before.total);
+    const next = { ...ui.view, revision: "rev-width", table: { ...ui.view.table, revision: "rev-width" } };
+    await ui.update({ view: next });
+    await act(async () => finish({ kind: "confirmed" }));
+    const after = snapshot();
+    console.log(JSON.stringify({ case: "Select All during width publication", before, after }));
+    expect(after.selected).toHaveLength(after.total);
+    expect(after.range).toBe(before.range);
+    expect(document.activeElement).toBe(ui.cell());
+    // An unrelated revision still invalidates the selection as before.
+    await ui.update({ view: { ...next, revision: "rev-edit" } });
+    expect(snapshot().selected).toHaveLength(1);
+  });
+
   it.each(["upward", "leftward"])("reveals the pasted start of a %s selection without moving its anchor", async direction => {
     const view = makeView();
     if (direction === "upward") {
