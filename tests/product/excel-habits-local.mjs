@@ -658,6 +658,13 @@ const cases = [
     await waitForCellText(page, total(1), "10");
   } },
   { id: "22", name: "Fill handle", tier: "A", budgetMs: 60_000, waitMs: 10_000, run: async (page) => {
+    const assertFillSelection = async (table, rows, column, stage) => {
+      const selected = await page.locator(".ts-cell--range-selected").evaluateAll(nodes => nodes.map(node => node.dataset.testid));
+      const expected = rows.map(row => cellIdFor(table, row, column));
+      console.log(`Fill selection ${stage}: actual=${JSON.stringify(selected.sort())}; expected=${JSON.stringify(expected.sort())}`);
+      assert.deepEqual(selected, expected, `fill selection did not cover exactly the source and filled cells after ${stage}`);
+      assert.equal(await activeId(page), cellIdFor(table, rows[0], column), "fill moved the active cell off the source");
+    };
     await newTable(page, "Fill", [{ name: "Value", type: "number" }]);
     for (let row = 0; row < 4; row += 1) await addRow(page, [String(row + 1)], row + 1);
     const table = await projection(page);
@@ -669,6 +676,7 @@ const cases = [
     await page.mouse.up();
     await settle(page);
     assert.equal(await cellText(page, await projection(page), 2, 0), "1", "dragging the lower-right corner filled nothing; there is no fill handle");
+    await assertFillSelection(table, [0, 1, 2, 3], 0, "drag");
 
     // Values copy down; one Undo restores the whole fill.
     const values = async () => {
@@ -679,6 +687,13 @@ const cases = [
     await page.keyboard.press("Control+z");
     await settle(page);
     assert.deepEqual(await values(), ["1", "2", "3", "4"], "Undo did not restore the values the corner drag replaced");
+    await assertFillSelection(table, [0, 1, 2, 3], 0, "drag Undo");
+    await page.keyboard.press("Control+Shift+z");
+    await settle(page);
+    assert.deepEqual(await values(), ["1", "1", "1", "1"], "Redo did not restore the corner fill");
+    await assertFillSelection(table, [0, 1, 2, 3], 0, "drag Redo");
+    await page.keyboard.press("Control+z");
+    await settle(page);
     await page.getByTestId(cellIdFor(table, 0, 0)).click();
     const handleBox = await fillHandleBox(page);
     const thirdRow = await page.getByTestId(cellIdFor(table, 2, 0)).boundingBox();
@@ -761,12 +776,15 @@ const cases = [
     await page.mouse.up();
     await settle(page);
     assert.deepEqual(await values(), [0, 1, 2, 3].map(row => row === 0 || preview.includes(cellIdFor(table, row, 0)) ? "1" : String(row + 1)), "release did not fill exactly the preview");
+    const filledRows = [0, 1, 2, 3].filter(row => row === 0 || preview.includes(cellIdFor(table, row, 0)));
+    await assertFillSelection(table, filledRows, 0, "auto-scrolled drag");
     const released = await grid.evaluate(node => node.scrollTop);
     await page.waitForTimeout(250);
     assert.equal(await grid.evaluate(node => node.scrollTop), released, "release left auto-scroll running");
     await page.keyboard.press("Control+z");
     await settle(page);
     assert.deepEqual(await values(), ["1", "2", "3", "4"], "Undo did not restore the auto-scrolled fill");
+    await assertFillSelection(table, filledRows, 0, "auto-scrolled drag Undo");
 
     await beginEdgeDrag();
     await page.mouse.move(x, viewport.bottom - 4);
@@ -845,6 +863,7 @@ const cases = [
     await page.mouse.dblclick(doubleHandle.x + doubleHandle.width / 2, doubleHandle.y + doubleHandle.height / 2);
     await settle(page);
     assert.equal(await cellText(page, await projection(page), 3, 1), "9", "double-clicking the fill handle did not fill to the adjacent column's last row");
+    await assertFillSelection(doubleTable, [0, 1, 2, 3], 1, "double-click");
 
     // A selection of several rows is refused with a message and changes nothing.
     await page.getByTestId(cellIdFor(doubleTable, 0, 0)).click();
@@ -859,6 +878,7 @@ const cases = [
     await settle(page);
     assert.match((await page.locator(".ts-clipboard-status").first().textContent()).trim(), /^Fill from one row\./, "dragging a multi-row selection's handle announced nothing");
     assert.deepEqual(await snapshot(), beforeRangeDrag, "dragging a multi-row selection's handle changed cells");
+    await assertFillSelection(doubleTable, [0, 1], 0, "refused multi-row fill");
 
     // The existing ways to fill still work.
     await dragCells(page, cellIdFor(doubleTable, 0, 0), cellIdFor(doubleTable, 1, 0));
