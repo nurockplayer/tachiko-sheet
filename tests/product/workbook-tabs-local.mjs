@@ -255,6 +255,21 @@ try {
   await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 0)));
   await tabs().nth(0).click(); await selected(0);
   checks.push("click, roving arrows, select sync, Ctrl+PageUp/Down, editor/IME/browser ownership and cell draft refusal");
+  await tabs().nth(0).click({ button: "right" });
+  const tableMenu = page.getByRole("menu", { name: "Sheet actions", exact: true });
+  await tableMenu.waitFor();
+  await tabs().nth(0).press("Control+/");
+  const shortcutHelp = page.getByRole("dialog", { name: "Keyboard shortcuts", exact: true });
+  await shortcutHelp.waitFor();
+  assert.equal(await shortcutHelp.getAttribute("aria-modal"), "true");
+  assert.equal(await tableMenu.count(), 0, "shortcut help dismisses the table-tab menu");
+  assert.equal(await page.getByRole("menuitem", { name: /^(Rename|Delete) sheet…$/ }).count(), 0,
+    "table-tab actions are no longer clickable over shortcut help");
+  await page.keyboard.press("Escape");
+  await shortcutHelp.waitFor({ state: "detached" });
+  await page.waitForFunction(() => document.querySelector('[aria-label="Sheets"] [role="tab"]') === document.activeElement);
+  assert.equal(await tableMenu.count(), 0, "closing help does not reopen the table-tab menu");
+  checks.push("shortcut help dismisses the open table-tab menu and Escape restores tab focus");
   // The Sales example has two real native tables, so a new-row draft can
   // attempt an actual cross-table switch without inventing a workbook shape.
   const rowDraftCell = page.locator(".ts-entry-row td").first();
