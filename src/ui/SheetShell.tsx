@@ -293,10 +293,13 @@ export function scrollCellIntoGridNearest(cell: HTMLElement, scrollport: HTMLEle
   const gutter = scrollport.querySelector<HTMLElement>(".ts-gutter-head");
   const left = cell.classList.contains("ts-frozen-first-column") ? port.left
     : frozen?.getBoundingClientRect().right ?? (port.left + (gutter?.getBoundingClientRect().width ?? 0));
-  const visible = (rect: DOMRect) => rect.left >= left && rect.right <= port.right && rect.top >= bodyTop && rect.bottom <= bodyBottom;
-  if (before.left < left) scrollport.scrollLeft -= left - before.left;
+  const wide = before.right - before.left > port.right - left;
+  const tall = before.bottom - before.top > bodyBottom - bodyTop;
+  const visible = (rect: DOMRect) => (wide ? rect.left === left : rect.left >= left && rect.right <= port.right)
+    && (tall ? rect.top === bodyTop : rect.top >= bodyTop && rect.bottom <= bodyBottom);
+  if (wide || before.left < left) scrollport.scrollLeft -= left - before.left;
   else if (before.right > port.right) scrollport.scrollLeft += before.right - port.right;
-  if (before.top < bodyTop) scrollport.scrollTop -= bodyTop - before.top;
+  if (tall || before.top < bodyTop) scrollport.scrollTop -= bodyTop - before.top;
   else if (before.bottom > bodyBottom) scrollport.scrollTop += before.bottom - bodyBottom;
   return visible(cell.getBoundingClientRect());
 }

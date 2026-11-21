@@ -616,7 +616,7 @@ describe("keyboard history queue", () => {
 });
 
 describe("paste completion reveal", () => {
-  it.each(["confirmed", "refused", "cancelled", "offset/window changes", "wheel", "touch"])("reveals an off-screen target only after confirmed paste (%s)", async outcome => {
+  it.each(["confirmed", "refused", "cancelled", "offset/window changes", "wheel", "touch", "wide", "tall"])("reveals an off-screen target only after confirmed paste (%s)", async outcome => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
     const scrollport = {
@@ -629,7 +629,10 @@ describe("paste completion reveal", () => {
       dataset = { workEntity: entityB, workField: "c-title" };
       classList = { contains: () => false };
       closest(selector: string) { return selector.startsWith("td[") ? this : null; }
-      getBoundingClientRect() { return { top: cellTop - scrollport.scrollTop, bottom: cellTop + 32 - scrollport.scrollTop, left: 20, right: 120 }; }
+      getBoundingClientRect() {
+        const left = (outcome === "wide" ? 500 : 20) - scrollport.scrollLeft;
+        return { top: cellTop - scrollport.scrollTop, bottom: cellTop + (outcome === "tall" ? 160 : 32) - scrollport.scrollTop, left, right: left + (outcome === "wide" ? 800 : 100) };
+      }
     }
     const target = new Cell();
     const doc = { activeElement: target };
@@ -685,8 +688,10 @@ describe("paste completion reveal", () => {
       }
       for (let frame = 0; frames.length && frame < 10; frame++) frames.shift()!(0);
       expect(frames).toHaveLength(0);
-      if (outcome === "confirmed" || outcome === "offset/window changes") {
-        expect(target.getBoundingClientRect().bottom).toBeLessThanOrEqual(83);
+      if (["confirmed", "offset/window changes", "wide", "tall"].includes(outcome)) {
+        if (outcome === "tall") expect(target.getBoundingClientRect().top).toBe(0);
+        else expect(target.getBoundingClientRect().bottom).toBeLessThanOrEqual(83);
+        if (outcome === "wide") expect(target.getBoundingClientRect().left).toBe(0);
         expect(target.getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
         scrollport.scrollTop = 0;
         scroller.props.onScroll();
