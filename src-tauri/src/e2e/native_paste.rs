@@ -69,6 +69,9 @@ pub fn activate(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 #[cfg(target_os = "linux")]
-pub fn activate(_: &tauri::AppHandle) -> Result<(), String> {
-    Err("BLOCKED: Linux native menu Paste is inert; https://github.com/nurockplayer/tachiko-sheet/issues/541".into())
+pub fn activate(app: &tauri::AppHandle) -> Result<(), String> {
+    // Linux Paste is an app command, like Undo/Redo. Check the installed item
+    // and use the same dispatcher as its native menu event.
+    if crate::menu_command_hook(app, "paste") { Ok(()) }
+    else { Err("native Paste menu item missing".into()) }
 }

@@ -88,6 +88,11 @@ export async function runImportedClipboardCases({ page, work, ready, close, disp
   assert.ok(await page.locator(".ts-grid-scroll").evaluate(node => node.scrollTop > node.clientHeight * 10), "paste is far scrolled");
   await anchor.click();
   const block = [["far-A", "https://example.invalid/pasted-A", "0001700008000001"], ["far-B", "https://example.invalid/pasted-B", "0001700008000002"]];
+  async function assertRendered(expected) {
+    for (const [r, row] of expected.entries()) for (const [c, value] of row.entries()) {
+      assert.equal(await cell(baseline, start + r, c).locator(".ts-cell-value").textContent(), value, `rendered row ${start + r + 1}, column ${c + 1}`);
+    }
+  }
   const beforeCount = (await commands()).length;
   await paste(anchor, block.map(row => row.join("\t")).join("\n"));
   await status().filter({ hasText: "Updated 2 rows" }).waitFor();
@@ -102,10 +107,13 @@ export async function runImportedClipboardCases({ page, work, ready, close, disp
     expectedRows[start + r].fields.find(field => field.target.field === baseline.columns[c].id).stored.value = value;
   }
   assert.deepEqual(after.rows, expectedRows, "all 8,406 stored rows match baseline except the six pasted cells");
+  await assertRendered(block);
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
   assert.deepEqual((await readStoredTable()).rows, before.rows, "one Undo restores every stored value and identity");
+  await assertRendered(before.rows.slice(start, start + 2).map(row => baseline.columns.map(column => row.fields.find(field => field.target.field === column.id).stored.value)));
   await page.getByRole("button", { name: "Redo", exact: true }).click(); await ready();
   assert.deepEqual((await readStoredTable()).rows, expectedRows, "one Redo restores the six pasted cells and all untouched stored rows");
+  await assertRendered(block);
   checks.push("221.a real capacity-8406 import; windowed far-scroll 2x3 paste; exact six stable targets; Work queries of all 8,406 stored rows and 25,218 values before/paste/Undo/Redo");
   await close(); page.setDefaultTimeout(10000);
 

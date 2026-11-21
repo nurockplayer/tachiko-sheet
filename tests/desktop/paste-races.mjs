@@ -14,7 +14,8 @@ export function writeOsClipboard(text) {
     execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
       "$text = [Console]::In.ReadToEnd(); Set-Clipboard -Value $text"], { input: text });
   } else {
-    throw new Error("Linux native clipboard Paste is BLOCKED by #541");
+    // WebKit exposes safe MIME names, not xclip's default UTF8_STRING atom.
+    execFileSync("xclip", ["-selection", "clipboard", "-target", "text/plain"], { input: text, stdio: ["pipe", "ignore", "ignore"] });
   }
 }
 
@@ -24,15 +25,6 @@ export const nativePaste = evaluate => evaluate(`
 `);
 
 export async function pasteRaces({ evaluate, work, extraChecks = [], receipt = async () => {} }) {
-  if (process.platform === "linux") {
-    const reason = "Linux native menu Paste is inert";
-    const issue = "https://github.com/nurockplayer/tachiko-sheet/issues/541";
-    console.log(`BLOCKED: linux real OS clipboard native-menu Paste — ${reason}; ${issue}`);
-    const timestamp = new Date().toISOString();
-    await receipt({ name: "real OS clipboard native-menu Paste", start: timestamp, end: timestamp,
-      outcome: "BLOCKED", reason, issue });
-    return { status: "BLOCKED", reason, issue };
-  }
   const failures = [];
   const check = async (name, run) => {
     const start = new Date().toISOString();
@@ -92,6 +84,7 @@ export async function pasteRaces({ evaluate, work, extraChecks = [], receipt = a
   await check("real OS clipboard native-menu Paste changes exactly the target cells", async () => {
     await cancelEditor();
     const expected = await snapshot();
+    const before = structuredClone(expected);
     const pasted = [["native-471-A", "native-471-B"], ["native-471-C", "native-471-D"]];
     writeOsClipboard(pasted.map(row => row.join("\t")).join("\n"));
     await evaluate(`${page}
@@ -109,6 +102,13 @@ export async function pasteRaces({ evaluate, work, extraChecks = [], receipt = a
     pasted.forEach((row, r) => row.forEach((text, c) => { expected[10 + r][1][c].text = text; }));
     assert.deepEqual(await snapshot(), expected,
       "all 25,218 cell values and stable targets; exactly the four TSV cells changed");
+    await evaluate(`${page}
+      await show(10);
+      await window.__TAURI_INTERNALS__.invoke("e2e_menu_command", { id: "undo" });
+      await waitFor(() => current() && cell(10)?.textContent === ${JSON.stringify(before[10][1][0].text)}, "native paste undone");
+      return true;
+    `);
+    assert.deepEqual(await snapshot(), before, "Undo restores every cell and stable target");
   });
   if (failures.length) throw new AggregateError(failures, "native clipboard Paste checks failed");
   return { status: "PASS", changedCells: 4, untouchedCellsIdentical: true };
