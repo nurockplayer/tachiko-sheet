@@ -862,7 +862,7 @@ export function SheetShell(props: SheetShellProps) {
   const requestPrint = () => setPrinting(printRequestRef.current += 1);
   const gridScrollFrameRef = useRef<number | null>(null);
   const pasteRevealFrameRef = useRef<number | null>(null);
-  const pendingPasteRevealRef = useRef<{ position: GridPosition; collectionIdentity: string | null; intent: { generation: number; occurrence: string | null }; settled: boolean; frames: number } | null>(null);
+  const pendingPasteRevealRef = useRef<{ position: GridPosition; collectionIdentity: string | null; intent: { generation: number; occurrence: string | null }; settled: boolean; complete: boolean; viewport: { width: number; height: number } | null; frames: number } | null>(null);
   // A focus target waiting for its windowed row to mount, with the user-intent
   // generation at request time; any newer input cancels it.
   const pendingCellFocusRef = useRef<{ entity: string; field: string; generation: number } | null>(null);
@@ -1847,14 +1847,14 @@ export function SheetShell(props: SheetShellProps) {
 
   function revealPastedCell(position: GridPosition, intent: ReturnType<typeof completionIntent>): void {
     if (!completionMayUpdateUi(intent)) return;
-    pendingPasteRevealRef.current = { position, collectionIdentity, intent, settled: false, frames: 0 };
+    pendingPasteRevealRef.current = { position, collectionIdentity, intent, settled: false, complete: false, viewport: null, frames: 0 };
     const rowIndex = rowIndexByEntity.get(position.entity);
     if (rowIndex !== undefined) revealGridRow(rowIndex);
     schedulePasteReveal();
   }
 
   function schedulePasteReveal(): void {
-    if (!pendingPasteRevealRef.current || pasteRevealFrameRef.current !== null) return;
+    if (!pendingPasteRevealRef.current || pendingPasteRevealRef.current.complete || pasteRevealFrameRef.current !== null) return;
     // Eight frames allow the virtual window to mount, correct, and settle after layout changes.
     if (pendingPasteRevealRef.current.frames >= 8) { pendingPasteRevealRef.current = null; return; }
     pasteRevealFrameRef.current = requestAnimationFrame(() => {
@@ -1873,6 +1873,15 @@ export function SheetShell(props: SheetShellProps) {
     }
     const scroller = gridScrollRef.current;
     if (!scroller) return;
+    if (pending.complete) {
+      if (pending.viewport?.width === scroller.clientWidth && pending.viewport.height === scroller.clientHeight) return;
+      // Feedback and panel measurement can resize the body after a stable
+      // frame. Correct that new viewport without pulling later scrolling back.
+      pending.complete = false;
+      pending.settled = false;
+      pending.frames = 0;
+    }
+    pending.viewport = { width: scroller.clientWidth, height: scroller.clientHeight };
     const { position } = pending;
     const cell = cellRefs.current.get(cellKey(position.entity, position.field));
     if (!cell) {
@@ -1888,7 +1897,7 @@ export function SheetShell(props: SheetShellProps) {
     // A stable frame after correction lets the virtual window commit before
     // releasing the request, so later scrolling is no longer pulled back.
     if (visible && top === scroller.scrollTop && left === scroller.scrollLeft) {
-      if (frame && pending.settled) { pendingPasteRevealRef.current = null; return; }
+      if (frame && pending.settled) { pending.complete = true; return; }
       pending.settled = true;
     } else pending.settled = false;
     schedulePasteReveal();
@@ -2268,8 +2277,11 @@ export function SheetShell(props: SheetShellProps) {
   // viewport must render more rows, not reveal blank spacer.
   useEffect(() => {
     const scroller = gridScrollRef.current;
-    if (!gridWindowed || !scroller || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => onGridScroll());
+    if (!scroller || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (gridWindowed) onGridScroll();
+      correctPasteReveal();
+    });
     observer.observe(scroller);
     return () => observer.disconnect();
   }, [gridWindowed, tab, collectionIdentity]);
