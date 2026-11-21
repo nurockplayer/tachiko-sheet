@@ -67,6 +67,7 @@ interface ExportReceipt {
   revision: unknown;
   byte_length: unknown;
   ledger?: unknown;
+  import_metadata?: unknown;
 }
 
 function receiptOf(reply: WireReply): { type: string; receipt: ExportReceipt } {
@@ -100,7 +101,7 @@ function passThrough(reply: WireReply): Record<string, unknown> {
   return { ...reply };
 }
 
-function exportedBytes(reply: WireReply, payload: Uint8Array, expectedType: string, label: string): { revision: unknown; bytes: ArrayBuffer } {
+function exportedBytes(reply: WireReply, payload: Uint8Array, expectedType: string, label: string): { revision: unknown; bytes: ArrayBuffer; import_metadata?: unknown } {
   const { type, receipt } = receiptOf(reply);
   if (type !== expectedType) {
     throw new Error(`Expected '${expectedType}' response, received '${type}'.`);
@@ -108,7 +109,11 @@ function exportedBytes(reply: WireReply, payload: Uint8Array, expectedType: stri
   if (payload.byteLength !== receipt.byte_length) {
     throw new Error(`Designer ${label} export length did not match its receipt.`);
   }
-  return { revision: receipt.revision, bytes: payload.slice().buffer };
+  return {
+    revision: receipt.revision,
+    bytes: payload.slice().buffer,
+    ...(receipt.import_metadata === undefined ? {} : { import_metadata: receipt.import_metadata }),
+  };
 }
 
 /**
