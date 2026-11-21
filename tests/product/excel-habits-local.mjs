@@ -658,12 +658,12 @@ const cases = [
     await waitForCellText(page, total(1), "10");
   } },
   { id: "22", name: "Fill handle", tier: "A", budgetMs: 60_000, waitMs: 10_000, run: async (page) => {
-    const assertFillSelection = async (table, rows, column, stage) => {
+    const assertFillSelection = async (table, rows, columns, stage, activeColumn = Array.isArray(columns) ? columns[0] : columns) => {
       const selected = await page.locator(".ts-cell--range-selected").evaluateAll(nodes => nodes.map(node => node.dataset.testid));
-      const expected = rows.map(row => cellIdFor(table, row, column));
+      const expected = rows.flatMap(row => (Array.isArray(columns) ? columns : [columns]).map(column => cellIdFor(table, row, column)));
       console.log(`Fill selection ${stage}: actual=${JSON.stringify(selected.sort())}; expected=${JSON.stringify(expected.sort())}`);
       assert.deepEqual(selected, expected, `fill selection did not cover exactly the source and filled cells after ${stage}`);
-      assert.equal(await activeId(page), cellIdFor(table, rows[0], column), "fill moved the active cell off the source");
+      assert.equal(await activeId(page), cellIdFor(table, rows[0], activeColumn), "fill moved the active cell off the source");
     };
     await newTable(page, "Fill", [{ name: "Value", type: "number" }]);
     for (let row = 0; row < 4; row += 1) await addRow(page, [String(row + 1)], row + 1);
@@ -897,6 +897,31 @@ const cases = [
     await page.getByRole("menuitem", { name: "Fill down", exact: true }).click();
     await settle(page);
     assert.equal(await cellText(page, await projection(page), 1, 0), "1", "the cell menu's Fill down no longer fills");
+
+    // A right-to-left source keeps both columns selected and B1 active, including history.
+    await page.getByTestId(cellIdFor(doubleTable, 0, 1)).click();
+    await page.getByTestId(cellIdFor(doubleTable, 0, 0)).click({ modifiers: ["Shift"] });
+    const rightToLeftActive = await activeId(page);
+    assert.equal(rightToLeftActive, cellIdFor(doubleTable, 0, 1), "right-to-left source did not keep B1 active");
+    const beforeRightToLeft = await snapshot();
+    const rightToLeftHandle = await fillHandleBox(page);
+    const rightToLeftTarget = await page.getByTestId(cellIdFor(doubleTable, 3, 1)).boundingBox();
+    await page.mouse.move(rightToLeftHandle.x + rightToLeftHandle.width / 2, rightToLeftHandle.y + rightToLeftHandle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(rightToLeftTarget.x + rightToLeftTarget.width / 2, rightToLeftTarget.y + rightToLeftTarget.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await settle(page);
+    const rightToLeftValues = ["1", "9", "1", "9", "1", "9", "1", "9"];
+    assert.deepEqual(await snapshot(), rightToLeftValues, "right-to-left source did not fill both columns");
+    await assertFillSelection(doubleTable, [0, 1, 2, 3], [0, 1], "right-to-left drag", 1);
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.deepEqual(await snapshot(), beforeRightToLeft, "Undo did not restore the right-to-left fill's values");
+    await assertFillSelection(doubleTable, [0, 1, 2, 3], [0, 1], "right-to-left drag Undo", 1);
+    await page.keyboard.press("Control+Shift+z");
+    await settle(page);
+    assert.deepEqual(await snapshot(), rightToLeftValues, "Redo did not restore the right-to-left fill");
+    await assertFillSelection(doubleTable, [0, 1, 2, 3], [0, 1], "right-to-left drag Redo", 1);
   } },
   { id: "23", name: "Row operations", tier: "A", run: async (page) => {
     await example(page);
