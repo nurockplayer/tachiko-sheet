@@ -17,6 +17,7 @@ public static class AltGrInput {
     [DllImport("user32.dll", SetLastError=true)] public static extern bool PostMessageW(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent, IntPtr window);
     [DllImport("user32.dll", SetLastError=true)] public static extern bool AttachThreadInput(uint from, uint to, bool attach);
     [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
     public static void Activate(IntPtr target) {
@@ -72,11 +73,10 @@ public static class AltGrInput {
     static INPUT Key(ushort scan, uint flags) {
         return new INPUT { type = 1, data = new UNION { keyboard = new KEYBDINPUT { scan = scan, flags = flags | 8 } } };
     }
-    public static void Send(IntPtr target, uint appPid, ushort scan) {
+    public static void Send(IntPtr target, ushort scan) {
         var info = new GUITHREADINFO { cbSize = Marshal.SizeOf(typeof(GUITHREADINFO)) };
-        uint focusOwner;
         if (GetForegroundWindow() != target || !GetGUIThreadInfo(0, ref info) ||
-            info.focus == IntPtr.Zero || GetWindowThreadProcessId(info.focus, out focusOwner) == 0 || focusOwner != appPid)
+            info.focus == IntPtr.Zero || (info.focus != target && !IsChild(target, info.focus)))
             throw new InvalidOperationException("app lost foreground/keyboard focus before SendInput");
         var keys = new[] { Key(0x38, 1), Key(scan, 0), Key(scan, 2), Key(0x38, 3) };
         uint sent = SendInput((uint)keys.Length, keys, Marshal.SizeOf(typeof(INPUT)));
@@ -114,7 +114,8 @@ $layouts = [AltGrInput]::Layouts()
 Write-Host "AltGr diagnostics: focusedHWND=$($focus.ToInt64().ToString('X')) focusedThread=$focusedThread focusedHKL=$($previous.ToInt64().ToString('X')) appSession=$($process.SessionId) helperSession=$((Get-Process -Id $PID).SessionId) inputDesktop=$([AltGrInput]::InputDesktopName()) layouts=$layouts"
 if ([AltGrInput]::GetForegroundWindow() -ne $window) { throw "SetForegroundWindow could not focus app PID $AppPid" }
 if (-not $gotInfo -or -not $focusedThread) { throw "GetGUIThreadInfo could not resolve the focused input window for app thread $thread" }
-if ($focusOwner -ne $AppPid) { throw "focused input belongs to PID $focusOwner instead of app PID $AppPid" }
+# WebView2's focused child HWND can belong to its separate browser process.
+if ($focus -ne $window -and -not [AltGrInput]::IsChild($window, $focus)) { throw "focused input HWND $focus (PID $focusOwner) is outside app HWND $window" }
     if (-not [AltGrInput]::PostMessageW($focus, 0x50, [IntPtr]::Zero, $layout)) {
         throw "WM_INPUTLANGCHANGEREQUEST failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
     }
@@ -122,7 +123,7 @@ if ($focusOwner -ne $AppPid) { throw "focused input belongs to PID $focusOwner i
     $actual = [AltGrInput]::GetKeyboardLayout($focusedThread)
     Write-Host "AltGr focused layout: HWND=$($focus.ToInt64().ToString('X')) thread=$focusedThread requested=$($layout.ToInt64().ToString('X')) actual=$($actual.ToInt64().ToString('X'))"
     if ($actual -ne $layout) { throw "focused thread did not activate German AltGr layout: requested=$($layout.ToInt64().ToString('X')) actual=$($actual.ToInt64().ToString('X'))" }
-    [AltGrInput]::Send($window, $AppPid, $(if ($Key -eq 'Q') { 0x10 } else { 0x2f }))
+    [AltGrInput]::Send($window, $(if ($Key -eq 'Q') { 0x10 } else { 0x2f }))
     Start-Sleep -Milliseconds 300
     Write-Host "AltGr native input queued: PID $AppPid, layout 00000407, Right-Alt+$Key via SendInput (4/4); foreground/focus verified; app receipt still required"
 } finally {
