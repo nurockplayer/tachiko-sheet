@@ -6,13 +6,15 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
+import { observeTableProjections, observedTable } from "./table-projection-observer.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const work = await mkdtemp(path.join(tmpdir(), "sheet-freeze-panes-"));
 const csv = path.join(work, "freeze-30x300.csv");
+const value = (r, c) => `r${r}-c${c} column content`;
 await writeFile(csv, [
   Array.from({ length: 30 }, (_, c) => `field${c}`).join(","),
-  ...Array.from({ length: 300 }, (_, r) => Array.from({ length: 30 }, (_, c) => `r${r}-c${c}`).join(",")),
+  ...Array.from({ length: 300 }, (_, r) => Array.from({ length: 30 }, (_, c) => value(r, c)).join(",")),
 ].join("\r\n"));
 const browser = await chromium.launch({ headless: true,
   ...(process.env.WORK_CHROMIUM ? { executablePath: process.env.WORK_CHROMIUM } : {}),
@@ -21,6 +23,7 @@ const browser = await chromium.launch({ headless: true,
 try {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await installDistRoutes(context, process.env.WORK_DIST ?? path.join(root, "dist-acceptance"));
+  await observeTableProjections(context);
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
   await page.goto(LOCAL_ORIGIN);
@@ -39,6 +42,15 @@ try {
   assert.equal(await headers.count(), 30);
   assert.equal(await grid.getAttribute("aria-rowcount"), "302");
   assert.ok(await grid.locator("tbody tr.ts-row").count() < 200, "fixture uses row windowing");
+  // The initial grid shares the viewport among all columns. AutoFit through
+  // the UI creates a genuinely wide table before testing twenty-column scroll.
+  for (let c = 0; c < 30; c++) {
+    const before = await observedTable(page);
+    await page.getByRole("separator", { name: `Resize field${c}`, exact: true }).dblclick();
+    await page.waitForFunction(revision => window.__observedTable?.revision !== revision, before.revision);
+    await ready();
+  }
+  await scroller.evaluate(node => { node.scrollLeft = 0; });
   const commandCount = () => page.evaluate(() => window.__tachikoAcceptance.executeRequestCount());
   const beforeToggle = await commandCount();
   await toggle.click();
@@ -56,16 +68,19 @@ try {
   await page.waitForFunction(width => document.querySelector("thead .ts-column-header").getBoundingClientRect().width > width + 30, beforeWidth);
 
   // Scroll twenty columns to the right, then into rows outside the first window.
-  await scroller.evaluate(node => {
+  const horizontal = await scroller.evaluate(node => {
     const headers = [...node.querySelectorAll("thead .ts-column-header")];
-    node.scrollLeft = headers.slice(0, 20).reduce((sum, th) => sum + th.getBoundingClientRect().width, 0);
+    const target = headers.slice(0, 20).reduce((sum, th) => sum + th.getBoundingClientRect().width, 0);
+    node.scrollLeft = target;
     node.scrollTop = node.querySelector("tbody tr.ts-row").offsetHeight * 220;
+    return { target, max: node.scrollWidth - node.clientWidth };
   });
   await row(225).waitFor();
   const port = await scroller.boundingBox();
   const head = await headers.first().boundingBox();
   assert.ok(Math.abs(head.y - port.y) <= 2, "header row stays at the top during vertical scroll");
-  assert.ok(await scroller.evaluate(node => node.scrollLeft > 2000), "wide table actually scrolled");
+  assert.ok(horizontal.max >= horizontal.target, "fixture permits scrolling twenty columns");
+  assert.ok(Math.abs(await scroller.evaluate(node => node.scrollLeft) - horizontal.target) <= 1, "wide table actually scrolled twenty columns");
   for (const r of [225, 226]) {
     const cells = row(r).locator("td");
     const a = await cells.first().boundingBox();
@@ -74,7 +89,7 @@ try {
     assert.ok(Math.abs(a.width - head.width) <= 1, "resized frozen widths align");
     assert.ok(Math.abs(a.y - other.y) <= 1, "frozen cells align with their rows");
     assert.ok(a.y >= head.y + head.height && a.y + a.height <= port.y + port.height, "frozen cell is visible");
-    assert.equal(await cells.first().innerText(), `r${r}-c0`);
+    assert.equal(await cells.first().innerText(), value(r, 0));
   }
   const frozen = row(225).locator("td").first();
   await frozen.click();
