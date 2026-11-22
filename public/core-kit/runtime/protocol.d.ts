@@ -16,6 +16,12 @@ export type BootstrapProjection = {
     collections: CollectionSummary[];
     keyed_grouped_sum_definition_ids?: string[];
 };
+/** Current resident state; saved-byte inspection remains a separate operation. */
+export type ProjectInspectionProjection = {
+    revision: string;
+    /** Present after an imported worksheet lifecycle publication, including Undo. */
+    import_metadata?: InteropMetadata;
+};
 /** `projection_bytes` refuses an import and `saved_bytes` a whole-session save; neither is a counted resource. */
 export type CapacityLimits = Record<Exclude<CapacityLimitName, "projection_bytes" | "saved_bytes" | "source_bytes" | "expanded_bytes" | "xml_nodes" | "serialized_source_bytes" | "output_bytes">, number>;
 export type CapacityUsage = {
@@ -460,10 +466,13 @@ export type PublicationProjection = {
 export type ProjectExportProjection = {
     revision: string;
     byte_length: number;
+    import_metadata?: InteropMetadata;
 };
 export type ProjectExport = {
     revision: string;
     bytes: ArrayBuffer;
+    /** Persist alongside bytes and pass to spreadsheet open_project. */
+    import_metadata?: InteropMetadata;
 };
 /** Opaque canonical path/byte entries from Rust; named/v3 occurrences use v3. */
 export type CanonicalProjectFile = {
@@ -827,6 +836,8 @@ export type DesignerRequest = {
     type: "bootstrap";
     occurrence_id: string;
 } | {
+    type: "inspect_project";
+} | {
     type: "query_capacity";
     expected_revision?: string;
 } | {
@@ -940,6 +951,9 @@ export type DesignerResponse = {
 } | {
     type: "bootstrap";
     payload: BootstrapProjection;
+} | {
+    type: "project_inspected";
+    payload: ProjectInspectionProjection;
 } | {
     type: "capacity";
     payload: CapacityProjection;
