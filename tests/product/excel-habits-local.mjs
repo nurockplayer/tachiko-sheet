@@ -1027,9 +1027,9 @@ const cases = [
       await reopened.getByRole("button", { name: "Add sheet", exact: true }).click(); await settle(reopened);
       await importedTabs.first().click({ button: "right" });
       await reopened.getByRole("menuitem", { name: "Rename sheet…", exact: true }).click();
-      const rename = reopened.getByRole("dialog", { name: "Rename sheet", exact: true });
-      await rename.getByLabel("Sheet name").fill("Imported renamed");
-      await rename.getByRole("button", { name: "Rename", exact: true }).click(); await settle(reopened);
+      const importedRename = reopened.getByRole("dialog", { name: "Rename sheet", exact: true });
+      await importedRename.getByLabel("Sheet name").fill("Imported renamed");
+      await importedRename.getByRole("button", { name: "Rename", exact: true }).click(); await settle(reopened);
       await importedTabs.nth(1).click({ button: "right" });
       await reopened.getByRole("menuitem", { name: "Delete sheet…", exact: true }).click();
       await reopened.getByRole("dialog", { name: "Delete sheet", exact: true }).getByRole("button", { name: "Delete sheet", exact: true }).click(); await settle(reopened);
