@@ -95,12 +95,12 @@ describe("fill down request planning", () => {
 });
 
 describe("directional fill planning", () => {
-  it.each([0, 2])("plans a sideways formula copy into column %s", destination => {
+  it.each([0, 2])("refuses a sideways formula copy into column %s", destination => {
     const rows = [row(0, { a: "1", b: "2", c: "3" }, ["b"])];
     const source = { top: 0, left: 1, bottom: 0, right: 1 };
     const area = { ...source, left: Math.min(1, destination), right: Math.max(1, destination) };
-    expect(fillDownPlan(rows, [...columns, column("c")], area, true, true, source))
-      .toMatchObject({ kind: "formula", request: { relative_columns: true, destinations: [{ entity: "entity-0", field: destination === 0 ? "a" : "c" }] }, count: 1 });
+    expect(() => fillDownPlan(rows, [...columns, column("c")], area, true, true, source))
+      .toThrow("Filling formulas sideways is not available yet.");
   });
 
   it("copies each value in a column horizontally in one batch", () => {
