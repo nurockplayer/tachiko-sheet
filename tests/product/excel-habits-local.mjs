@@ -1119,7 +1119,7 @@ const cases = [
       await rm(work, { recursive: true, force: true });
     }
   } },
-  { id: "28", name: "Direct formatting", tier: "A", run: async (page) => {
+  { id: "28", name: "Direct formatting", tier: "A", note: "Bold, italic, fill and borders use Work presentation styles; checked through save and XLSX export.", run: async (page) => {
     await example(page);
     const table = await projection(page);
     const id = cellIdFor(table, 0, 0);
@@ -1138,6 +1138,39 @@ const cases = [
     await settle(page);
     assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).borderTopStyle), "solid");
     assert.deepEqual(fieldAt(await projection(page), 0, 0)?.stored, fieldAt(table, 0, 0)?.stored, "formatting changed the cell value or formula");
+    await page.getByTestId(id).click();
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.notEqual(await page.getByTestId(id).evaluate(node => getComputedStyle(node).borderTopColor), "rgb(0, 0, 0)", "Undo did not remove the border");
+    await page.keyboard.press("Control+y");
+    await settle(page);
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).borderTopColor), "rgb(0, 0, 0)", "Redo did not restore the border");
+    await saveCopy(page, "habits-28");
+    await page.reload();
+    await waitForColdHome(page);
+    await page.getByRole("button", { name: "Open saved habits-28", exact: true }).click();
+    await ready(page);
+    assert.ok(await page.getByTestId(id).evaluate(node => Number(getComputedStyle(node).fontWeight)) >= 600, "bold did not survive reopen");
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).fontStyle), "italic", "italic did not survive reopen");
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).backgroundColor), "rgb(255, 255, 0)", "fill did not survive reopen");
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).borderTopColor), "rgb(0, 0, 0)", "border did not survive reopen");
+    await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+    await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
+    const consent = page.getByRole("dialog", { name: "Confirm download", exact: true });
+    await consent.waitFor();
+    const download = page.waitForEvent("download");
+    await consent.getByRole("button", { name: "Download", exact: true }).click();
+    const work = await mkdtemp(path.join(tmpdir(), "habits-28-"));
+    try {
+      const file = path.join(work, "export.xlsx");
+      await (await download).saveAs(file);
+      const xml = sheetXml(file);
+      assert.match(xml, /<b\s*\/>/, "XLSX lacks bold");
+      assert.match(xml, /<i\s*\/>/, "XLSX lacks italic");
+      assert.match(xml, /FFFF00/i, "XLSX lacks yellow fill");
+      assert.match(xml, /<top[^>]*style=/, "XLSX lacks a top border");
+    } finally { await rm(work, { recursive: true, force: true }); }
+    await page.getByRole("tab", { name: "Table", exact: true }).click();
     await page.getByTestId(id).click();
     await page.keyboard.press("Control+b");
     await settle(page);

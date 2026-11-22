@@ -3824,7 +3824,11 @@ export function SheetShell(props: SheetShellProps) {
     const area = selectionRectangle ?? rectangle(at, at);
     const entities = displayRows.slice(area.top, area.bottom + 1).map(rowEntity);
     const fields = columns.slice(area.left, area.right + 1).map(column => column.id);
-    void runStripCommand(() => onSetCellStyle(witness, table.collection.key, entities, fields, [change]), "selection");
+    void runStripCommand(async () => {
+      const result = await onSetCellStyle(witness, table.collection.key, entities, fields, [change]);
+      if (result.kind === "confirmed" && boundSelection) setWidthSelectionRebind({ identity: collectionIdentity, revision: boundSelection.revision });
+      return result;
+    }, "selection");
   }
 
   function onCellKeyDown(
@@ -5750,7 +5754,7 @@ export function SheetShell(props: SheetShellProps) {
             {onSetCellStyle ? <>
               <button type="button" className="ts-button" aria-label="Bold" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "toggle_bold" })}><b>B</b></button>
               <button type="button" className="ts-button" aria-label="Italic" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "toggle_italic" })}><i>I</i></button>
-              <label>Fill <input aria-label="Fill colour" type="color" disabled={columnChangesBlocked} onChange={event => formatSelection({ kind: "fill", color: event.currentTarget.value })} /></label>
+              <label>Fill <input aria-label="Fill colour" type="color" disabled={columnChangesBlocked} onChange={event => formatSelection({ kind: "fill", color: event.currentTarget.value.toUpperCase() })} /></label>
               <button type="button" className="ts-button" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "fill", color: null })}>No fill</button>
               <button type="button" className="ts-button" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "border", target: "all", value: true })}>All borders</button>
               <button type="button" className="ts-button" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "border", target: "all", value: false })}>No borders</button>
