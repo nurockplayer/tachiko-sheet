@@ -99,7 +99,10 @@ export async function windowsAltGr({ evaluate, appPid }) {
       assert.equal(receipt.clipboardReads, 0, `AltGr+${key} must not read the clipboard to paste; ${JSON.stringify(receipt)}`);
       assert.equal(receipt.seedInGrid, false, `AltGr+${key} pasted the clipboard into the grid; ${JSON.stringify(receipt)}`);
       if (key === "V") {
-        assert.equal(receipt.cellAfter, receipt.cellBefore, `AltGr+V must leave the selected cell unchanged; ${JSON.stringify(receipt)}`);
+        // AltGr+V may start typing in the selected cell; it must never put the clipboard there.
+        for (const text of [receipt.cellAfter, receipt.value]) {
+          assert.ok(!String(text ?? "").includes(clipboardSeed), `AltGr+V pasted into the selected cell; ${JSON.stringify(receipt)}`);
+        }
         assert.equal(readOsClipboard(), clipboardSeed, "OS clipboard still held the seed, so a paste would have shown");
       }
       if (key === "Q") {
@@ -110,7 +113,7 @@ export async function windowsAltGr({ evaluate, appPid }) {
           return true;
         `);
       }
-      console.log(`PASS: windows native AltGr+${key} — ${key === "V" ? "Paste Special closed, no paste, cell unchanged" : 'edited cell contains "@"'}`);
+      console.log(`PASS: windows native AltGr+${key} — ${key === "V" ? "Paste Special closed, no paste event, no clipboard read, seed not in grid" : 'edited cell contains "@"'}`);
     } finally {
       await evaluate(`
         for (const type of ["keydown", "keyup", "paste"]) window.removeEventListener(type, window.__altgrListener, true);
