@@ -1005,6 +1005,8 @@ export function SheetShell(props: SheetShellProps) {
   updateFillPreviewRef.current = updateFillPreviewAt;
   const suppressClickRef = useRef(false);
   const [dragSelecting, setDragSelecting] = useState(false);
+  const updateDragSelectionRef = useRef(updateDragSelectionAt);
+  updateDragSelectionRef.current = updateDragSelectionAt;
   // WebKit enables Edit > Cut, Copy and Paste on a cell only if these events are
   // cancelled, and the Mac app's Cmd+X, Cmd+C and Cmd+V go through that menu.
   useEffect(() => {
@@ -1031,6 +1033,11 @@ export function SheetShell(props: SheetShellProps) {
       updateFillPreviewRef.current(pointerY);
     };
     const move = (event: MouseEvent) => {
+      if (dragSelectRef.current) {
+        if (event.buttons === 0) { dragSelectRef.current = null; setDragSelecting(false); return; }
+        updateDragSelectionRef.current(event.clientX, event.clientY);
+        return;
+      }
       if (!fillDragRef.current) return;
       if (event.buttons === 0) { dropFillDrag(); return; }
       pointerY = event.clientY;
@@ -1706,14 +1713,35 @@ export function SheetShell(props: SheetShellProps) {
     setClipboardMessage({ text, refused, polite });
   }
 
-  function extendSelection(anchor: GridPosition, end: GridPosition): void {
+  function extendSelection(anchor: GridPosition, end: GridPosition, reveal = true): void {
     if (!view || !collectionIdentity || anchor.entity === DRAFT_ROW || end.entity === DRAFT_ROW) return;
     setCellSelection({ identity: collectionIdentity, revision: view.revision, anchor, end });
+    if (!reveal) return;
     // Excel keeps focus and typing at the anchor; only the far end scrolls into view.
     const rowIndex = rowIndexByEntity.get(end.entity);
     if (gridWindowed && rowIndex !== undefined) revealGridRow(rowIndex);
     const cell = cellRefs.current.get(cellKey(end.entity, end.field));
     if (cell && gridScrollRef.current) scrollCellIntoGridNearest(cell, gridScrollRef.current);
+  }
+
+  function updateDragSelectionAt(x: number, y: number): void {
+    const drag = dragSelectRef.current;
+    if (!drag || !gridScrollRef.current) return;
+    for (const row of gridScrollRef.current.querySelectorAll<HTMLTableRowElement>("tbody tr.ts-row")) {
+      const bounds = row.getBoundingClientRect();
+      if (y < bounds.top || y >= bounds.bottom) continue;
+      const cells = [...row.querySelectorAll<HTMLTableCellElement>("td[data-work-field]")];
+      // Client coordinates and rendered bounds include CSS zoom, even when
+      // the pointer has crossed the scrollport's clipped right edge.
+      const cell = cells.find(cell => x < cell.getBoundingClientRect().right) ?? cells.at(-1)!;
+      const end = { entity: cell.dataset.workEntity!, field: cell.dataset.workField! };
+      if (!drag.moved && end.entity === drag.anchor.entity && end.field === drag.anchor.field) return;
+      drag.moved = true;
+      setDragSelecting(true);
+      // Moving the grid under the pointer changes which cell it addresses.
+      extendSelection(drag.anchor, end, false);
+      return;
+    }
   }
 
   /** An extending key starts from the selection's end; focus itself stays on the anchor. */
@@ -6129,6 +6157,8 @@ export function SheetShell(props: SheetShellProps) {
             return;
           }
           if (event.button === 0 && !event.shiftKey && !draft && !editor) {
+            event.preventDefault();
+            event.currentTarget.focus({ preventScroll: true });
             dragSelectRef.current = { anchor: { entity, field: column.id }, moved: false };
             suppressClickRef.current = false;
           }
@@ -6142,13 +6172,6 @@ export function SheetShell(props: SheetShellProps) {
             fillPreviewRef.current = target;
             setFillPreview(target);
             return;
-          }
-          if (!dragSelectRef.current) return;
-          if (event.buttons === 0) { dragSelectRef.current = null; setDragSelecting(false); return; }
-          if (event.buttons === 1 && !draft) {
-            dragSelectRef.current.moved = true;
-            setDragSelecting(true);
-            extendSelection(dragSelectRef.current.anchor, { entity, field: column.id });
           }
         }}
         onContextMenu={(event) => {
