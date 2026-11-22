@@ -41,7 +41,7 @@ try {
     data.setData("text/plain", Array.from({ length: 300 }, (_, row) => ["a", "b", "c", "d"].map(value => `${value}${row}`).join("\t")).join("\n"));
     node.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
   });
-  await page.getByText("Added 300 rows.", { exact: true }).waitFor(); await ready();
+  await page.getByText("Added 300 rows. Save to keep these changes.", { exact: true }).waitFor(); await ready();
   const slider = page.getByRole("slider", { name: "Grid zoom percentage" });
   const setZoom = async value => {
     await slider.fill(String(value));
