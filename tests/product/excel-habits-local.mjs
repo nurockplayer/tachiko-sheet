@@ -974,9 +974,10 @@ const cases = [
     await replaceCell(page, id(0, 1), "=A2+$A$2");
     await page.getByTestId(id(0, 1)).click();
     await dragHandleTo(0, 3);
-    assert.deepEqual((await directionValues()).slice(0, 4), ["2", "4", "6", "8"]);
     await assertFormula(2, "=B2+$A$2");
     await assertFormula(3, "=C2+$A$2");
+    const rightValues = (await directionValues()).slice(0, 4);
+    assert.deepEqual(rightValues, ["2", "4", "6", "8"], `right formula fill values: ${JSON.stringify(rightValues)}`);
     await page.keyboard.press("Control+z"); await settle(page);
     await page.keyboard.press("Control+z"); await settle(page);
 
