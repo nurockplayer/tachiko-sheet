@@ -969,7 +969,8 @@ const cases = [
     // Sideways formula copies shift relative columns and retain absolute references.
     const assertFormula = async (column, formula) => {
       await page.getByTestId(id(0, column)).click();
-      assert.equal(await page.getByTestId("formula-bar-input").inputValue(), formula);
+      const actual = await page.getByTestId("formula-bar-input").inputValue();
+      assert.equal(actual, formula, `formula at column ${column}: ${actual}; expected ${formula}`);
     };
     await replaceCell(page, id(0, 1), "=A2+$A$2");
     await page.getByTestId(id(0, 1)).click();
