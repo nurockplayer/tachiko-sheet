@@ -1,4 +1,4 @@
-import type { SpreadsheetExport, SpreadsheetOperation } from "./interop-protocol.ts";
+import type { InteropMetadata, SpreadsheetExport, SpreadsheetOperation } from "./interop-protocol.ts";
 import type { CanonicalTreeExport, DesignerRequest, ProjectExport, DesignerWireReply } from "./protocol.ts";
 export type DesignerWasmBridge = {
     spreadsheet(operation: SpreadsheetOperation, bytes: Uint8Array): DesignerWireReply | {
@@ -12,13 +12,13 @@ export type DesignerWasmBridge = {
     openProjectWorkingSize(bytes: Uint8Array, occurrenceId: string): DesignerWireReply;
     openLocalDocument(bytes: Uint8Array, occurrenceId: string): DesignerWireReply;
     openLocalDocumentWorkingSize(bytes: Uint8Array, occurrenceId: string): DesignerWireReply;
-    exportProject(expectedRevision: string): {
+    exportProject(expectedRevision: string, metadata?: InteropMetadata): {
         status: "ok";
         export: ProjectExport;
     } | Extract<DesignerWireReply, {
         status: "error";
     }>;
-    exportProjectV3(expectedRevision: string): {
+    exportProjectV3(expectedRevision: string, metadata?: InteropMetadata): {
         status: "ok";
         export: ProjectExport;
     } | Extract<DesignerWireReply, {
@@ -30,7 +30,7 @@ export type DesignerWasmBridge = {
     } | Extract<DesignerWireReply, {
         status: "error";
     }>;
-    exportPortableRo(expectedRevision: string): {
+    exportPortableRo(expectedRevision: string, metadata?: InteropMetadata): {
         status: "ok";
         export: ProjectExport;
     } | Extract<DesignerWireReply, {

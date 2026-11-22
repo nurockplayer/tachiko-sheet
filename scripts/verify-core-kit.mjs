@@ -14,6 +14,14 @@ import { fileURLToPath } from 'node:url';
 const qualifiedArtifacts = [
   {
     // Re-pin: two clean detached exports match; producer receipt on #246.
+    // PR #577 owns the review gate; new UI capabilities and export host metadata are not adopted.
+    sourceCommit: '063b0bf45a0fac44887640f00801769bb82167c7',
+    artifactManifestSha256: '61b76c4920847abef8dc0844223293a7a50cb049d9133a545263b76237924a34',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/pull/577',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7078356434',
+  },
+  {
+    // Re-pin: two clean detached exports match; producer receipt on #246.
     // PR #562 owns the review gate; export companion and inspect import mapping are not adopted.
     sourceCommit: '2215c25bf97881e878ffcf9f092fdaa52decc9e1',
     artifactManifestSha256: 'e5afdd0ced2715af56d2ea07e308c16bd91488f49a038e1e9589751fce7d2d4a',
