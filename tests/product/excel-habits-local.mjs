@@ -1003,7 +1003,7 @@ const cases = [
     await page.getByTestId(id(1, 0)).click({ modifiers: ["Shift"] });
     before = await directionValues();
     await dragHandleTo(1, 2);
-    assert.deepEqual((await directionValues()).slice(0, 8), ["2", "2", "2", "8", "3", "3", "3", "9"]);
+    assert.deepEqual((await directionValues()).slice(0, 8), ["2", "2", "2", "4", "3", "3", "3", "9"], "column source fill did not copy values and recalculate D2 (=C2*2)");
     await checkDirectionSelection([0, 1], [0, 1, 2], 0, 0);
     await page.keyboard.press("Control+z"); await settle(page);
     assert.deepEqual(await directionValues(), before);
