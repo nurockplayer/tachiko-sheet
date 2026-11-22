@@ -1,7 +1,7 @@
 import type { A1Translation, TranslateA1FormulaInput } from "./protocol.ts";
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportedWindowProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
 import { type DesignerClient } from "./client.ts";
-import type { FormulaCopy, TrackerCommand, BootstrapProjection, ProjectInspectionProjection, CapacityProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldExplanationProjection, FieldConstraintInput, NumberFormat, DateFormat, FieldTarget, OpenedProjection, OpenedWindowProjection, OccurrenceProjection, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, ProjectExport, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, SelectionStatisticsProjection, SelectionStatisticsRange, GroupDimension, GroupScope, GroupTotalsProjection } from "./protocol.ts";
+import type { FormulaCopy, TrackerCommand, ScalarEditInput, BootstrapProjection, ProjectInspectionProjection, CapacityProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldExplanationProjection, FieldConstraintInput, NumberFormat, DateFormat, CellStyleChange, FieldTarget, OpenedProjection, OpenedWindowProjection, OccurrenceProjection, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, ProjectExport, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, SelectionStatisticsProjection, SelectionStatisticsRange, GroupDimension, GroupScope, GroupTotalsProjection } from "./protocol.ts";
 export type DesignerWorkerFactory = () => Worker;
 export declare class WorkerDesignerClient implements DesignerClient {
     #private;
@@ -26,6 +26,8 @@ export declare class WorkerDesignerClient implements DesignerClient {
     newBudget(): Promise<OpenedProjection>;
     /** Create a Budget whose session profile is the working-size one. */
     newBudgetWorkingSize(): Promise<OpenedWindowProjection>;
+    newBlankWorkbook(): Promise<OpenedWindowProjection>;
+    writeCellAt(expectedRevision: string, collection: string, row: number, column: number, input: ScalarEditInput): Promise<PublicationProjection>;
     newTable(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection>;
     /** Create a table whose session profile is the working-size one. */
     newTableWorkingSize(name: string, columns: NewTableColumnInput[]): Promise<OpenedWindowProjection>;
@@ -35,6 +37,7 @@ export declare class WorkerDesignerClient implements DesignerClient {
     renameTable(expectedRevision: string, collection: string, name: string): Promise<PublicationProjection>;
     /** Forward typed commands, including insert_row position, unchanged to Rust. */
     trackerCommand(request: TrackerCommand): Promise<PublicationProjection>;
+    editAuto(expectedRevision: string, target: FieldTarget, input: string, dateOrder?: "month_first" | "day_first"): Promise<PublicationProjection>;
     clearField(expectedRevision: string, target: FieldTarget): Promise<PublicationProjection>;
     changeColumnType(expectedRevision: string, collection: string, field: string, fieldType: string): Promise<PublicationProjection>;
     setColumnRequiredness(expectedRevision: string, collection: string, field: string, required: boolean): Promise<PublicationProjection>;
@@ -43,6 +46,7 @@ export declare class WorkerDesignerClient implements DesignerClient {
     setColumnDateFormat(expectedRevision: string, collection: string, field: string, dateFormat: DateFormat | null): Promise<PublicationProjection>;
     setColumnAlignment(expectedRevision: string, collection: string, field: string, alignment: "left" | "center" | "right" | null): Promise<PublicationProjection>;
     setColumnWrap(expectedRevision: string, collection: string, field: string, wrap: boolean | null): Promise<PublicationProjection>;
+    setCellStyle(expectedRevision: string, collection: string, entities: string[], fields: string[], changes: CellStyleChange[]): Promise<PublicationProjection>;
     setColumnWidth(expectedRevision: string, collection: string, field: string, width: number | null): Promise<PublicationProjection>;
     moveColumn(expected: string, collection: string, field: string, toIndex: number): Promise<PublicationProjection>;
     bootstrap(): Promise<BootstrapProjection>;
@@ -57,10 +61,10 @@ export declare class WorkerDesignerClient implements DesignerClient {
     openCanonicalTreeWorkingSize(files: readonly CanonicalProjectFile[]): Promise<OpenedWindowProjection>;
     openLocalDocument(bytes: ArrayBuffer): Promise<OpenedProjection>;
     openLocalDocumentWorkingSize(bytes: ArrayBuffer): Promise<OpenedWindowProjection>;
-    exportProject(expectedRevision: string): Promise<ProjectExport>;
-    exportProjectV3(expectedRevision: string): Promise<ProjectExport>;
+    exportProject(expectedRevision: string, metadata?: InteropMetadata): Promise<ProjectExport>;
+    exportProjectV3(expectedRevision: string, metadata?: InteropMetadata): Promise<ProjectExport>;
     exportCanonicalTree(expectedRevision: string): Promise<CanonicalTreeExport>;
-    exportPortableRo(expectedRevision: string): Promise<ProjectExport>;
+    exportPortableRo(expectedRevision: string, metadata?: InteropMetadata): Promise<ProjectExport>;
     verifyPortableRo(bytes: ArrayBuffer): Promise<void>;
     openPortableRo(bytes: ArrayBuffer): Promise<OpenedProjection>;
     openPortableRoWorkingSize(bytes: ArrayBuffer): Promise<OpenedWindowProjection>;

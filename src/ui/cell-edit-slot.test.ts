@@ -15,7 +15,7 @@ describe("authoritative sparse edit slots", () => {
   it("never infers a blank from a missing field or a missing membership list", () => {
     for (const blank_fields of [undefined, [], ["different"]]) expect(cellEditSlot({ ...blank, blank_fields }, column())).toBeNull();
     expect(cellEditSlot(blank, { ...column(), required: true })).toBeNull();
-    for (const type of ["reference", "unknown"]) expect(cellEditSlot(blank, column(type))).toBeNull();
+    for (const type of ["reference", "unknown", "auto"]) expect(cellEditSlot(blank, column(type))).toBeNull();
     // Optional Date and Yes/No blanks are editable since Work #598.
     for (const type of ["date", "boolean"]) expect(cellEditSlot(blank, column(type))).toMatchObject({ kind: type, blank: true, original: "" });
   });
@@ -41,6 +41,10 @@ describe("authoritative sparse edit slots", () => {
   it("retains non-editable and formula evidence from present projections", () => {
     const field = { target: { entity: "entity", field: "f" }, address: "a", stored: null, formula: { source: "1" }, calculated: null, diagnostics: [], editable_scalar: null };
     expect(cellEditSlot({ ...blank, fields: [field] }, column())).toBeNull();
+  });
+  it("does not adopt Auto cell editing", () => {
+    const field = { target: { entity: "entity", field: "f" }, address: "a", stored: { kind: "text" as const, value: "present" }, formula: null, calculated: null, diagnostics: [], editable_scalar: "auto" as const };
+    expect(cellEditSlot({ ...blank, blank_fields: [], fields: [field] }, column("auto"))).toBeNull();
   });
   it("normalizes explicit empty Text from plain-text copy/cut to Blank on native paste", () => {
     const field = { target: { entity: "entity", field: "f" }, address: "a", stored: { kind: "text" as const, value: "" }, formula: null, calculated: null, diagnostics: [], editable_scalar: "text" as const };

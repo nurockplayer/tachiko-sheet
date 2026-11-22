@@ -93,7 +93,7 @@ const displayRows = [formulaRow, plainRow];
 function table(native = true, options: { rows?: TableRow[]; tracker?: boolean } = {}): WorkbookView["table"] {
   return {
     revision: "rev-1",
-    collection: { id: "col-1", key: "plan", display_name: "Plan", entity_count: 2 },
+    collection: { id: "col-1", key: "plan", display_name: "Plan", headerless: false, data_start_row: 2, entity_count: 2 },
     columns,
     rows: options.rows ?? displayRows,
     ...(native ? { native_table_profile: true } : {}),
