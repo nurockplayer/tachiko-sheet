@@ -7,6 +7,8 @@ export type CollectionSummary = {
     id: string;
     key: string;
     display_name: string;
+    headerless: boolean;
+    data_start_row: number;
     entity_count: number;
 };
 export type BootstrapProjection = {
@@ -601,6 +603,13 @@ export type CellStyleChange = {
     value: boolean;
 };
 export type TrackerCommand = {
+    type: "write_cell_at";
+    expected_revision: string;
+    collection: string;
+    row: number;
+    column: number;
+    input: ScalarEditInput;
+} | {
     type: "edit_cells";
     expected_revision: string;
     edits: Array<{
@@ -838,6 +847,10 @@ export type DesignerRequest = {
     type: "new_budget";
     occurrence_id: string;
     profile?: "working_size";
+} | {
+    type: "new_blank_workbook";
+    occurrence_id: string;
+    profile: "working_size";
 } | {
     type: "new_table";
     occurrence_id: string;

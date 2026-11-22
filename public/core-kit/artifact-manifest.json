@@ -1,7 +1,7 @@
 {
   "schema": "tachiko-experimental-designer-client-kit-manifest-v1",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "063b0bf45a0fac44887640f00801769bb82167c7",
+  "sourceCommit": "e28ac837e39924b4dd3c674f8bb04a4d45e54330",
   "stability": "experimental",
   "entry": "experimental-client.js",
   "capabilities": [
@@ -77,6 +77,8 @@
     "copyFormula",
     "newTracker",
     "newBudget",
+    "newBlankWorkbook",
+    "writeCellAt",
     "newTable",
     "newTableWorkingSize",
     "newTrackerWorkingSize",
@@ -100,7 +102,7 @@
     },
     {
       "path": "designer_runtime.wasm",
-      "sha256": "003517b48a07226b48de5ecf47f14d3ae0dc31187b02fd42f96af7476d6dbeac"
+      "sha256": "9ca8087edd610c39062ffbc705e3e9a17d1ccc1a13d56a968dd05f88d54f734a"
     },
     {
       "path": "experimental-client.d.ts",
@@ -144,7 +146,7 @@
     },
     {
       "path": "runtime/client.d.ts",
-      "sha256": "6e83c8a631cecb645a440869ad01b8577e92cd382ffaf7adaa60986a1e5a5d49"
+      "sha256": "35d2013cbdb9305dd60688fd119294cbdefa4a2cd5067e68cc4ac6ef4ad92680"
     },
     {
       "path": "runtime/client.js",
@@ -160,7 +162,7 @@
     },
     {
       "path": "runtime/protocol.d.ts",
-      "sha256": "d8c68bcbff74852ad57dab3f18fdfd8a4dbb6b3241ce77dbe1858832ad238f90"
+      "sha256": "2b6927eb95559baf635a567c1ac076b73d7dc83c633e472c59055b1799a479bd"
     },
     {
       "path": "runtime/protocol.js",
@@ -176,11 +178,11 @@
     },
     {
       "path": "runtime/worker-client.d.ts",
-      "sha256": "8baf2afa6d1455d8babdf749b7a84c25b66720e56eefcf38c2674512f0f29eb3"
+      "sha256": "8bc3a12e9ded45d934a27e2fadaa86ca879eb5233a9f88996e00a31393f36567"
     },
     {
       "path": "runtime/worker-client.js",
-      "sha256": "b92b5861200117abaaf60ff8bf1b093aa374542c7be824088369c96b9db2c81b"
+      "sha256": "52159e6bd58e0dd9d55cfe887c362ab67ce18e86b738f20c50c46577d8ffb115"
     },
     {
       "path": "runtime/worker-runtime.d.ts",

@@ -143,6 +143,12 @@ export class WorkerDesignerClient {
     async newBudgetWorkingSize() {
         return expectResponse("opened_window", await this.#command({ type: "new_budget", occurrence_id: freshOccurrenceId(), profile: "working_size" }));
     }
+    async newBlankWorkbook() {
+        return expectResponse("opened_window", await this.#command({ type: "new_blank_workbook", occurrence_id: freshOccurrenceId(), profile: "working_size" }));
+    }
+    async writeCellAt(expectedRevision, collection, row, column, input) {
+        return this.trackerCommand({ type: "write_cell_at", expected_revision: expectedRevision, collection, row, column, input });
+    }
     async newTable(name, columns) {
         return expectResponse("opened", await this.#command({ type: "new_table", occurrence_id: freshOccurrenceId(), name, columns }));
     }

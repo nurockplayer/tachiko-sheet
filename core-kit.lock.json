@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "063b0bf45a0fac44887640f00801769bb82167c7",
+  "sourceCommit": "e28ac837e39924b4dd3c674f8bb04a4d45e54330",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "61b76c4920847abef8dc0844223293a7a50cb049d9133a545263b76237924a34",
+  "artifactManifestSha256": "d7b496c267398cc6cb9c3949340f7565972cc74887bfe062d3a3ecb5633f4799",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7078356434",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7078657290",
   "qualificationArtifactReview": {
-    "sourceCommit": "063b0bf45a0fac44887640f00801769bb82167c7",
-    "artifactManifestSha256": "61b76c4920847abef8dc0844223293a7a50cb049d9133a545263b76237924a34",
+    "sourceCommit": "e28ac837e39924b4dd3c674f8bb04a4d45e54330",
+    "artifactManifestSha256": "d7b496c267398cc6cb9c3949340f7565972cc74887bfe062d3a3ecb5633f4799",
     "url": "https://github.com/nurockplayer/tachiko-sheet/pull/577"
   },
-  "notes": "Re-pin to Work 063b0bf4: sideways formula copy, export companion host metadata, cell styles and Auto fields. Two clean detached exports match byte for byte; receipt on issue #246. Sheet does not adopt the new UI capabilities or export companion host metadata. Product acceptance remains separate."
+  "notes": "Re-pin to Work e28ac837: blank headerless workbooks, positional cell writes and inspected XLSX source reuse. Two clean detached exports match byte for byte; receipt on issue #246. Sheet does not adopt the new capabilities; Work #919 remains a known producer gap. Product acceptance remains separate."
 }

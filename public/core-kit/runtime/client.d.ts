@@ -1,6 +1,6 @@
 import type { A1Translation, TranslateA1FormulaInput } from "./protocol.ts";
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportedWindowProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
-import type { FormulaCopy, TrackerCommand, BootstrapProjection, ProjectInspectionProjection, CapacityProjection, FieldBatchProjection, FieldExplanationProjection, CellStyleChange, FieldTarget, CanonicalTreeExport, CanonicalProjectFile, OccurrenceProjection, OpenedProjection, OpenedWindowProjection, ProjectExport, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, SelectionStatisticsProjection, SelectionStatisticsRange, GroupDimension, GroupScope, GroupTotalsProjection, FailureProjection, FieldConstraintInput, NumberFormat, DateFormat } from "./protocol.ts";
+import type { FormulaCopy, TrackerCommand, ScalarEditInput, BootstrapProjection, ProjectInspectionProjection, CapacityProjection, FieldBatchProjection, FieldExplanationProjection, CellStyleChange, FieldTarget, CanonicalTreeExport, CanonicalProjectFile, OccurrenceProjection, OpenedProjection, OpenedWindowProjection, ProjectExport, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, SelectionStatisticsProjection, SelectionStatisticsRange, GroupDimension, GroupScope, GroupTotalsProjection, FailureProjection, FieldConstraintInput, NumberFormat, DateFormat } from "./protocol.ts";
 export interface DesignerClient {
     inspectCurrentProject?(): Promise<ProjectInspectionProjection>;
     inspectSpreadsheet?(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions, profile?: "working_size"): Promise<SourceWorkbook>;
@@ -24,6 +24,8 @@ export interface DesignerClient {
     newTrackerWorkingSize?(): Promise<OpenedWindowProjection>;
     newBudget?(): Promise<OpenedProjection>;
     newBudgetWorkingSize?(): Promise<OpenedWindowProjection>;
+    newBlankWorkbook?(): Promise<OpenedWindowProjection>;
+    writeCellAt?(expectedRevision: string, collection: string, row: number, column: number, input: ScalarEditInput): Promise<PublicationProjection>;
     newTable?(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection>;
     /** Create a table whose session profile is the working-size one. */
     newTableWorkingSize?(name: string, columns: NewTableColumnInput[]): Promise<OpenedWindowProjection>;

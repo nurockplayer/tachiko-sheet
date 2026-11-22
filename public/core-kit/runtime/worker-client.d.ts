@@ -1,7 +1,7 @@
 import type { A1Translation, TranslateA1FormulaInput } from "./protocol.ts";
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportedWindowProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
 import { type DesignerClient } from "./client.ts";
-import type { FormulaCopy, TrackerCommand, BootstrapProjection, ProjectInspectionProjection, CapacityProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldExplanationProjection, FieldConstraintInput, NumberFormat, DateFormat, CellStyleChange, FieldTarget, OpenedProjection, OpenedWindowProjection, OccurrenceProjection, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, ProjectExport, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, SelectionStatisticsProjection, SelectionStatisticsRange, GroupDimension, GroupScope, GroupTotalsProjection } from "./protocol.ts";
+import type { FormulaCopy, TrackerCommand, ScalarEditInput, BootstrapProjection, ProjectInspectionProjection, CapacityProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldExplanationProjection, FieldConstraintInput, NumberFormat, DateFormat, CellStyleChange, FieldTarget, OpenedProjection, OpenedWindowProjection, OccurrenceProjection, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, ProjectExport, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, SelectionStatisticsProjection, SelectionStatisticsRange, GroupDimension, GroupScope, GroupTotalsProjection } from "./protocol.ts";
 export type DesignerWorkerFactory = () => Worker;
 export declare class WorkerDesignerClient implements DesignerClient {
     #private;
@@ -26,6 +26,8 @@ export declare class WorkerDesignerClient implements DesignerClient {
     newBudget(): Promise<OpenedProjection>;
     /** Create a Budget whose session profile is the working-size one. */
     newBudgetWorkingSize(): Promise<OpenedWindowProjection>;
+    newBlankWorkbook(): Promise<OpenedWindowProjection>;
+    writeCellAt(expectedRevision: string, collection: string, row: number, column: number, input: ScalarEditInput): Promise<PublicationProjection>;
     newTable(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection>;
     /** Create a table whose session profile is the working-size one. */
     newTableWorkingSize(name: string, columns: NewTableColumnInput[]): Promise<OpenedWindowProjection>;
