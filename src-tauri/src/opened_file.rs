@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use tauri::ipc::Response;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager};
 
 use crate::{lock, MAIN_WINDOW};
 
@@ -139,7 +139,7 @@ pub fn offer(app: &AppHandle, path: PathBuf) {
 }
 
 #[tauri::command]
-pub async fn take_opened_file(app: AppHandle, files: State<'_, OpenedFiles>, pick: Option<bool>) -> Response {
+pub async fn take_opened_file(app: AppHandle, pick: Option<bool>) -> Response {
     if pick == Some(true) {
         let mut dialog = rfd::AsyncFileDialog::new().add_filter("Work files", &["ro"]);
         if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
@@ -151,7 +151,8 @@ pub async fn take_opened_file(app: AppHandle, files: State<'_, OpenedFiles>, pic
             .await.expect("work file picker read worker");
         return Response::new(frame);
     }
-    Response::new(encode(lock(&files.waiting).take()))
+    let held = lock(&app.state::<OpenedFiles>().waiting).take();
+    Response::new(encode(held))
 }
 
 #[cfg(test)]
