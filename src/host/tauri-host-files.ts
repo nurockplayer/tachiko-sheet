@@ -1,5 +1,5 @@
 import type { ImportCompanion } from "../contracts.js";
-import { fileCompanion } from "./import-companion.js";
+import { openedFileCompanion } from "./import-companion.js";
 import { decodeOpenedFile } from "./opened-file";
 import { invoke } from "@tauri-apps/api/core";
 import type { HostFiles, SaveOutcome } from "./host-files.js";
@@ -65,7 +65,7 @@ export const tauriHostFiles: HostFiles = {
   async takeOpenedFile() {
     return decodeOpenedFile(new Uint8Array(await invoke<ArrayBuffer>("take_opened_file")));
   },
-  readImportCompanion: fileCompanion,
+  async readImportCompanion(file) { return openedFileCompanion(file); },
   saveFile(suggestedName, content, companion) {
     // Count and order the save before any await, so it is never invisible to
     // the guard and a slower encoding cannot be overtaken by a later save.

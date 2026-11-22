@@ -16,8 +16,15 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke.mockImplementatio
   throw new Error(`Unexpected command: ${command}`);
 }) }));
 
-function pickedFile(bytes: Uint8Array, companion: string): Uint8Array {
+function pickedFile(bytes: Uint8Array, companion?: string): Uint8Array {
   const name = new TextEncoder().encode("book.ro");
+  if (companion === undefined) {
+    const frame = new Uint8Array(5 + name.length + bytes.length);
+    new DataView(frame.buffer).setUint32(1, name.length, true);
+    frame.set(name, 5);
+    frame.set(bytes, 5 + name.length);
+    return frame;
+  }
   const attachment = new TextEncoder().encode(companion);
   const frame = new Uint8Array(9 + name.length + attachment.length + bytes.length);
   const view = new DataView(frame.buffer);
@@ -30,15 +37,18 @@ function pickedFile(bytes: Uint8Array, companion: string): Uint8Array {
   return frame;
 }
 
-it.each(["imported", "native"] as const)("opens a %s .ro from the desktop Home picker", async (kind) => {
+it.each(["imported", "native", "pathless"] as const)("opens a %s .ro from the desktop Home picker", async (kind) => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  native.invoke.mockClear();
+  const browserDatabase = vi.fn();
+  vi.stubGlobal("indexedDB", { open: browserDatabase });
   const bytes = new Uint8Array([1, 2, 3]);
   const metadata: InteropMetadata = { version: 1, sheets: [
     { schema_id: "second", name: "Renamed Second", has_header: true, columns: [], rows: [] },
     { schema_id: "first", name: "First", has_header: true, columns: [], rows: [] },
   ] };
   native.frame = pickedFile(bytes, kind === "imported"
-    ? JSON.stringify({ snapshotDigest: await companionDigest(bytes.buffer), metadata }) : "");
+    ? JSON.stringify({ snapshotDigest: await companionDigest(bytes.buffer), metadata }) : undefined);
   const collections = kind === "imported"
     ? metadata.sheets.map(sheet => ({ id: sheet.schema_id, key: sheet.schema_id, display_name: sheet.name, entity_count: 0 }))
     : [{ id: "native", key: "native", display_name: "Native", entity_count: 0 }];
@@ -58,13 +68,20 @@ it.each(["imported", "native"] as const)("opens a %s .ro from the desktop Home p
   try {
     await act(async () => root.render(createElement(HostFilesContext.Provider, { value: tauriHostFiles },
       createElement(App, { runtime, copies: { list: async () => [] }, appearancePreference } as unknown as AppProps))));
-    const picker = container.querySelector<HTMLButtonElement>('[data-testid="open-work-file"]')!;
-    expect(picker.tagName).toBe("BUTTON");
+    const picker = container.querySelector<HTMLInputElement>('[data-testid="open-work-file"]')!;
+    expect(picker.type).toBe("file");
     await act(async () => {
-      picker.click();
+      if (kind === "pathless") {
+        Object.defineProperty(picker, "files", { value: [new File([bytes], "invoice.ro")] });
+        picker.dispatchEvent(new Event("change", { bubbles: true }));
+      } else {
+        picker.click();
+      }
       await vi.waitFor(() => expect(runtime.openWorkFile).toHaveBeenCalled());
     });
-    expect(native.invoke).toHaveBeenCalledWith("take_opened_file", { pick: true });
+    if (kind === "pathless") expect(native.invoke).not.toHaveBeenCalledWith("take_opened_file", { pick: true });
+    else expect(native.invoke).toHaveBeenCalledWith("take_opened_file", { pick: true });
+    expect(browserDatabase).not.toHaveBeenCalled();
     if (kind === "imported") {
       expect(runtime.openWorkFile).toHaveBeenCalledWith(bytes.buffer, metadata);
       expect(container.textContent).toContain("Renamed Second");
@@ -76,5 +93,6 @@ it.each(["imported", "native"] as const)("opens a %s .ro from the desktop Home p
   } finally {
     await act(async () => root.unmount());
     container.remove();
+    vi.unstubAllGlobals();
   }
 });

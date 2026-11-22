@@ -32,12 +32,15 @@ export async function retainCompanion(companion: ImportCompanion): Promise<void>
   } finally { db.close(); }
 }
 
-export async function fileCompanion(file: File, bytes: ArrayBuffer): Promise<ImportCompanion | undefined> {
+export function openedFileCompanion(file: File): ImportCompanion | undefined {
   const sidecar = openedCompanions.get(file);
-  if (sidecar !== undefined) {
-    try { return JSON.parse(sidecar) as ImportCompanion; }
-    catch { return undefined; } // An unreadable optional sidecar never prevents Open.
-  }
+  if (sidecar === undefined) return undefined;
+  try { return JSON.parse(sidecar) as ImportCompanion; }
+  catch { return undefined; } // An unreadable optional sidecar never prevents Open.
+}
+
+export async function fileCompanion(file: File, bytes: ArrayBuffer): Promise<ImportCompanion | undefined> {
+  if (openedCompanions.has(file)) return openedFileCompanion(file);
   let db: IDBDatabase;
   try { db = await database(); }
   catch { return undefined; } // Optional browser storage may be unavailable.
