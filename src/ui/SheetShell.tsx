@@ -6671,10 +6671,10 @@ export function SheetShell(props: SheetShellProps) {
       <div className="ts-workbook" data-testid="project-ready" aria-busy={busy}>
         {renderToolbar()}
         <nav className="ts-work-context" aria-label="Workbook actions">
-          {!phoneLayout && <div className="ts-actions" role="group" aria-label="View commands">
+          <div className="ts-actions ts-view-commands" role="group" aria-label="View commands">
             <span className="ts-field-label">View</span>
             <button type="button" className="ts-button" aria-pressed={Boolean(gridSettings.freezeFirstColumn)} onClick={() => updateGridSettings(current => ({ ...current, freezeFirstColumn: !current.freezeFirstColumn }))}>Freeze First Column</button>
-          </div>}
+          </div>
           <div className="ts-context-table">
             <label className="ts-field-label" htmlFor="ts-active-table">Table</label>
             <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || cellDraftActive || formulaDraftActive || rowDraftActive}>
