@@ -143,10 +143,10 @@ function makeView(options: { columns?: boolean; titleValue?: string; titleDiagno
     title: "Plan",
     occurrence: "occ-1",
     revision: "rev-1",
-    collections: [{ id: "col-1", key: "release_items", display_name: "release_items", entity_count: rows.length }],
+    collections: [{ id: "col-1", key: "release_items", display_name: "release_items", headerless: false, data_start_row: 2, entity_count: rows.length }],
     table: {
       revision: "rev-1",
-      collection: { id: "col-1", key: "release_items", display_name: "release_items", entity_count: rows.length },
+      collection: { id: "col-1", key: "release_items", display_name: "release_items", headerless: false, data_start_row: 2, entity_count: rows.length },
       columns: options.columns === false ? [] : columns,
       rows,
     },
@@ -416,7 +416,7 @@ describe("keyboard history queue", () => {
     const onAddTable = vi.fn<NonNullable<SheetShellProps["onAddTable"]>>(async () => ({ kind: "confirmed" }));
     const view = makeView();
     view.collections[0]!.display_name = "sHeEt 4";
-    view.collections.push({ id: "other", key: "other", display_name: "Sheet 5", entity_count: 0 }, { id: "third", key: "third", display_name: "Other", entity_count: 0 });
+    view.collections.push({ id: "other", key: "other", display_name: "Sheet 5", headerless: false, data_start_row: 2, entity_count: 0 }, { id: "third", key: "third", display_name: "Other", headerless: false, data_start_row: 2, entity_count: 0 });
     const ui = await mount({ view, onAddTable });
     const add = ui.container.querySelector<HTMLButtonElement>('[aria-label="Add sheet"]')!;
     await act(async () => add.click());
@@ -437,7 +437,7 @@ describe("keyboard history queue", () => {
     const ui = await mount({ onAddTable: () => new Promise(resolve => { confirm = resolve; }), onInsertRow: async () => ({ kind: "confirmed" }) });
     await act(async () => ui.container.querySelector<HTMLButtonElement>('[aria-label="Add sheet"]')!.click());
     expect(ui.container.querySelector('[aria-label="Sheets"] [aria-selected="true"]')?.textContent).toBe("release_items");
-    const collection = { id: "new", key: "new", display_name: "Sheet 2", entity_count: 0 };
+    const collection = { id: "new", key: "new", display_name: "Sheet 2", headerless: false, data_start_row: 2, entity_count: 0 };
     const view = { ...ui.view, revision: "rev-2", collections: [collection, ...ui.view.collections], table: { ...ui.view.table, revision: "rev-2", collection, rows: [], columns: [{ id: "a", key: "a", display_name: "A", field_type: "text" as const, required: false }] } };
     // App can install the projection before its mutation promise resolves.
     // The view-key reset clears commitPending during this render.
@@ -1658,7 +1658,7 @@ describe("SheetShell static rendering", () => {
     const view = makeView();
     const catalogView: WorkbookView = {
       ...view,
-      table: { ...view.table, collection: { id: "catalog-identity", key: "catalog", display_name: "catalog", entity_count: 1 }, columns: [
+      table: { ...view.table, collection: { id: "catalog-identity", key: "catalog", display_name: "catalog", headerless: false, data_start_row: 2, entity_count: 1 }, columns: [
         { id: "code-id", key: "code", display_name: "code", field_type: "text", required: true },
         { id: "category-id", key: "category", display_name: "category", field_type: "text", required: true },
         { id: "price-id", key: "price", display_name: "price", field_type: "number", required: true },

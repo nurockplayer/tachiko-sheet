@@ -7,7 +7,7 @@ function field(entity: string, value: number): FieldProjection {
     formula: null, calculated: null, diagnostics: [], editable_scalar: "number" };
 }
 function table(): TableProjection {
-  return { revision: "r1", collection: { id: "c", key: "table", display_name: "Table", entity_count: 2 },
+  return { revision: "r1", collection: { id: "c", key: "table", display_name: "Table", headerless: false, data_start_row: 2, entity_count: 2 },
     columns: [{ id: "amount", key: "amount", display_name: "Amount", field_type: "number", required: false }], rows: ["e1", "e2"].map(id => ({ id, key: id, fields: [field(id, 1)] })) };
 }
 

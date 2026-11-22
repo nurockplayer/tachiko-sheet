@@ -50,8 +50,8 @@ it.each(["imported", "native", "pathless"] as const)("opens a %s .ro from the de
   native.frame = pickedFile(bytes, kind === "imported"
     ? JSON.stringify({ snapshotDigest: await companionDigest(bytes.buffer), metadata }) : undefined);
   const collections = kind === "imported"
-    ? metadata.sheets.map(sheet => ({ id: sheet.schema_id, key: sheet.schema_id, display_name: sheet.name, entity_count: 0 }))
-    : [{ id: "native", key: "native", display_name: "Native", entity_count: 0 }];
+    ? metadata.sheets.map(sheet => ({ id: sheet.schema_id, key: sheet.schema_id, display_name: sheet.name, headerless: false, data_start_row: 2, entity_count: 0 }))
+    : [{ id: "native", key: "native", display_name: "Native", headerless: false, data_start_row: 2, entity_count: 0 }];
   const view: WorkbookView = { title: "Book", occurrence: "o1", revision: "r1", openedFromWorkFile: true,
     ...(kind === "imported" ? { importMetadata: metadata } : {}), collections,
     table: { revision: "r1", native_table_profile: true, collection: collections[0]!, columns: [], rows: [] } };

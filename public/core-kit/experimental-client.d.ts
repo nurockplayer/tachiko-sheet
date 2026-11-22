@@ -3,7 +3,7 @@ import { projectTransferFromEntries, projectTransferFromFiles, type CanonicalPro
 import type { ImportOptions, ImportSelection, ImportedWindowProjection, InteropMetadata, SpreadsheetExport, SpreadsheetFormat } from "./runtime/interop-protocol.ts";
 import { DesignerRuntimeError, type DesignerClient } from "./runtime/client.ts";
 import { isCapacityFailure, isFormulaFailure } from "./runtime/protocol.ts";
-import type { CanonicalProjectFile, CanonicalTreeExport, OccurrenceProjection, OpenedProjection, OpenedWindowProjection, NewTableColumnInput, ProjectExport, FieldConstraintInput, NumberFormat, DateFormat, FieldTarget, PublicationProjection, CapacityProjection, ProjectInspectionProjection } from "./runtime/protocol.ts";
+import type { CanonicalProjectFile, CanonicalTreeExport, OccurrenceProjection, OpenedProjection, OpenedWindowProjection, NewTableColumnInput, ProjectExport, FieldConstraintInput, NumberFormat, DateFormat, CellStyleChange, FieldTarget, PublicationProjection, CapacityProjection, ProjectInspectionProjection } from "./runtime/protocol.ts";
 export declare const EXPERIMENTAL_CLIENT_KIT_ID = "tachiko-designer-client-kit/v0-experimental";
 /**
  * Public client surface exposed by the experimental kit.
@@ -17,7 +17,9 @@ export interface ExperimentalDesignerClient extends DesignerClient {
     inspectCurrentProject(): Promise<ProjectInspectionProjection>;
     translateA1Formula(input: TranslateA1FormulaInput): Promise<A1Translation>;
     queryCapacity(expectedRevision?: string): Promise<CapacityProjection>;
-    /** Explicit absence for one optional native Text/Number slot. */
+    /** Classify raw input in one Auto scalar cell. */
+    editAuto(expectedRevision: string, target: FieldTarget, input: string, dateOrder?: "month_first" | "day_first"): Promise<PublicationProjection>;
+    /** Explicit absence for one optional native scalar slot. */
     clearField(expectedRevision: string, target: FieldTarget): Promise<PublicationProjection>;
     /** Convert every value of one scalar column to another scalar type as one undoable edit. */
     changeColumnType(expectedRevision: string, collection: string, field: string, fieldType: string): Promise<PublicationProjection>;
@@ -31,11 +33,12 @@ export interface ExperimentalDesignerClient extends DesignerClient {
     setColumnDateFormat(expectedRevision: string, collection: string, field: string, dateFormat: DateFormat | null): Promise<PublicationProjection>;
     setColumnAlignment(expectedRevision: string, collection: string, field: string, alignment: "left" | "center" | "right" | null): Promise<PublicationProjection>;
     setColumnWrap(expectedRevision: string, collection: string, field: string, wrap: boolean | null): Promise<PublicationProjection>;
+    setCellStyle(expectedRevision: string, collection: string, entities: string[], fields: string[], changes: CellStyleChange[]): Promise<PublicationProjection>;
     setColumnWidth(expectedRevision: string, collection: string, field: string, width: number | null): Promise<PublicationProjection>;
     /** Move one column to a zero-based index; the order is durable document state. */
     moveColumn(expected: string, collection: string, field: string, toIndex: number): Promise<PublicationProjection>;
     exportNativeTablesSpreadsheet(expectedRevision: string, collection: string, format: SpreadsheetFormat): Promise<SpreadsheetExport>;
-    exportProjectV3(expectedRevision: string): Promise<ProjectExport>;
+    exportProjectV3(expectedRevision: string, metadata?: InteropMetadata): Promise<ProjectExport>;
     /** Create a table whose session profile is the working-size one. */
     newTableWorkingSize(name: string, columns: NewTableColumnInput[]): Promise<OpenedWindowProjection>;
     newTrackerWorkingSize(): Promise<OpenedWindowProjection>;
@@ -49,7 +52,7 @@ export interface ExperimentalDesignerClient extends DesignerClient {
     openCanonicalTreeWorkingSize(files: readonly CanonicalProjectFile[]): Promise<OpenedWindowProjection>;
     openLocalDocumentWorkingSize(bytes: ArrayBuffer): Promise<OpenedWindowProjection>;
     exportCanonicalTree(expectedRevision: string): Promise<CanonicalTreeExport>;
-    exportPortableRo(expectedRevision: string): Promise<ProjectExport>;
+    exportPortableRo(expectedRevision: string, metadata?: InteropMetadata): Promise<ProjectExport>;
     verifyPortableRo(bytes: ArrayBuffer): Promise<void>;
     openPortableRo(bytes: ArrayBuffer): Promise<OpenedProjection>;
     openPortableRoWorkingSize(bytes: ArrayBuffer): Promise<OpenedWindowProjection>;
@@ -68,8 +71,8 @@ export declare function preflightCanonicalProjectEntries(entries: readonly Canon
 export declare function openCanonicalTreeFromEntries(client: Pick<ExperimentalDesignerClient, "openProject">, entries: readonly CanonicalProjectTransferEntry[]): Promise<OpenedProjection>;
 export declare function createExperimentalDesignerClient(): ExperimentalDesignerClient;
 export { DesignerRuntimeError, isCapacityFailure, isFormulaFailure, projectTransferFromEntries, projectTransferFromFiles, };
-export type { DesignerClient };
+export type { CellStyleChange, DesignerClient };
 export type { CanonicalProjectTransferEntry } from "./host/project-transfer.ts";
 export type { ImportedWindowProjection } from "./runtime/interop-protocol.ts";
-export type { BootstrapProjection, ProjectInspectionProjection, CapacityFailureProjection, CapacityLimitName, CapacityLimits, CapacityProjection, CapacityUsage, CanonicalProjectFile, CanonicalTreeExport, CalculationProjection, CollectionSummary, ColumnProjection, CellAlignment, ConstraintFailureProjection, ConstraintFailureReason, DiagnosticProjection, FailureCode, FailureProjection, FieldConstraint, FieldConstraintInput, NumberFormat, DateFormat, FieldBatchProjection, FormulaFailureCode, FormulaFailureProjection, FieldDependencyProjection, FieldExplanationProjection, FieldProjection, FieldTarget, NewTableColumnInput, PasteCellInput, ScalarEditInput, TrackerCommand, OpenedProjection, OpenedWindowProjection, OccurrenceProjection, ProjectExport, PublicationProjection, StoredValueProjection, TableProjection, } from "./runtime/protocol.ts";
+export type { BootstrapProjection, ProjectInspectionProjection, CapacityFailureProjection, CapacityLimitName, CapacityLimits, CapacityProjection, CapacityUsage, CanonicalProjectFile, CanonicalTreeExport, CalculationProjection, CollectionSummary, ColumnProjection, CellAlignment, ConstraintFailureProjection, ConstraintFailureReason, DiagnosticProjection, FailureCode, FailureProjection, FieldConstraint, FieldConstraintInput, NumberFormat, DateFormat, FieldBatchProjection, FormulaFailureCode, FormulaFailureProjection, FieldDependencyProjection, FieldExplanationProjection, FieldProjection, FieldTarget, NewTableColumnInput, PasteCellInput, AutoDateOrder, ScalarEditInput, TrackerCommand, OpenedProjection, OpenedWindowProjection, OccurrenceProjection, ProjectExport, PublicationProjection, StoredValueProjection, TableProjection, } from "./runtime/protocol.ts";
 export type { A1Geometry, A1SheetGeometry, A1Translation, A1TranslationNote, A1RefusalCode, TranslateA1FormulaInput } from "./runtime/protocol.ts";
