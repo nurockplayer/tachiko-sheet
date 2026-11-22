@@ -67,7 +67,10 @@ try {
     await cell(0, 0).locator(".ts-cell-value").filter({ hasText: `zoom${zoom}` }).waitFor();
     // Drag the scaled fill handle through the real hit target.
     await cell(0, 0).click();
-    await drag(await center(page.getByTestId("fill-handle")), await center(cell(1, 0)));
+    // The visible handle is a pseudo-element; its span has a zero-size box.
+    const source = await cell(0, 0).boundingBox();
+    const inset = 3.5 * zoom / 100;
+    await drag({ x: source.x + source.width - inset, y: source.y + source.height - inset }, await center(cell(1, 0)));
     await ready();
     await cell(1, 0).locator(".ts-cell-value").filter({ hasText: `zoom${zoom}` }).waitFor();
     const header = grid.getByRole("columnheader", { name: "Column 1", exact: true });
