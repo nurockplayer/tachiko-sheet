@@ -94,6 +94,25 @@ try {
     await grid.locator('tbody tr[aria-rowindex="152"]').waitFor();
     console.log(`PASS: ${zoom}% click, B2:D4, edit, fill, resize, scaled text and windowing`);
   }
+  const scrollport = page.locator(".ts-grid-scroll");
+  await scrollport.evaluate(node => { node.style.width = "500px"; });
+  for (const zoom of [100, 125]) {
+    await setZoom(zoom);
+    await scrollport.evaluate(node => { node.scrollLeft = 0; node.scrollTop = 0; });
+    const port = await scrollport.boundingBox();
+    const start = await center(cell(0, 0));
+    await page.mouse.move(start.x, start.y); await page.mouse.down();
+    await page.mouse.move(port.x + port.width + 30, port.y + port.height + 30, { steps: 10 });
+    await page.waitForFunction(() => {
+      const port = document.querySelector(".ts-grid-scroll");
+      const selected = [...port.querySelectorAll('tbody tr.ts-row:has(td[aria-selected="true"])')];
+      return port.scrollTop > 300 && port.scrollLeft > 100 && selected.some(row => Number(row.getAttribute("aria-rowindex")) > 20);
+    });
+    await page.mouse.up();
+    assert.ok(await grid.locator('tbody tr[aria-rowindex="20"] td[aria-selected="true"]').count() > 0, `selection extends while scrolling at ${zoom}%`);
+    console.log(`PASS: drag selection scrolls down and right at ${zoom}%`);
+  }
+  await scrollport.evaluate(node => { node.style.width = ""; });
   await page.getByRole("button", { name: "Reset grid zoom", exact: true }).click();
   assert.equal(await slider.inputValue(), "100");
   await page.getByRole("button", { name: "Zoom in grid", exact: true }).click();

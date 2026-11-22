@@ -1019,23 +1019,39 @@ export function SheetShell(props: SheetShellProps) {
   }, []);
   useEffect(() => {
     let scrollTimer: number | null = null;
-    let pointerY = 0;
+    let pointerX = 0, pointerY = 0;
     const stopScroll = () => {
       if (scrollTimer !== null) window.clearInterval(scrollTimer);
       scrollTimer = null;
     };
     const scroll = () => {
       const grid = gridScrollRef.current;
-      if (!fillDragRef.current || !grid) { stopScroll(); return; }
+      if ((!fillDragRef.current && !dragSelectRef.current) || !grid) { stopScroll(); return; }
+      const right = grid.getBoundingClientRect().left + grid.clientLeft + grid.clientWidth;
       const bottom = grid.getBoundingClientRect().top + grid.clientTop + grid.clientHeight;
+      if (dragSelectRef.current) {
+        if (pointerY >= bottom) grid.scrollTop += Math.min(60, 6 + (pointerY - bottom) * 0.4);
+        if (pointerX >= right) grid.scrollLeft += Math.min(60, 6 + (pointerX - right) * 0.4);
+        updateDragSelectionRef.current(Math.min(pointerX, right - 1), Math.min(pointerY, bottom - 1));
+        return;
+      }
       if (pointerY < bottom) { stopScroll(); return; }
       grid.scrollTop += Math.min(60, 6 + (pointerY - bottom) * 0.4);
       updateFillPreviewRef.current(pointerY);
     };
     const move = (event: MouseEvent) => {
       if (dragSelectRef.current) {
-        if (event.buttons === 0) { dragSelectRef.current = null; setDragSelecting(false); return; }
+        if (event.buttons === 0) { stopScroll(); dragSelectRef.current = null; setDragSelecting(false); return; }
+        pointerX = event.clientX;
+        pointerY = event.clientY;
         updateDragSelectionRef.current(event.clientX, event.clientY);
+        const grid = gridScrollRef.current!;
+        const bounds = grid.getBoundingClientRect();
+        const right = bounds.left + grid.clientLeft + grid.clientWidth;
+        const bottom = bounds.top + grid.clientTop + grid.clientHeight;
+        if (pointerX >= right || pointerY >= bottom) {
+          if (scrollTimer === null) scrollTimer = window.setInterval(scroll, 50);
+        } else stopScroll();
         return;
       }
       if (!fillDragRef.current) return;
