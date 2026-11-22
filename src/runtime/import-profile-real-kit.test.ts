@@ -67,6 +67,8 @@ describe("working-size imported sessions with the vendored kit", () => {
       const reopened = await runtime.openWorkFile(saved.bytes, saved.importMetadata);
       expect(reopened.collections.map(sheet => sheet.display_name)).toEqual(["Renamed"]);
       await expect(runtime.exportSpreadsheet(reopened, reopened.importMetadata!, "xlsx")).resolves.toHaveProperty("bytes");
+      expect((await runtime.read()).importMetadata).toEqual(saved.importMetadata);
+      expect((await runtime.exportWorkFile(reopened)).importMetadata).toEqual(saved.importMetadata);
     } finally { client.close(); }
   }, 30_000);
 
