@@ -59,6 +59,16 @@ describe("working-size imported sessions with the vendored kit", () => {
       const redone = await runtime.trackerHistory(view, "redo");
       expect(redone.publication.import_metadata).toBeDefined();
       await expect(runtime.exportSpreadsheet(redone.view, redone.publication.import_metadata!, "xlsx")).resolves.toHaveProperty("bytes");
+      const refreshed = await runtime.read();
+      expect(refreshed.importMetadata).toEqual(redone.publication.import_metadata);
+      const saved = await runtime.exportWorkFile(refreshed);
+      expect(saved.importMetadata).toEqual(redone.publication.import_metadata);
+      await runtime.close();
+      const reopened = await runtime.openWorkFile(saved.bytes, saved.importMetadata);
+      expect(reopened.collections.map(sheet => sheet.display_name)).toEqual(["Renamed"]);
+      await expect(runtime.exportSpreadsheet(reopened, reopened.importMetadata!, "xlsx")).resolves.toHaveProperty("bytes");
+      expect((await runtime.read()).importMetadata).toEqual(saved.importMetadata);
+      expect((await runtime.exportWorkFile(reopened)).importMetadata).toEqual(saved.importMetadata);
     } finally { client.close(); }
   }, 30_000);
 

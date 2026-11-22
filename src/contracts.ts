@@ -55,6 +55,8 @@ export function requireWorkFileSize(size: number): void {
 
 /** Disposable, coherent projections from one actual core occurrence/revision. */
 export interface WorkbookView {
+  /** Work-issued imported mapping, read at this revision. */
+  importMetadata?: InteropMetadata;
   title: string;
   /** Ephemeral admission evidence, set only by the Work portable-file entry. */
   openedFromWorkFile?: boolean;
@@ -148,7 +150,7 @@ export interface SheetRuntime {
    * metadata; no client codec is involved.
    */
   openOpaque(bytes: ArrayBuffer, importedMetadata?: InteropMetadata): Promise<WorkbookView>;
-  openWorkFile(bytes: ArrayBuffer): Promise<WorkbookView>;
+  openWorkFile(bytes: ArrayBuffer, importedMetadata?: InteropMetadata): Promise<WorkbookView>;
   exportWorkFile(witness: ViewWitness): Promise<OpaqueProjectExport>;
   read(): Promise<WorkbookView>;
   selectCollection(witness: ViewWitness, collection: string): Promise<WorkbookView>;
@@ -199,7 +201,10 @@ export interface SavedCopy {
   importedSource?: ImportedSourceAttachment;
 }
 /** A private, unparsed core-project export (format version 2). */
+export interface ImportCompanion { snapshotDigest: string; metadata: InteropMetadata }
+
 export interface OpaqueSavedCopy extends SavedCopySummary {
+  importCompanion?: ImportCompanion;
   kind: "opaque";
   formatVersion: 2;
   revision: string;
@@ -216,6 +221,8 @@ export interface WorkFileSavedCopy extends Omit<OpaqueSavedCopy, "kind" | "forma
 }
 export type AnySavedCopy = SavedCopy | OpaqueSavedCopy | WorkFileSavedCopy;
 export interface OpaqueProjectExport {
+  importMetadata?: InteropMetadata;
+  importCompanion?: ImportCompanion;
   revision: string;
   bytes: ArrayBuffer;
   importedSource?: ImportedSourceAttachment;

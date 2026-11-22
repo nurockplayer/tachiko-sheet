@@ -1,4 +1,4 @@
-import type { SpreadsheetFormat, WorkbookView } from "../contracts.js";
+import type { InteropMetadata, SpreadsheetFormat, WorkbookView } from "../contracts.js";
 
 /** Host-only consent binding; bytes remain the unmodified producer output. */
 export interface PreparedDownload {
@@ -7,6 +7,7 @@ export interface PreparedDownload {
   revision: string;
   collectionId: string;
   bytes: ArrayBuffer;
+  importMetadata?: InteropMetadata;
   /** Host attachment losses disclosed for this prepared file only. */
   omissions?: string[];
 }
