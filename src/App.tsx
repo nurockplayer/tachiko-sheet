@@ -49,7 +49,7 @@ import {
   type ViewWitness,
   type WorkbookView,
 } from "./contracts.js";
-import type { DateFormat, NumberFormat, CellAlignment } from "../public/core-kit/runtime/protocol.js";
+import type { DateFormat, NumberFormat, CellAlignment, CellStyleChange } from "../public/core-kit/runtime/protocol.js";
 import {
   OpenedProjectionRecoveryError,
   NoResidentWorkError,
@@ -1802,6 +1802,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.setColumnWidth(witness, collection, field, width), "column");
   }
 
+  function setCellStyle(witness: ViewWitness, collection: string, entities: string[], fields: string[], changes: CellStyleChange[]) {
+    return changeRows(witness, () => runtime.setCellStyle(witness, collection, entities, fields, changes));
+  }
+
   function setColumnAlignment(witness: ViewWitness, collection: string, field: string, alignment: CellAlignment | null) {
     return changeRows(witness, () => runtime.setColumnAlignment(witness, collection, field, alignment), "column");
   }
@@ -2392,6 +2396,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onSetColumnRequiredness={copies.createWorkFile ? setColumnRequiredness : undefined}
           onSetColumnConstraint={copies.createWorkFile ? setColumnConstraint : undefined}
           onSetColumnWidth={copies.createWorkFile ? setColumnWidth : undefined}
+          onSetCellStyle={copies.createWorkFile ? setCellStyle : undefined}
           onSetColumnAlignment={copies.createWorkFile ? setColumnAlignment : undefined}
           onSetColumnDateFormat={copies.createWorkFile ? setColumnDateFormat : undefined}
           onSetColumnNumberFormat={copies.createWorkFile ? setColumnNumberFormat : undefined}

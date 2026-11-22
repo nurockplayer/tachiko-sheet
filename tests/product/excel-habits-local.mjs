@@ -1127,7 +1127,25 @@ const cases = [
     await page.keyboard.press("Control+b");
     await settle(page);
     const weight = await page.getByTestId(id).evaluate((node) => Number(getComputedStyle(node).fontWeight));
-    assert.ok(weight >= 600, `Ctrl+B left the cell at font-weight ${weight}; there is no cell formatting`);
+    assert.ok(weight >= 600, `Ctrl+B left the cell at font-weight ${weight}`);
+    await page.keyboard.press("Control+i");
+    await settle(page);
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).fontStyle), "italic");
+    await page.getByLabel("Fill colour").fill("#ffff00");
+    await settle(page);
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).backgroundColor), "rgb(255, 255, 0)");
+    await page.getByRole("button", { name: "All borders" }).click();
+    await settle(page);
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).borderTopStyle), "solid");
+    assert.deepEqual(fieldAt(await projection(page), 0, 0)?.stored, fieldAt(table, 0, 0)?.stored, "formatting changed the cell value or formula");
+    await page.getByTestId(id).click();
+    await page.keyboard.press("Control+b");
+    await settle(page);
+    assert.ok(await page.getByTestId(id).evaluate(node => Number(getComputedStyle(node).fontWeight)) < 600, "Ctrl+B did not remove bold");
+    await page.keyboard.press("Control+i");
+    await settle(page);
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).fontStyle), "normal");
+
   } },
   { id: "29", name: "Number display", tier: "A", run: async (page) => {
     await newTable(page, "Percent", [{ name: "Name" }, { name: "Rate", type: "number" }]);

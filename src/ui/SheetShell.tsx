@@ -75,7 +75,7 @@ import { ColumnRuleDialog } from "./ColumnRuleDialog.js";
 import { ColumnAlignmentDialog } from "./ColumnAlignmentDialog.js";
 import { ColumnFormatDialog } from "./ColumnFormatDialog.js";
 import { columnFormatSettlement, nextStripAlignment, nextStripNumberFormat, type StripNumberAction } from "./column-format.js";
-import type { DateFormat } from "../../public/core-kit/runtime/protocol.js";
+import type { CellStyleChange, DateFormat } from "../../public/core-kit/runtime/protocol.js";
 import { columnRuleKind } from "./column-rule.js";
 import { duplicateLanding, supportsDuplicateTable } from "./duplicate-table.js";
 import { DRAFT_ROW, draftInitializers, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
@@ -564,7 +564,7 @@ export function SheetShell(props: SheetShellProps) {
     onAddColumn,
     onSetColumnRequiredness,
     onSetColumnConstraint,
-    onSetColumnNumberFormat, onSetColumnDateFormat, onSetColumnAlignment, onSetColumnWidth,
+    onSetColumnNumberFormat, onSetColumnDateFormat, onSetColumnAlignment, onSetCellStyle, onSetColumnWidth,
     onRenameColumn,
     onRemoveColumn,
     onMoveColumn,
@@ -3816,6 +3816,16 @@ export function SheetShell(props: SheetShellProps) {
     });
   }, [view, commitPending, tab, addSheetFocus]);
 
+  function formatSelection(change: CellStyleChange): void {
+    const position = focusedCell();
+    if (!position || position.entity === DRAFT_ROW || !table || !witness || !onSetCellStyle || controlsLocked || cellDraftActive || formulaDraftActive) return;
+    const at = address(position);
+    const area = selectionRectangle ?? rectangle(at, at);
+    const entities = displayRows.slice(area.top, area.bottom + 1).map(rowEntity);
+    const fields = columns.slice(area.left, area.right + 1).map(column => column.id);
+    void runStripCommand(() => onSetCellStyle(witness, table.collection.key, entities, fields, [change]), "selection");
+  }
+
   function onCellKeyDown(
     event: ReactKeyboardEvent<HTMLTableCellElement>,
     entity: string,
@@ -3824,6 +3834,11 @@ export function SheetShell(props: SheetShellProps) {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     const draft = entity === DRAFT_ROW;
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown", "Escape"].includes(event.key) || (event.key === "Enter" && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey))) tabRunStartRef.current = null;
+    if (!draft && !editor && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && ["b", "i"].includes(event.key.toLowerCase()) && clipboardPosition(event.target)) {
+      event.preventDefault();
+      if (!event.repeat) formatSelection({ kind: event.key.toLowerCase() === "b" ? "toggle_bold" : "toggle_italic" });
+      return;
+    }
     // Paste Special: its choices at the cell (Ctrl+Alt+V, or Ctrl+⌘V on a Mac), or values straight away (Ctrl+Shift+V, ⌘⇧V).
     if (!draft && !editor && event.key.toLowerCase() === "v") {
       if (event.ctrlKey && (event.altKey || event.metaKey) && !event.shiftKey) {
@@ -5731,6 +5746,14 @@ export function SheetShell(props: SheetShellProps) {
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
         <div className="ts-actions ts-row-actions ts-table-row-actions">
           {focusedColumn ? <div role="toolbar" aria-label="Format" className="ts-format-strip">
+            {onSetCellStyle ? <>
+              <button type="button" className="ts-button" aria-label="Bold" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "toggle_bold" })}><b>B</b></button>
+              <button type="button" className="ts-button" aria-label="Italic" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "toggle_italic" })}><i>I</i></button>
+              <label>Fill <input aria-label="Fill colour" type="color" disabled={columnChangesBlocked} onChange={event => formatSelection({ kind: "fill", color: event.currentTarget.value })} /></label>
+              <button type="button" className="ts-button" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "fill", color: null })}>No fill</button>
+              <button type="button" className="ts-button" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "border", target: "all", value: true })}>All borders</button>
+              <button type="button" className="ts-button" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "border", target: "all", value: false })}>No borders</button>
+            </> : null}
             {onSetColumnAlignment ? ([ ["left", "Align left", "≡←"], ["center", "Align center", "≡"], ["right", "Align right", "→≡"] ] as const).map(([value, label, glyph]) => <button key={value} type="button" className="ts-button" aria-label={label} title={label} aria-pressed={focusedColumn.style?.alignment === value} aria-disabled={stripPending || undefined} disabled={(columnChangesBlocked && !stripPending) || !witness} onClick={() => {
               if (!witness) return;
               void runStripCommand(() => onSetColumnAlignment(witness, table.collection.key, focusedColumn.id, nextStripAlignment(focusedColumn.style?.alignment, value)), focusedColumnName, true);
@@ -6091,6 +6114,8 @@ export function SheetShell(props: SheetShellProps) {
     if (fillPreviewed) classes.push("ts-cell--fill-preview");
     if (editing) classes.push("ts-cell--editing");
     if (focusedKey === key) classes.push("ts-cell--focused");
+    const cellStyle = row?.styles?.[columns.findIndex(item => item.id === column.id)];
+    const borderSides = cellStyle?.border_sides ?? (cellStyle?.border ? ["top", "right", "bottom", "left"] : []);
     return (
       <td
         key={column.id}
@@ -6099,7 +6124,7 @@ export function SheetShell(props: SheetShellProps) {
           else cellRefs.current.delete(key);
         }}
         className={classes.join(" ")}
-        style={{ textAlign: column.style?.alignment ?? (column.field_type === "number" || column.field_type === "date" ? "right" : column.field_type === "boolean" ? "center" : "left") }}
+        style={{ textAlign: column.style?.alignment ?? (column.field_type === "number" || column.field_type === "date" ? "right" : column.field_type === "boolean" ? "center" : "left"), fontWeight: cellStyle?.bold ? 700 : undefined, fontStyle: cellStyle?.italic ? "italic" : undefined, backgroundColor: cellStyle?.fill ?? undefined, borderTop: borderSides.includes("top") ? "1px solid black" : undefined, borderRight: borderSides.includes("right") ? "1px solid black" : undefined, borderBottom: borderSides.includes("bottom") ? "1px solid black" : undefined, borderLeft: borderSides.includes("left") ? "1px solid black" : undefined }}
         data-testid={`cell:${entity}:${column.id}`}
         data-entry-field={draft ? column.id : undefined}
         aria-label={draft ? `New row ${column.display_name} (${column.field_type === "boolean" ? "Yes/No" : column.field_type === "number" ? "Number" : column.field_type === "date" ? "Date" : "Text"})` : undefined}
