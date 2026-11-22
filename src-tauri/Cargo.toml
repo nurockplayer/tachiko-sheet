@@ -43,6 +43,8 @@ windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Stor
 [target.'cfg(target_os = "linux")'.dependencies]
 # Already locked through Tauri; invoke WebKit's native Paste without libxdo.
 webkit2gtk = "=2.0.2"
+# Already locked through Tauri; the e2e driver activates the GTK menu's Paste.
+gtk = "=0.18.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Already in the graph through tao/wry; used only to route application
