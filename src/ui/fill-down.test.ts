@@ -95,6 +95,14 @@ describe("fill down request planning", () => {
 });
 
 describe("directional fill planning", () => {
+  it.each([0, 2])("refuses a sideways formula copy into column %s", destination => {
+    const rows = [row(0, { a: "1", b: "2", c: "3" }, ["b"])];
+    const source = { top: 0, left: 1, bottom: 0, right: 1 };
+    const area = { ...source, left: Math.min(1, destination), right: Math.max(1, destination) };
+    expect(() => fillDownPlan(rows, [...columns, column("c")], area, true, true, source))
+      .toThrow("Filling formulas sideways is not available yet.");
+  });
+
   it("copies each value in a column horizontally in one batch", () => {
     const rows = [row(0, { a: "x", b: "old" }), row(1, { a: "y", b: "old" })];
     expect(fillDownPlan(rows, columns, { top: 0, left: 0, bottom: 1, right: 1 }, true, true, { top: 0, left: 0, bottom: 1, right: 0 })).toEqual({
@@ -105,15 +113,15 @@ describe("directional fill planning", () => {
     });
   });
 
-  it.each([false, true])("delegates upward/leftward formula references to Work (horizontal=%s)", horizontal => {
+  it("delegates upward formula references to Work", () => {
     const rows = [row(0, { a: "1", b: "2" }), row(1, { a: "3", b: "4" }, ["b"])];
     const source = { top: 1, left: 1, bottom: 1, right: 1 };
-    const area = horizontal ? { ...source, left: 0 } : { ...source, top: 0 };
+    const area = { ...source, top: 0 };
     expect(fillDownPlan(rows, columns, area, true, true, source)).toEqual({
       kind: "formula", count: 1, request: {
         source: { entity: "entity-1", field: "b" },
-        destinations: [{ entity: horizontal ? "entity-1" : "entity-0", field: horizontal ? "a" : "b" }],
-        fixed_references: [], relative_rows: false, relative_columns: horizontal,
+        destinations: [{ entity: "entity-0", field: "b" }],
+        fixed_references: [], relative_rows: false, relative_columns: false,
       },
     });
   });

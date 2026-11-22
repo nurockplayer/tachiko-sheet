@@ -956,15 +956,37 @@ const cases = [
     assert.deepEqual(await directionValues(), before, "one Undo did not restore the right fill");
     await checkDirectionSelection([0], [1, 2, 3], 0, 1);
 
-    await replaceCell(page, id(0, 3), "=C2*2");
     await page.getByTestId(id(0, 3)).click();
     before = await directionValues();
     await dragHandleTo(0, 1);
-    assert.deepEqual((await directionValues()).slice(0, 4), ["2", "4", "8", "16"], "left fill did not shift relative columns");
+    assert.deepEqual((await directionValues()).slice(0, 4), ["2", "9", "9", "9"], "left value fill did not copy the source");
     await checkDirectionSelection([0], [1, 2, 3], 0, 3);
     await page.keyboard.press("Control+z"); await settle(page);
-    assert.deepEqual(await directionValues(), before, "one Undo did not restore the left fill");
+    assert.deepEqual(await directionValues(), before, "one Undo did not restore the left value fill");
     await checkDirectionSelection([0], [1, 2, 3], 0, 3);
+
+    // TODO: enable sideways relative formula fills after https://github.com/nurockplayer/tachiko-work/issues/901.
+    await replaceCell(page, id(0, 3), "=C2*2");
+    await page.getByTestId(id(0, 3)).click();
+    before = await directionValues();
+    const selectedBeforeLeft = await selectedCount(page);
+    await dragHandleTo(0, 1);
+    assert.deepEqual(await directionValues(), before, "refused left formula fill changed cells");
+    assert.equal(await selectedCount(page), selectedBeforeLeft, "refused left formula fill changed selection");
+    assert.equal(await activeId(page), id(0, 3));
+    assert.equal((await page.locator(".ts-clipboard-status").first().textContent()).trim(), "Filling formulas sideways is not available yet.");
+
+    await replaceCell(page, id(0, 2), "=B2*2");
+    await page.getByTestId(id(0, 2)).click();
+    const beforeRightRefusal = await directionValues();
+    const selectedBeforeRight = await selectedCount(page);
+    await dragHandleTo(0, 3);
+    assert.deepEqual(await directionValues(), beforeRightRefusal, "refused right formula fill changed cells");
+    assert.equal(await selectedCount(page), selectedBeforeRight, "refused right formula fill changed selection");
+    assert.equal(await activeId(page), id(0, 2));
+    assert.equal((await page.locator(".ts-clipboard-status").first().textContent()).trim(), "Filling formulas sideways is not available yet.");
+    await page.keyboard.press("Control+z"); await settle(page);
+    assert.deepEqual(await directionValues(), before, "refused formula fill added an Undo step");
 
     await replaceCell(page, id(2, 3), "=A4*2");
     await page.getByTestId(id(2, 3)).click();

@@ -25,7 +25,7 @@ export const FORMULA_COPY_AXES: Pick<FormulaCopy, "fixed_references" | "relative
  * filter). A reference to the formula's own row follows the row; a reference
  * to another row stays on that row. Formula fill is only offered when display
  * order and stored order agree. The optional source identifies a handle drag;
- * horizontal copies delegate column offsets to Work as well.
+ * sideways formula sources are refused until Work supports their references.
  */
 export function fillDownPlan(rows: readonly TableRow[], columns: readonly TableColumn[], area: CellRectangle | null, native: boolean, stored = true, source?: CellRectangle): FillDownPlan {
   if (!area || (!source && area.bottom <= area.top)) throw new FillDownRefusal("Select at least two rows to fill down.");
@@ -58,6 +58,7 @@ export function fillDownPlan(rows: readonly TableRow[], columns: readonly TableC
       const field = fieldForColumn(sourceRow, sourceColumn.id);
       const slot = cellEditSlot(row, column);
       if (field?.formula != null) {
+        if (horizontal) throw new FillDownRefusal("Filling formulas sideways is not available yet.");
         if (source.left !== source.right || source.top !== source.bottom) throw new FillDownRefusal("Fill a formula down one column at a time. Nothing was filled.");
         if (!stored) throw new FillDownRefusal("Clear the sort and filter to fill a formula down. Nothing was filled.");
         const targetField = fieldForColumn(row, column.id);
@@ -74,6 +75,6 @@ export function fillDownPlan(rows: readonly TableRow[], columns: readonly TableC
     }
   }
   return formulaSource
-    ? { kind: "formula", request: { source: formulaSource, destinations, ...FORMULA_COPY_AXES, relative_columns: horizontal }, count }
+    ? { kind: "formula", request: { source: formulaSource, destinations, ...FORMULA_COPY_AXES }, count }
     : { kind: "values", edits, count };
 }
