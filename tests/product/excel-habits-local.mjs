@@ -1944,6 +1944,140 @@ const cases = [
     }
     assert.ok((await panel.getByRole("listitem").filter({ hasText: "Travel" }).innerText()).includes("50%"), "the pie's legend doesn't give Travel's share");
   } },
+
+  { id: "N1", name: "Command discoverability", tier: "A", manualAfterRun: true, note: "A new Excel user's 30-second discovery test and native menu labels need a human; browser command reachability checked.", run: async (page) => {
+    await home(page);
+    const missing = [];
+    const reachable = async (label, control) => {
+      if (!await control.isVisible() || !await control.isEnabled()) missing.push(label);
+    };
+    await reachable("New", page.getByRole("button", { name: "New table", exact: true }));
+    await openReleasePlanExample(page);
+    await ready(page);
+    await reachable("Save", page.getByRole("button", { name: "Save", exact: true }));
+    const table = await projection(page);
+    await page.getByTestId(cellIdFor(table, 0, 0)).click();
+    await reachable("Bold", page.getByRole("button", { name: "Bold", exact: true }));
+    const column = table.columns[0].display_name;
+    await page.getByRole("columnheader", { name: column, exact: true }).hover();
+    await page.getByRole("button", { name: `Column actions for ${column}`, exact: true }).click();
+    await reachable("Sort", page.getByRole("button", { name: "Sort A → Z", exact: true }));
+    await reachable("Filter", page.getByRole("button", { name: "Filter…", exact: true }));
+    assert.deepEqual(missing, [], `commands not reachable from visible chrome: ${missing.join(", ")}`);
+  } },
+  { id: "N2", name: "Grid chrome", tier: "A", run: async (page) => {
+    await newTable(page, "Grid chrome", [{ name: "One" }, { name: "Two" }, { name: "Three" }]);
+    // Inspect the new sheet before any grid click, focus or selection.
+    const missing = await page.getByRole("grid", { name: "Table", exact: true }).evaluate((grid) => {
+      const missing = [];
+      const visible = (node) => node && node.checkVisibility() && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
+      const ink = (color) => color !== "transparent" && !/rgba\([^)]*, 0\)$/.test(color);
+      for (const letter of ["A", "B", "C"]) {
+        const heading = grid.querySelector(`.ts-column-heading[data-column-letter="${letter}"]`);
+        const style = heading && getComputedStyle(heading, "::before");
+        if (!visible(heading) || ![`"${letter}"`, "attr(data-column-letter)"].includes(style.content) || style.display === "none" || !ink(style.color)) missing.push(`column ${letter}`);
+      }
+      const rowHeads = [...grid.querySelectorAll("th[scope='row'], .ts-gutter-head")].filter(visible);
+      for (const number of ["1", "2", "3"]) {
+        if (!rowHeads.some((node) => node.textContent.trim() === number || ([`"${number}"`, "attr(data-row-number)"].includes(getComputedStyle(node, "::before").content) && node.dataset.rowNumber === number))) missing.push(`row ${number}`);
+      }
+      const cell = grid.querySelector("td");
+      const style = cell && getComputedStyle(cell);
+      if (!visible(cell) || !["Right", "Bottom"].every((edge) => parseFloat(style[`border${edge}Width`]) > 0 && style[`border${edge}Style`] !== "none" && ink(style[`border${edge}Color`]))) missing.push("gridlines");
+      const active = grid.querySelector(".ts-cell--focused");
+      const outline = active && getComputedStyle(active);
+      if (!visible(active) || parseFloat(outline.outlineWidth) === 0 || outline.outlineStyle === "none" || !ink(outline.outlineColor)) missing.push("active-cell outline without interaction");
+      return missing;
+    });
+    assert.deepEqual(missing, [], `new sheet does not show ${missing.join(", ")} at once`);
+  } },
+  { id: "N3", name: "Status bar statistics", tier: "A", run: async (page) => {
+    await newTable(page, "Statistics", [{ name: "Amount", type: "number" }]);
+    for (const [index, value] of ["10", "20", "30"].entries()) await addRow(page, [value], index + 1);
+    const table = await projection(page);
+    await dragCells(page, cellIdFor(table, 0, 0), cellIdFor(table, 2, 0));
+    const statistics = page.getByTestId("selection-statistics");
+    await statistics.waitFor();
+    assert.ok(await statistics.isVisible(), "selecting 10, 20, 30 shows no status bar statistics");
+    for (const [key, expected] of [["count", "3"], ["sum", "60"], ["average", "20"]]) {
+      const value = statistics.getByTestId(`selection-${key}`);
+      await value.waitFor();
+      assert.equal((await value.textContent()).trim(), expected, `selection ${key} is not ${expected} for 10, 20, 30`);
+    }
+  } },
+  { id: "N4", name: "Saved state", tier: "A", run: async (page) => {
+    await example(page);
+    const title = page.locator(".ts-document-identity h1");
+    const named = async () => {
+      assert.ok(await title.isVisible() && (await title.textContent()).trim(), "the document name is not visible");
+    };
+    await named();
+    const table = await projection(page);
+    const id = cellIdFor(table, 0, 0);
+    await replaceCell(page, id, "Unsaved edit");
+    const status = page.getByTestId("save-status");
+    assert.ok(await status.isVisible(), "the Saved/Unsaved state is not visible after editing");
+    assert.match(await status.textContent(), /unsaved|not saved/i, "editing does not show Unsaved");
+    await named();
+    await saveCopy(page, "habits-N4");
+    await status.filter({ hasText: "Saved on this device" }).waitFor();
+    await named();
+    await replaceCell(page, id, "Failed save edit");
+    assert.match(await status.textContent(), /unsaved|not saved/i, "editing saved work still shows Saved");
+    // Fail the actual device write, without changing canonical state or save logic.
+    await page.evaluate(() => {
+      const status = document.querySelector('[data-testid="save-status"]');
+      window.__habits.saveLabels = [status.textContent];
+      new MutationObserver(() => window.__habits.saveLabels.push(status.textContent)).observe(status, { childList: true, characterData: true, subtree: true });
+      const transaction = IDBDatabase.prototype.transaction;
+      IDBDatabase.prototype.transaction = function (stores, mode, options) {
+        if (this.name === "tachiko-sheet-local-copies" && mode === "readwrite") throw new DOMException("Habits N4 save failure", "QuotaExceededError");
+        return transaction.call(this, stores, mode, options);
+      };
+    });
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await status.filter({ hasText: "Save failed" }).waitFor();
+    assert.ok(await status.isVisible(), "the failed-save state is not visible");
+    assert.ok((await page.evaluate(() => window.__habits.saveLabels)).every((label) => !/^Saved\b/i.test(label.trim())), "the failed save showed Saved");
+    await named();
+  } },
+  { id: "N16", name: "In-cell formula errors", tier: "A", run: async (page) => {
+    await newTable(page, "Formula errors", [{ name: "Label" }, { name: "Amount", type: "number" }]);
+    for (const [index, label] of ["division", "reference", "lookup"].entries()) await addRow(page, [label, "1"], index + 1);
+    const table = await projection(page);
+    const missing = [];
+    const formulas = [["=1/0", "#DIV/0!"], ["=Z999999", "#REF!"], ['=VLOOKUP("missing",A2:B4,2,FALSE)', "#N/A"]];
+    for (const [row, [formula, expected]] of formulas.entries()) {
+      await replaceCell(page, cellIdFor(table, row, 1), formula);
+      const actual = await cellText(page, table, row, 1);
+      if (actual !== expected) missing.push(`${formula} shows ${JSON.stringify(actual)}, expected ${expected} in its cell`);
+      await page.keyboard.press("Escape");
+      const label = `Still editable ${row}`;
+      await replaceCell(page, cellIdFor(table, row, 0), label);
+      assert.equal(await cellText(page, table, row, 0), label, `other cells stopped working after ${formula}`);
+      assert.equal(fieldAt(await projection(page), row, 0)?.stored?.value, label, `editing after ${formula} was not committed`);
+    }
+    assert.deepEqual(missing, [], missing.join("; "));
+  } },
+  { id: "N24", name: "Save semantics", tier: "A", manualAfterRun: true, note: "Native desktop verification must compare the opened XLSX and directory after Save for original-file update, stray copies and wrong-file overwrites; Chromium cannot write back an uploaded file.", run: async (page) => {
+    await home(page);
+    await (await homeImportInput(page)).setInputFiles(invoice);
+    const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
+    await dialog.waitFor();
+    for (const [index, type] of ["text", "number", "number", "number"].entries()) await dialog.locator(".ts-import-column select").nth(index).selectOption(type);
+    await dialog.getByRole("button", { name: "Import file", exact: true }).click();
+    await ready(page);
+    const table = await projection(page);
+    await replaceCell(page, cellIdFor(table, 0, 0), "Edited XLSX");
+    const save = page.getByRole("button", { name: "Save", exact: true });
+    const target = await save.getAttribute("title") ?? "";
+    await page.keyboard.press("Control+s");
+    await settle(page);
+    assert.ok(!await page.getByRole("dialog", { name: "Save a copy", exact: true }).isVisible(), "Save on an opened XLSX asks for a new copy; it does not update the original file");
+    assert.doesNotMatch(target, /file you opened from is not changed/i, "Save explicitly leaves the opened XLSX unchanged");
+    assert.ok(target.includes("invoice.xlsx"), `Save does not identify the opened XLSX target: ${target}`);
+    assert.ok(await page.getByRole("button", { name: "Save a copy", exact: true }).isVisible(), "Save a Copy is not a separate command");
+  } },
 ];
 
 function withTimeout(promise, ms) {
@@ -1957,9 +2091,9 @@ function withTimeout(promise, ms) {
 const results = [];
 let harnessBroke = false;
 const baseIds = Array.from({ length: 52 }, (_, index) => String(index + 1).padStart(2, "0"));
-const expectedIds = [...baseIds.slice(0, 21), "21a", ...baseIds.slice(21), "53"];
+const expectedIds = [...baseIds.slice(0, 21), "21a", ...baseIds.slice(21), "53", "N1", "N2", "N3", "N4", "N16", "N24"];
 if (cases.length !== expectedIds.length || cases.some((testCase, index) => testCase.id !== expectedIds[index] || !testCase.name)) {
-  console.error(`HARNESS: the case list is not 52 ids 01-52 plus 21a and 53 (got ${cases.length}).`);
+  console.error(`HARNESS: the case list is not 01-52 plus 21a, 53, N1-N4, N16 and N24 (got ${cases.length}).`);
   await browser.close();
   process.exit(1);
 }
@@ -1979,7 +2113,7 @@ if (cases.length !== expectedIds.length || cases.some((testCase, index) => testC
   }
 }
 
-// HABITS_ONLY=33,39 runs just those cases while working on them.
+// HABITS_ONLY=33,N3 runs just those cases while working on them.
 const only = process.env.HABITS_ONLY?.split(",");
 for (const testCase of cases) {
   if (only && !only.includes(testCase.id)) continue;
@@ -1999,6 +2133,7 @@ for (const testCase of cases) {
   let error;
   try {
     await withTimeout(testCase.run(page), testCase.budgetMs ?? CASE_TIMEOUT_MS);
+    if (testCase.manualAfterRun) outcome = "MANUAL";
   } catch (cause) {
     outcome = "GAP";
     const line = cause?.stack?.match(/excel-habits-local\.mjs:(\d+)/)?.[1];
