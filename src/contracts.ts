@@ -120,6 +120,7 @@ export interface SheetRuntime {
   /** Read Work's capacity accounting for a revision; null when the kit lacks the capability. */
   queryCapacity(expectedRevision?: string): Promise<CapacityProjection | null>;
   setColumnWidth(witness: ViewWitness, collection: string, field: string, width: number | null): Promise<ConfirmedPublication>;
+  setCellStyle(witness: ViewWitness, collection: string, entities: string[], fields: string[], changes: CellStyleChange[]): Promise<ConfirmedPublication>;
   setColumnAlignment(witness: ViewWitness, collection: string, field: string, alignment: CellAlignment | null): Promise<ConfirmedPublication>;
   setColumnDateFormat(witness: ViewWitness, collection: string, field: string, format: DateFormat | null): Promise<ConfirmedPublication>;
   setColumnNumberFormat(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null): Promise<ConfirmedPublication>;

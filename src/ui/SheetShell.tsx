@@ -3817,7 +3817,8 @@ export function SheetShell(props: SheetShellProps) {
   }, [view, commitPending, tab, addSheetFocus]);
 
   function formatSelection(change: CellStyleChange): void {
-    const position = focusedCell();
+    const [entity, field] = focusedKey?.split("\u0000") ?? [];
+    const position = entity && field ? { entity, field } : null;
     if (!position || position.entity === DRAFT_ROW || !table || !witness || !onSetCellStyle || controlsLocked || cellDraftActive || formulaDraftActive) return;
     const at = address(position);
     const area = selectionRectangle ?? rectangle(at, at);
