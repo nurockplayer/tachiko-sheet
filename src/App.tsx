@@ -888,7 +888,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     importBytesRef.current = null;
     preparedDownloadRef.current = null;
     setInterop(next.importMetadata ? {
-      importInspection: null, metadata: next.importMetadata, ledger: [], cleanupPreview: null, downloadStatus: "idle", downloadError: null,
+      importInspection: null, ledger: [], cleanupPreview: null, downloadStatus: "idle", downloadError: null,
+      ...provenance.interop, metadata: next.importMetadata,
     } : provenance.interop ?? null);
     cleanupPreviewContextRef.current = null;
     setCurrentness("current");
