@@ -1,3 +1,4 @@
+import { companionDigest, companionMetadata, IMPORT_COMPANION_NOTE } from "./host/import-companion.js";
 import { COLUMN_SAVE_UNAVAILABLE, DUPLICATE_SAVE_UNAVAILABLE, columnSavePreflightDecision, duplicateSavePreflightDecision } from "./application/column-save-preflight.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
@@ -886,7 +887,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     setImportMappingUntrusted(false);
     importBytesRef.current = null;
     preparedDownloadRef.current = null;
-    setInterop(provenance.interop ?? null);
+    setInterop(next.importMetadata ? {
+      importInspection: null, metadata: next.importMetadata, ledger: [], cleanupPreview: null, downloadStatus: "idle", downloadError: null,
+    } : provenance.interop ?? null);
     cleanupPreviewContextRef.current = null;
     setCurrentness("current");
     setOutcome("idle");
@@ -971,7 +974,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   /** React/ref adapter for the seam's recovery decision. Replacement/Open
    * retains its separate checkpoint policy: an unknown source is not an edit. */
   function installMutationRecovery(recovery: MutationRecovery): void {
-    if (recovery.kind === "unknown-outcome" && recovery.mappingUncertain && importedSourceRef.current) {
+    if (recovery.kind === "unknown-outcome" && recovery.mappingUncertain && (importedSourceRef.current || interop?.metadata)) {
       setImportMappingUntrusted(true);
       preparedDownloadRef.current = null;
     }
@@ -1002,8 +1005,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     installView, installHistory: installLocalHistory,
     acceptPublication: (publication) => {
       const metadata = publication.import_metadata;
-      if (!metadata || !importedSourceRef.current) return;
-      importedSourceRef.current = { ...importedSourceRef.current, metadata: structuredClone(metadata) };
+      if (!metadata) return;
+      if (importedSourceRef.current) importedSourceRef.current = { ...importedSourceRef.current, metadata: structuredClone(metadata) };
       setImportMappingUntrusted(false);
       setInterop((current) => current ? { ...current, metadata: structuredClone(metadata) } : current);
       preparedDownloadRef.current = null;
@@ -1108,7 +1111,11 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       setMessage(null);
       setCurrentness("pending");
       const bytes = await readWorkFile(file);
-      if ((await replaceWork(() => runtime.openWorkFile(bytes))).kind !== "confirmed") return;
+      const companion = await hostFiles.readImportCompanion?.(file, bytes);
+      const metadata = await companionMetadata(bytes, companion);
+      const opened = await replaceWork(() => metadata ? runtime.openWorkFile(bytes, metadata) : runtime.openWorkFile(bytes));
+      if (opened.kind !== "confirmed") return;
+      if (!metadata || !viewRef.current?.importMetadata) setMessage(IMPORT_COMPANION_NOTE);
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
     } catch (error) {
       if (error instanceof OpenedProjectionRecoveryError) {
@@ -1361,13 +1368,15 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       if (copy.kind !== "opaque" && copy.kind !== "work-file" && copy.importedSource) {
         await runtime.validateImportedProject(copy.files, copy.importedSource.metadata);
       }
+      const savedMetadata = (copy.kind === "opaque" || copy.kind === "work-file") && copy.importCompanion
+        ? await companionMetadata(copy.bytes, copy.importCompanion) : undefined;
       const candidateInterop = copy.importedSource ? {
         importInspection: null, metadata: copy.importedSource.metadata, ledger: copy.importedSource.ledger,
         cleanupPreview: null, downloadStatus: "idle" as const, downloadError: null,
       } : null;
       if ((await replaceWork(
-        () => copy.kind === "work-file" ? runtime.openWorkFile(copy.bytes)
-          : copy.kind === "opaque" ? runtime.openOpaque(copy.bytes, copy.importedSource?.metadata) : runtime.openCanonical(copy.files, copy.importedSource?.metadata),
+        () => copy.kind === "work-file" ? (savedMetadata ? runtime.openWorkFile(copy.bytes, savedMetadata) : runtime.openWorkFile(copy.bytes))
+          : copy.kind === "opaque" ? runtime.openOpaque(copy.bytes, savedMetadata ?? copy.importedSource?.metadata) : runtime.openCanonical(copy.files, copy.importedSource?.metadata),
         { importedSource: copy.importedSource ?? null, interop: candidateInterop, savedRevision: copy.revision, presentation, boundCopy: copy },
       )).kind !== "confirmed") return;
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
@@ -1604,7 +1613,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   async function prepareDownload(format: "csv" | "xlsx" | "ro"): Promise<boolean> {
-    if (format !== "ro" && importMappingUntrusted && importedSourceRef.current) {
+    if (format !== "ro" && importMappingUntrusted && (importedSourceRef.current || interop?.metadata)) {
       setMessage("The sheet names could not be confirmed. Download as .ro to keep your changes, or reopen the workbook.");
       return false;
     }
@@ -1627,6 +1636,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       preparedDownloadRef.current = {
         format, occurrence: live.occurrence, revision: exported.revision,
         collectionId: live.table.collection.id, bytes: exported.bytes.slice(0),
+        ...("importMetadata" in exported && exported.importMetadata ? { importMetadata: exported.importMetadata } : {}),
         ...(format === "ro" ? { omissions: currentWorkFileOmissions() } : {}),
       };
       // A finding about a column in another table needs that table's column
@@ -1647,7 +1657,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   async function download(format: "csv" | "xlsx" | "ro"): Promise<boolean> {
-    if (format !== "ro" && importMappingUntrusted && importedSourceRef.current) {
+    if (format !== "ro" && importMappingUntrusted && (importedSourceRef.current || interop?.metadata)) {
       setMessage("The sheet names could not be confirmed. Download as .ro to keep your changes, or reopen the workbook.");
       return false;
     }
@@ -1670,7 +1680,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       }
       const blob = new Blob([prepared.bytes], { type: format === "ro" ? "application/octet-stream" : format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       // The host saves it: a browser download, or the desktop Save panel.
-      await hostFiles.saveFile(`${live.title}.${format}`, blob);
+      const companion = prepared.importMetadata
+        ? { snapshotDigest: await companionDigest(prepared.bytes), metadata: prepared.importMetadata } : undefined;
+      if (companion) await hostFiles.saveFile(`${live.title}.${format}`, blob, companion);
+      else await hostFiles.saveFile(`${live.title}.${format}`, blob);
       preparedDownloadRef.current = null;
       setInterop((current) => current ? { ...current, downloadStatus: "idle", downloadError: null } : current);
       setOutcome("idle");
@@ -1805,7 +1818,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   function renameTable(witness: ViewWitness, collection: string, name: string) {
-    return changeRows(witness, () => runtime.renameTable(witness, collection, name), importedSourceRef.current?.format === "xlsx" ? null : "column", name, true);
+    return changeRows(witness, () => runtime.renameTable(witness, collection, name), (importedSourceRef.current?.format === "xlsx" || interop?.metadata) ? null : "column", name, true);
   }
 
   function deleteTable(witness: ViewWitness, collection: string) {
@@ -1834,7 +1847,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   }
 
   function addTable(witness: ViewWitness, name: string, columns: NewTableColumn[]) {
-    return changeRows(witness, () => runtime.addTable(witness, name, columns), importedSourceRef.current?.format === "xlsx" ? null : "add", name, true);
+    return changeRows(witness, () => runtime.addTable(witness, name, columns), (importedSourceRef.current?.format === "xlsx" || interop?.metadata) ? null : "add", name, true);
   }
 
   function querySelectionStatistics(witness: ViewWitness, selection: FieldTarget[] | SelectionStatisticsRange) {
@@ -1872,7 +1885,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   async function createCopy(name: string, expected?: SavedCopySummary): Promise<CreateCopyOutcome> {
     if (blockUnknownOpenRecovery()) return { saved: false, reason: "The copy was not created. Refresh to confirm the open work, or close it, then try again." };
-    if (importMappingUntrusted && importedSourceRef.current) {
+    if (importMappingUntrusted && (importedSourceRef.current || interop?.metadata)) {
       const reason = "The sheet names could not be confirmed. Download as .ro to keep your changes, or reopen the workbook.";
       setMessage(reason);
       return { saved: false, reason };
@@ -1930,6 +1943,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       requireCurrentSnapshot(snapshotRevision);
       const payload = {
         ...snapshot,
+        ...(snapshot.importMetadata ? { importCompanion: { snapshotDigest: await companionDigest(snapshot.bytes), metadata: snapshot.importMetadata } } : {}),
         importedSource: importedSourceRef.current ?? undefined,
         presentation,
       };
@@ -2257,6 +2271,12 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       if (savedRevisionRef.current !== next.revision) markNotSaved();
       setCurrentness("current");
       setOutcome("idle");
+      if (next.importMetadata) {
+        if (importedSourceRef.current) importedSourceRef.current = { ...importedSourceRef.current, metadata: next.importMetadata };
+        setInterop(current => ({ importInspection: null, ledger: [], cleanupPreview: null, downloadStatus: "idle", downloadError: null, ...current, metadata: next.importMetadata! }));
+        setImportMappingUntrusted(false);
+        preparedDownloadRef.current = null;
+      }
       if (recoveryDraftRef.current !== null) {
         setMessage(`An unconfirmed input was retained for review: ${recoveryDraftRef.current}`);
       }
@@ -2374,8 +2394,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onSetColumnAlignment={copies.createWorkFile ? setColumnAlignment : undefined}
           onSetColumnDateFormat={copies.createWorkFile ? setColumnDateFormat : undefined}
           onSetColumnNumberFormat={copies.createWorkFile ? setColumnNumberFormat : undefined}
-          onRenameTable={importedSourceRef.current?.format === "xlsx" || copies.createWorkFile ? renameTable : undefined}
-          onAddTable={importedSourceRef.current?.format === "xlsx" || copies.createWorkFile ? addTable : undefined}
+          onRenameTable={importedSourceRef.current?.format === "xlsx" || interop?.metadata || copies.createWorkFile ? renameTable : undefined}
+          onAddTable={importedSourceRef.current?.format === "xlsx" || interop?.metadata || copies.createWorkFile ? addTable : undefined}
           onDeleteTable={deleteTable}
           onRenameColumn={copies.createWorkFile ? renameColumn : undefined}
           onRemoveColumn={copies.createWorkFile ? removeColumn : undefined}

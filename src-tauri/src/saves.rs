@@ -198,7 +198,17 @@ impl Saves {
         });
     }
 
-    /// Create `destination` with `bytes` for the page of `epoch`, unless
+    /// Publish the durable companion first, then the unchanged .ro as the commit point.
+/// Both names are create-only. An interrupted save can leave only an orphan sidecar.
+pub fn write_with_companion(bytes: &[u8], companion: &[u8], destination: &Path) -> Result<(), WriteError> {
+    if std::fs::symlink_metadata(destination).is_ok() { return Err(WriteError::Exists); }
+    let mut sidecar = destination.as_os_str().to_os_string();
+    sidecar.push(".import-metadata.json");
+    write_new(companion, Path::new(&sidecar))?;
+    write_new(bytes, destination)
+}
+
+/// Create `destination` with `bytes` for the page of `epoch`, unless
     /// leaving was decided or the page is gone. Waits while leaving is being
     /// decided.
     pub async fn publish(
@@ -206,6 +216,16 @@ impl Saves {
         epoch: u64,
         bytes: Vec<u8>,
         destination: PathBuf,
+    ) -> Result<Published, WriteError> {
+        self.publish_with_companion(epoch, bytes, destination, None).await
+    }
+
+    pub async fn publish_with_companion(
+        &self,
+        epoch: u64,
+        bytes: Vec<u8>,
+        destination: PathBuf,
+        companion: Option<Vec<u8>>,
     ) -> Result<Published, WriteError> {
         loop {
             let changed = self.changed.notified();
@@ -221,7 +241,11 @@ impl Saves {
             }
             changed.await;
         }
-        let written = tauri::async_runtime::spawn_blocking(move || write_new(&bytes, &destination))
+        let written = tauri::async_runtime::spawn_blocking(move || {
+            if let Some(companion) = companion {
+                write_with_companion(&bytes, &companion, &destination)
+            } else { write_new(&bytes, &destination) }
+        })
             .await
             .unwrap_or_else(|_| {
                 Err(WriteError::Unconfirmed(io::Error::other(
@@ -518,6 +542,22 @@ mod tests {
             .filter_map(Result::ok)
             .filter(|entry| entry.file_name().to_string_lossy().starts_with('.'))
             .count()
+    }
+
+    #[test]
+    fn companion_is_durable_before_ro_and_existing_names_are_preserved() {
+        let dir = scratch("companion");
+        let destination = dir.join("book.ro");
+        let sidecar = dir.join("book.ro.import-metadata.json");
+        write_with_companion(b"unchanged-ro", b"opaque-companion", &destination).unwrap();
+        assert_eq!(std::fs::read(&destination).unwrap(), b"unchanged-ro");
+        assert_eq!(std::fs::read(&sidecar).unwrap(), b"opaque-companion");
+        assert!(matches!(write_with_companion(b"new", b"new-mapping", &destination), Err(WriteError::Exists)));
+        std::fs::remove_file(&destination).unwrap();
+        assert!(matches!(write_with_companion(b"new", b"new-mapping", &destination), Err(WriteError::Exists)));
+        assert!(!destination.exists());
+        assert_eq!(std::fs::read(&sidecar).unwrap(), b"opaque-companion");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

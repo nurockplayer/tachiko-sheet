@@ -15,8 +15,8 @@ vi.mock("../ui/SheetShell.js", () => ({ SheetShell: (props: SheetShellProps) => 
 } }));
 
 it.each([
-  ["rename", "publication"], ["rename", "reopen"], ["add", "publication"], ["delete", "publication"],
-])("keeps exports and Save refused after unknown %s and Refresh until authoritative %s", async (command, recovery) => {
+  ["rename", "publication"], ["rename", "inspect"], ["add", "publication"], ["delete", "publication"],
+])("keeps exports and Save refused after unknown %s until authoritative %s", async (command, recovery) => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const collection = { id: "s1", key: "s1", display_name: "Original", entity_count: 0 };
   const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1", requiresPortableSave: true,
@@ -79,8 +79,9 @@ it.each([
       runtime.renameTable.mockImplementation(async () => ({ view, publication: { ...publication, import_metadata: metadata } }));
       await act(async () => { await current().onRenameTable!({ occurrence: "o1", revision: "r1" }, "s1", "New"); });
     } else {
-      await act(async () => current().onClose());
-      await act(async () => current().onOpenSaved("Imported"));
+      runtime.read.mockResolvedValue({ ...view, importMetadata: metadata });
+      await act(async () => current().onRefresh());
+      expect(runtime.openOpaque).toHaveBeenCalledTimes(1);
     }
     for (const format of ["xlsx", "csv"] as const) {
       await act(async () => { expect(await current().onPrepareDownload!(format)).toBe(true); });

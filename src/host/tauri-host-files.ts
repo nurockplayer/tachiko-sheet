@@ -1,3 +1,5 @@
+import type { ImportCompanion } from "../contracts.js";
+import { fileCompanion } from "./import-companion.js";
 import { decodeOpenedFile } from "./opened-file";
 import { invoke } from "@tauri-apps/api/core";
 import type { HostFiles, SaveOutcome } from "./host-files.js";
@@ -33,13 +35,16 @@ export function encodeSaveFrame(saveEpoch: number, name: string, bytes: Uint8Arr
   return frame;
 }
 
-async function save(suggestedName: string, content: Blob | Promise<Blob>): Promise<SaveOutcome> {
+async function save(suggestedName: string, content: Blob | Promise<Blob>, companion?: ImportCompanion): Promise<SaveOutcome> {
   const bytes = new Uint8Array(await (await content).arrayBuffer());
-  const frame = encodeSaveFrame(await pageIdentity, suggestedName, bytes);
+  const metadata = companion ? encoder.encode(JSON.stringify(companion)) : new Uint8Array(0);
+  const payload = new Uint8Array(metadata.byteLength + bytes.byteLength);
+  payload.set(metadata); payload.set(bytes, metadata.byteLength);
+  const frame = encodeSaveFrame(await pageIdentity, suggestedName, payload);
   let outcome: string;
   try {
     // The id lets a transport retry of this save return its original receipt.
-    outcome = await invoke<string>("save_export", frame, { headers: { "tachiko-save-id": crypto.randomUUID() } });
+    outcome = await invoke<string>("save_export", frame, { headers: { "tachiko-save-id": crypto.randomUUID(), "tachiko-companion-length": String(metadata.byteLength) } });
   } catch (error) {
     // The host answers a failure with its own message; anything else means
     // the reply was lost and the file may or may not have been written.
@@ -57,11 +62,12 @@ export const tauriHostFiles: HostFiles = {
   async takeOpenedFile() {
     return decodeOpenedFile(new Uint8Array(await invoke<ArrayBuffer>("take_opened_file")));
   },
-  saveFile(suggestedName, content) {
+  readImportCompanion: fileCompanion,
+  saveFile(suggestedName, content, companion) {
     // Count and order the save before any await, so it is never invisible to
     // the guard and a slower encoding cannot be overtaken by a later save.
     pending += 1;
-    const run = queue.then(() => save(suggestedName, content));
+    const run = queue.then(() => save(suggestedName, content, companion));
     queue = run.catch(() => undefined);
     return run.finally(() => {
       pending -= 1;

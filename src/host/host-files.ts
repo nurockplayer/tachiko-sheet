@@ -1,3 +1,5 @@
+import type { ImportCompanion } from "../contracts.js";
+import { fileCompanion, retainCompanion } from "./import-companion.js";
 import type { OpenedFile } from "./opened-file";
 import { createContext, useContext } from "react";
 
@@ -19,14 +21,17 @@ export interface HostFiles {
    * Save `content` under a name the person can change. Rejects with a
    * readable message when nothing was saved because of a failure.
    */
-  saveFile(suggestedName: string, content: Blob | Promise<Blob>): Promise<SaveOutcome>;
+  saveFile(suggestedName: string, content: Blob | Promise<Blob>, companion?: ImportCompanion): Promise<SaveOutcome>;
+  readImportCompanion?(file: File, bytes: ArrayBuffer): Promise<ImportCompanion | undefined>;
   /** The file the OS or File > Open gave the desktop host, once; the browser has none. */
   takeOpenedFile?(): Promise<OpenedFile | null>;
 }
 
 /** The browser: an ordinary download of a fresh object URL. */
 export const BROWSER_HOST_FILES: HostFiles = {
-  async saveFile(suggestedName, content) {
+  readImportCompanion: fileCompanion,
+  async saveFile(suggestedName, content, companion) {
+    if (companion) await retainCompanion(companion);
     const blob = await content;
     const href = URL.createObjectURL(blob);
     const anchor = document.createElement("a");

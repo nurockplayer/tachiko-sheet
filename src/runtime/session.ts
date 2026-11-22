@@ -475,12 +475,16 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         }
         continue;
       }
+      const inspect = capability(client.inspectCurrentProject, "current project inspection");
+      const inspection = await afterUsable(expected, dispatch(kit, () => inspect.call(client)));
+      requireCurrentProjectionRevision(occurrence.revision, inspection.revision, "current project inspection");
       columnsRevision = loaded.columnsRevision;
       readDisplay = loaded.display;
       liveRead = {
         collection: key,
         view: {
           title: bootstrap.title,
+          ...(inspection.import_metadata ? { importMetadata: inspection.import_metadata } : {}),
           ...(openedFromWorkFile ? { openedFromWorkFile: true } : {}),
           ...(requiresPortableSave ? { requiresPortableSave: true } : {}),
           occurrence: occurrence.scope,
@@ -704,7 +708,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
-  async function openWorkFile(bytes: ArrayBuffer): Promise<WorkbookView> {
+  async function openWorkFile(bytes: ArrayBuffer, importedMetadata?: InteropMetadata): Promise<WorkbookView> {
     requireWorkFileSize(bytes.byteLength);
     const requestedAt = epoch;
     const transfer = bytes.slice(0);
@@ -714,6 +718,20 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       assertNotReplaced(requestedAt);
       // Verify is read-only. Refused packages cannot replace the current work.
       await afterNotReplaced(requestedAt, dispatch(kit, () => client.verifyPortableRo(transfer.slice(0))));
+      if (importedMetadata) {
+        const inspect = capability(client.inspectImportedProjectWorkingSize, "working-size imported-project inspection");
+        let accepted = true;
+        try {
+          await afterNotReplaced(requestedAt, dispatch(kit, () => inspect.call(client, transfer.slice(0), importedMetadata)));
+        } catch (error) {
+          if (!(typeof kit.DesignerRuntimeError === "function" && error instanceof kit.DesignerRuntimeError)) throw error;
+          accepted = false;
+        }
+        if (accepted) {
+          const open = capability(client.openImportedProjectWorkingSize, "working-size imported-project open");
+          return openSession(kit, client, requestedAt, () => open.call(client, transfer, importedMetadata), true);
+        }
+      }
       const open = capability(client.openPortableRoWorkingSize, "working-size work-file open");
       return openSession(kit, client, requestedAt, () => open.call(client, transfer), true);
     });
@@ -1430,7 +1448,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       assertUsable(expected);
       const project = await afterUsable(expected, dispatch(kit, () => client.exportProjectV3(live.revision)));
       requireCurrentProjectionRevision(live.revision, project.revision, "opaque project export");
-      return { revision: project.revision, bytes: project.bytes.slice(0) };
+      return { revision: project.revision, bytes: project.bytes.slice(0), ...(project.import_metadata ? { importMetadata: project.import_metadata } : {}) };
     });
   }
 
@@ -1442,7 +1460,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       assertUsable(expected);
       const project = await afterUsable(expected, dispatch(kit, () => client.exportPortableRo(live.revision)));
       requireCurrentProjectionRevision(live.revision, project.revision, "work file export");
-      return { revision: project.revision, bytes: project.bytes.slice(0) };
+      return { revision: project.revision, bytes: project.bytes.slice(0), ...(project.import_metadata ? { importMetadata: project.import_metadata } : {}) };
     });
   }
 

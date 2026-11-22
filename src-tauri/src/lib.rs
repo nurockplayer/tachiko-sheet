@@ -483,7 +483,14 @@ async fn save_export(
         Claim::Run => {}
     }
     let outcome = match request.body() {
-        tauri::ipc::InvokeBody::Raw(frame) => save_frame(&app, &saves, frame).await,
+        tauri::ipc::InvokeBody::Raw(frame) => {
+            let length = request.headers().get("tachiko-companion-length")
+                .and_then(|value| value.to_str().ok()).unwrap_or("0").parse::<usize>();
+            match length {
+                Ok(length) => save_frame(&app, &saves, frame, length).await,
+                Err(_) => Err("The companion could not be read. Nothing was saved.".to_owned()),
+            }
+        },
         // Not a frame this page sent: the save's real outcome is unknown here.
         tauri::ipc::InvokeBody::Json(_) => Err(
             "The export may not have been saved. Check the destination before relying on it."
@@ -496,10 +503,14 @@ async fn save_export(
 
 const SAVE_ID_HEADER: &str = "tachiko-save-id";
 
-async fn save_frame(app: &AppHandle, saves: &Saves, frame: &[u8]) -> Result<String, String> {
+async fn save_frame(app: &AppHandle, saves: &Saves, frame: &[u8], companion_length: usize) -> Result<String, String> {
     let Some((epoch, name, bytes)) = parse_save_frame(frame) else {
         return Err("The export could not be read. Nothing was saved.".to_owned());
     };
+    if companion_length > 4 * 1024 * 1024 || companion_length > bytes.len() {
+        return Err("The companion could not be read. Nothing was saved.".to_owned());
+    }
+    let (companion, bytes) = bytes.split_at(companion_length);
     #[cfg(feature = "e2e")]
     e2e::log(&format!("save requested {name}"));
     // One Save sheet at a time; the leave decision never waits on this.
@@ -507,7 +518,7 @@ async fn save_frame(app: &AppHandle, saves: &Saves, frame: &[u8]) -> Result<Stri
     let Some(destination) = choose_destination(app, &name).await else {
         return Ok("cancelled".to_owned());
     };
-    let published = saves.publish(epoch, bytes.to_vec(), destination).await;
+    let published = saves.publish_with_companion(epoch, bytes.to_vec(), destination, (!companion.is_empty()).then(|| companion.to_vec())).await;
     #[cfg(feature = "e2e")]
     e2e::log(&format!("saved {name}: {published:?}"));
     match published {

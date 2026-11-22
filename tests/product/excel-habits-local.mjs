@@ -1,3 +1,4 @@
+import { standaloneImportedRoReopen } from "./imported-ro-journey.mjs";
 // #305: one named case per Excel-feel habit. This harness only reports what the
 // product does today; it never changes product code and never softens a check.
 // Every case drives real input through Chromium on Linux, so Ctrl shortcuts.
@@ -938,7 +939,7 @@ const cases = [
     await settle(page);
     assert.equal((await projection(page)).rows.length, 4, "Ctrl+= inserted no record between existing records");
   } },
-  { id: "24", name: "Workbook sheets", tier: "A", note: "Native work only; imported lifecycle remains Work #859 and row 24 stays a gap.", budgetMs: 60_000, run: async () => {
+  { id: "24", name: "Workbook sheets", tier: "A", note: "Native and imported add/rename/delete; standalone .ro names/order and XLSX re-import are exercised by the same journey as workbook-tabs step 8.", budgetMs: 120_000, run: async () => {
     const profile = await mkdtemp(path.join(tmpdir(), "habits-24-"));
     let context;
     const open = async () => {
@@ -1014,6 +1015,29 @@ const cases = [
       await ready(reopened);
       assert.deepEqual(await reopened.locator(".ts-table-tab").allTextContents(), expectedNames,
         "worksheet names or Work's order changed after save, browser restart and reopen");
+      await reopened.getByRole("button", { name: "Close project", exact: true }).click();
+      await (await homeImportInput(reopened)).setInputFiles(invoice);
+      const preview = reopened.getByRole("dialog", { name: "Review import preview", exact: true });
+      await preview.waitFor();
+      await preview.getByRole("button", { name: "Import file", exact: true }).click();
+      await ready(reopened);
+      const importedTabs = reopened.locator(".ts-table-tab");
+      const original = await importedTabs.first().textContent();
+      await reopened.getByRole("button", { name: "Add sheet", exact: true }).click(); await settle(reopened);
+      await reopened.getByRole("button", { name: "Add sheet", exact: true }).click(); await settle(reopened);
+      await importedTabs.first().click({ button: "right" });
+      await reopened.getByRole("menuitem", { name: "Rename sheet…", exact: true }).click();
+      const rename = reopened.getByRole("dialog", { name: "Rename sheet", exact: true });
+      await rename.getByLabel("Sheet name").fill("Imported renamed");
+      await rename.getByRole("button", { name: "Rename", exact: true }).click(); await settle(reopened);
+      await importedTabs.nth(1).click({ button: "right" });
+      await reopened.getByRole("menuitem", { name: "Delete sheet…", exact: true }).click();
+      await reopened.getByRole("dialog", { name: "Delete sheet", exact: true }).getByRole("button", { name: "Delete sheet", exact: true }).click(); await settle(reopened);
+      const importedNames = await importedTabs.allTextContents();
+      assert.equal(importedNames.length, 2);
+      assert.equal(importedNames[0], "Imported renamed");
+      assert.ok(!importedNames.includes(original));
+      await standaloneImportedRoReopen(reopened, async () => { await context.close(); const next = await open(); await home(next); return next; }, profile, importedNames);
     } finally {
       await context?.close().catch(() => {});
       await rm(profile, { recursive: true, force: true });
