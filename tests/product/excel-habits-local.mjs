@@ -5,7 +5,7 @@ import { standaloneImportedRoReopen } from "./imported-ro-journey.mjs";
 import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1145,6 +1145,11 @@ const cases = [
     await page.keyboard.press("Control+y");
     await settle(page);
     assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).borderTopColor), "rgb(0, 0, 0)", "Redo did not restore the border");
+    if (process.env.HABITS_SHOTS) {
+      await mkdir(process.env.HABITS_SHOTS, { recursive: true });
+      await page.getByTestId(cellIdFor(table, 0, 1)).click();
+      await page.screenshot({ path: path.join(process.env.HABITS_SHOTS, "habit28-applied.png"), fullPage: true });
+    }
     await saveCopy(page, "habits-28");
     await page.reload();
     await waitForColdHome(page);
@@ -1154,6 +1159,10 @@ const cases = [
     assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).fontStyle), "italic", "italic did not survive reopen");
     assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).backgroundColor), "rgb(255, 255, 0)", "fill did not survive reopen");
     assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).borderTopColor), "rgb(0, 0, 0)", "border did not survive reopen");
+    if (process.env.HABITS_SHOTS) {
+      await page.getByTestId(cellIdFor(table, 0, 1)).click();
+      await page.screenshot({ path: path.join(process.env.HABITS_SHOTS, "habit28-reopened.png"), fullPage: true });
+    }
     await page.getByRole("tab", { name: "Import & export", exact: true }).click();
     await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
     const consent = page.getByRole("dialog", { name: "Confirm download", exact: true });
