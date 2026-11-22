@@ -67,15 +67,26 @@ public static class InstallerSmokeWindow {
     }
 }
 '@
-function CloseTimeoutDiagnostics($process, $launch, $started, $visibleMs, $closeMs) {
+function TraceLines($process) {
+  if (-not (Test-Path -LiteralPath $env:TACHIKO_CLOSE_DIAGNOSTICS)) { return @() }
+  return @(Get-Content -LiteralPath $env:TACHIKO_CLOSE_DIAGNOSTICS | Where-Object { $_.Contains(" pid=$($process.Id) ") })
+}
+# $kind is 'startup-stall' (page never loaded) or 'close-timeout' (loaded, then did not exit).
+function CloseTimeoutDiagnostics($process, $launch, $started, $visibleMs, $closeMs, $kind = 'close-timeout') {
   $elapsedMs = [math]::Round(([DateTime]::UtcNow - $started).TotalMilliseconds)
   $process.Refresh()
   $responding = if ($process.HasExited) { 'exited' } else { $process.Responding }
-  $summary = "$launch close-timeout UTC=$([DateTime]::UtcNow.ToString('o')) PID=$($process.Id) responding=$responding launch_UTC=$($started.ToString('o')) visible_ms=$visibleMs close_ms=$closeMs elapsed_ms=$elapsedMs since_close_ms=$($elapsedMs - $closeMs)"
+  $summary = "$launch $kind UTC=$([DateTime]::UtcNow.ToString('o')) PID=$($process.Id) responding=$responding launch_UTC=$($started.ToString('o')) visible_ms=$visibleMs close_ms=$closeMs elapsed_ms=$elapsedMs since_close_ms=$($elapsedMs - $closeMs)"
   Write-Host $summary
   $windows = [InstallerSmokeWindow]::Describe($process.Id)
   Write-Host $windows
-  @($summary, $windows) | Set-Content (Join-Path $diagnosticDir "windows-$($process.Id).txt")
+  # WebView2 runs in msedgewebview2.exe children; none means its environment never started.
+  $webviews = @(Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" -ErrorAction SilentlyContinue | Where-Object {
+    $_.ParentProcessId -eq $process.Id -or ($_.CommandLine -and $_.CommandLine.IndexOf('--webview-exe-name=' + [IO.Path]::GetFileName($process.Path), [StringComparison]::OrdinalIgnoreCase) -ge 0)
+  } | ForEach-Object { "webview2 PID=$($_.ProcessId) parent=$($_.ParentProcessId) created=$($_.CreationDate.ToUniversalTime().ToString('o'))" })
+  $webviewReport = if ($webviews.Count) { $webviews -join [Environment]::NewLine } else { 'webview2: no msedgewebview2.exe processes for this app' }
+  Write-Host $webviewReport
+  @($summary, $windows, $webviewReport) | Set-Content (Join-Path $diagnosticDir "windows-$($process.Id).txt")
   try {
     Add-Type -AssemblyName System.Windows.Forms, System.Drawing
     $bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
@@ -83,15 +94,16 @@ function CloseTimeoutDiagnostics($process, $launch, $started, $visibleMs, $close
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
     try {
       $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-      $screenshot = Join-Path $diagnosticDir "timeout-$($process.Id).png"
+      $screenshot = Join-Path $diagnosticDir "$kind-$($process.Id).png"
       $bitmap.Save($screenshot, [System.Drawing.Imaging.ImageFormat]::Png)
-      Write-Host "close-timeout screenshot: $screenshot"
+      Write-Host "$kind screenshot: $screenshot"
     } finally { $graphics.Dispose(); $bitmap.Dispose() }
-  } catch { Write-Host "close-timeout screenshot failed: $_" }
-  if (Test-Path -LiteralPath $env:TACHIKO_CLOSE_DIAGNOSTICS) {
-    Write-Host 'close-timeout app close-stage trace:'
-    Get-Content -LiteralPath $env:TACHIKO_CLOSE_DIAGNOSTICS | ForEach-Object { Write-Host $_ }
-  } else { Write-Host 'close-timeout app close-stage trace: no events recorded (no close request observed)' }
+  } catch { Write-Host "$kind screenshot failed: $_" }
+  $trace = TraceLines $process
+  if ($trace.Count) {
+    Write-Host "$kind app trace for PID $($process.Id):"
+    $trace | ForEach-Object { Write-Host $_ }
+  } else { Write-Host "$kind app trace for PID $($process.Id): no events recorded" }
 }
 function CheckWindow($process, $launch) {
   if (-not $process) { throw 'shell dispatch did not return an app process' }
@@ -108,6 +120,23 @@ function CheckWindow($process, $launch) {
     if (-not $window) { throw 'no window within 60 seconds' }
     $visibleMs = [math]::Round(([DateTime]::UtcNow - $started).TotalMilliseconds)
     Write-Host "$launch visible PID=$($process.Id) elapsed_ms=$visibleMs"
+    # The native window shows before WebView2 starts, and a close sent before
+    # then is held until it has; wait for the page so a stall is named as one.
+    $loaded = $false
+    for ($i = 0; $i -lt 120; $i++) {
+      $process.Refresh()
+      if ($process.HasExited) { throw 'process exited before its page loaded' }
+      if (@(TraceLines $process | Where-Object { $_.Contains(' page-loaded ') }).Count) { $loaded = $true; break }
+      Start-Sleep -Milliseconds 500
+    }
+    $loadedMs = [math]::Round(([DateTime]::UtcNow - $started).TotalMilliseconds)
+    if (-not $loaded) {
+      try { CloseTimeoutDiagnostics $process $launch $started $visibleMs $loadedMs 'startup-stall' }
+      catch { Write-Host "startup-stall diagnostics failed: $_" }
+      $stage = if (@(TraceLines $process | Where-Object { $_.Contains(' window-built ') }).Count) { 'page navigation' } else { 'WebView2 creation (window-built missing)' }
+      throw "startup stall in ${stage}: page did not load within 60 seconds of the window appearing (no close was sent)"
+    }
+    Write-Host "$launch page loaded PID=$($process.Id) elapsed_ms=$loadedMs"
     Start-Sleep -Seconds 10
     $process.Refresh()
     if ($process.HasExited) { throw 'process exited during 10-second hold' }

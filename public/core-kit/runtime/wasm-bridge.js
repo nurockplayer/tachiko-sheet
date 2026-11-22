@@ -120,6 +120,7 @@ export async function createDesignerWasmBridge(wasmUrl) {
                     export: {
                         revision: reply.response.payload.revision,
                         bytes: projectBytes.buffer,
+                        ...(reply.response.payload.import_metadata === undefined ? {} : { import_metadata: reply.response.payload.import_metadata }),
                     },
                 };
             }
@@ -151,6 +152,7 @@ export async function createDesignerWasmBridge(wasmUrl) {
                     export: {
                         revision: reply.response.payload.revision,
                         bytes: projectBytes.buffer,
+                        ...(reply.response.payload.import_metadata === undefined ? {} : { import_metadata: reply.response.payload.import_metadata }),
                     },
                 };
             }
@@ -198,7 +200,7 @@ export async function createDesignerWasmBridge(wasmUrl) {
                     throw new Error("Designer portable .ro export length did not match its receipt.");
                 }
                 const bytes = new Uint8Array(exports.memory.buffer, exports.tachiko_designer_project_ptr(), receipt.byte_length).slice().buffer;
-                return { status: "ok", export: { revision: receipt.revision, bytes } };
+                return { status: "ok", export: { revision: receipt.revision, bytes, ...(receipt.import_metadata === undefined ? {} : { import_metadata: receipt.import_metadata }) } };
             }
             finally {
                 exports.tachiko_designer_project_release();
