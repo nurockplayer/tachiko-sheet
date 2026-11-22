@@ -966,28 +966,28 @@ const cases = [
     assert.deepEqual(await directionValues(), before, "one Undo did not restore the left value fill");
     await checkDirectionSelection([0], [1, 2, 3], 0, 3);
 
-    // TODO: enable sideways relative formula fills after https://github.com/nurockplayer/tachiko-work/issues/901.
-    await replaceCell(page, id(0, 3), "=C2*2");
-    await page.getByTestId(id(0, 3)).click();
-    before = await directionValues();
-    const selectedBeforeLeft = await selectedCount(page);
-    await dragHandleTo(0, 1);
-    assert.deepEqual(await directionValues(), before, "refused left formula fill changed cells");
-    assert.equal(await selectedCount(page), selectedBeforeLeft, "refused left formula fill changed selection");
-    assert.equal(await activeId(page), id(0, 3));
-    assert.equal((await page.locator(".ts-clipboard-status").first().textContent()).trim(), "Filling formulas sideways is not available yet.");
-
-    await replaceCell(page, id(0, 2), "=B2*2");
-    await page.getByTestId(id(0, 2)).click();
-    const beforeRightRefusal = await directionValues();
-    const selectedBeforeRight = await selectedCount(page);
+    // Sideways formula copies shift relative columns and retain absolute references.
+    const assertFormula = async (column, formula) => {
+      await page.getByTestId(id(0, column)).click();
+      assert.equal(await page.getByTestId("formula-bar-input").inputValue(), formula);
+    };
+    await replaceCell(page, id(0, 1), "=A2+$A$2");
+    await page.getByTestId(id(0, 1)).click();
     await dragHandleTo(0, 3);
-    assert.deepEqual(await directionValues(), beforeRightRefusal, "refused right formula fill changed cells");
-    assert.equal(await selectedCount(page), selectedBeforeRight, "refused right formula fill changed selection");
-    assert.equal(await activeId(page), id(0, 2));
-    assert.equal((await page.locator(".ts-clipboard-status").first().textContent()).trim(), "Filling formulas sideways is not available yet.");
+    assert.deepEqual((await directionValues()).slice(0, 4), ["2", "4", "6", "8"]);
+    await assertFormula(2, "=B2+$A$2");
+    await assertFormula(3, "=C2+$A$2");
     await page.keyboard.press("Control+z"); await settle(page);
-    assert.deepEqual(await directionValues(), before, "refused formula fill added an Undo step");
+    await page.keyboard.press("Control+z"); await settle(page);
+
+    await replaceCell(page, id(0, 3), "=C2+$A$2");
+    await page.getByTestId(id(0, 3)).click();
+    await dragHandleTo(0, 1);
+    assert.deepEqual((await directionValues()).slice(0, 4), ["2", "4", "6", "8"]);
+    await assertFormula(1, "=A2+$A$2");
+    await assertFormula(2, "=B2+$A$2");
+    await page.keyboard.press("Control+z"); await settle(page);
+    await replaceCell(page, id(0, 3), "=C2*2");
 
     await replaceCell(page, id(2, 3), "=A4*2");
     await page.getByTestId(id(2, 3)).click();
