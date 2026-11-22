@@ -198,17 +198,7 @@ impl Saves {
         });
     }
 
-    /// Publish the durable companion first, then the unchanged .ro as the commit point.
-/// Both names are create-only. An interrupted save can leave only an orphan sidecar.
-pub fn write_with_companion(bytes: &[u8], companion: &[u8], destination: &Path) -> Result<(), WriteError> {
-    if std::fs::symlink_metadata(destination).is_ok() { return Err(WriteError::Exists); }
-    let mut sidecar = destination.as_os_str().to_os_string();
-    sidecar.push(".import-metadata.json");
-    write_new(companion, Path::new(&sidecar))?;
-    write_new(bytes, destination)
-}
-
-/// Create `destination` with `bytes` for the page of `epoch`, unless
+    /// Create `destination` with `bytes` for the page of `epoch`, unless
     /// leaving was decided or the page is gone. Waits while leaving is being
     /// decided.
     pub async fn publish(
@@ -255,6 +245,16 @@ pub fn write_with_companion(bytes: &[u8], companion: &[u8], destination: &Path) 
         self.set(|state| state.writing -= 1);
         written.map(|()| Published::Saved)
     }
+}
+
+/// Publish the durable companion first, then the unchanged .ro as the commit point.
+/// Both names are create-only. An interrupted save can leave only an orphan sidecar.
+pub fn write_with_companion(bytes: &[u8], companion: &[u8], destination: &Path) -> Result<(), WriteError> {
+    if std::fs::symlink_metadata(destination).is_ok() { return Err(WriteError::Exists); }
+    let mut sidecar = destination.as_os_str().to_os_string();
+    sidecar.push(".import-metadata.json");
+    write_new(companion, Path::new(&sidecar))?;
+    write_new(bytes, destination)
 }
 
 /// Why a save did not complete as expected.
