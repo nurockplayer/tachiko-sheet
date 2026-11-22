@@ -3824,6 +3824,11 @@ export function SheetShell(props: SheetShellProps) {
     const area = selectionRectangle ?? rectangle(at, at);
     const entities = displayRows.slice(area.top, area.bottom + 1).map(rowEntity);
     const fields = columns.slice(area.left, area.right + 1).map(column => column.id);
+    const request = { type: "set_cell_style", expected_revision: witness.revision, collection: table.collection.key, entities, fields, changes: [change] };
+    if (new TextEncoder().encode(JSON.stringify(request)).byteLength > props.requestByteLimit) {
+      setColumnAnnouncement("This selection is too large to format at once. Select fewer cells.");
+      return;
+    }
     void runStripCommand(async () => {
       const result = await onSetCellStyle(witness, table.collection.key, entities, fields, [change]);
       if (result.kind === "confirmed" && boundSelection) setWidthSelectionRebind({ identity: collectionIdentity, revision: boundSelection.revision });

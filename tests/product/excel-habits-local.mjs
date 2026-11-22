@@ -1128,6 +1128,12 @@ const cases = [
     await settle(page);
     const weight = await page.getByTestId(id).evaluate((node) => Number(getComputedStyle(node).fontWeight));
     assert.ok(weight >= 600, `Ctrl+B left the cell at font-weight ${weight}`);
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.ok(await page.getByTestId(id).evaluate(node => Number(getComputedStyle(node).fontWeight)) < 600, "Undo did not remove bold");
+    await page.keyboard.press("Control+y");
+    await settle(page);
+    assert.ok(await page.getByTestId(id).evaluate(node => Number(getComputedStyle(node).fontWeight)) >= 600, "Redo did not restore bold");
     await page.keyboard.press("Control+i");
     await settle(page);
     assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).fontStyle), "italic");

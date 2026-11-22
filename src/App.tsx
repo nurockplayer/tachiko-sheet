@@ -2367,6 +2367,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     >
       <SheetShell
           appearancePreference={appearancePreference}
+          requestByteLimit={runtime.requestByteLimit}
           view={view}
           busy={busy}
           dirty={dirty}

@@ -382,6 +382,7 @@ export interface CommitOutcome {
 export type CreateCopyOutcome = { saved: true } | { saved: false; reason: string };
 export interface SheetShellProps {
   appearancePreference: AppearancePreferenceController;
+  requestByteLimit: number;
   view: WorkbookView | null;
   capacity?: { rows: number; maximum: number } | null;
   busy: boolean;
