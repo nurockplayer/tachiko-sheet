@@ -46,6 +46,7 @@ interface StoredCopy {
 
 interface StoredOpaqueCopy {
   kind: "opaque";
+  importCompanion?: import("../contracts.js").ImportCompanion;
   formatVersion: 2;
   name: string;
   savedAt: string;
@@ -151,6 +152,7 @@ function toOpaqueSavedCopy(record: StoredOpaqueCopy): OpaqueSavedCopy {
     formatVersion: 2,
     revision: record.revision,
     bytes: cloneBytes(record.bytes),
+    ...(record.importCompanion ? { importCompanion: structuredClone(record.importCompanion) } : {}),
   };
   if (record.importedSource) {
     copy.importedSource = {
@@ -194,6 +196,7 @@ function toWorkFileSavedCopy(record: StoredWorkFileCopy): WorkFileSavedCopy {
     ...(record.saveToken !== undefined ? { saveToken: record.saveToken } : {}),
     revision: record.revision,
     bytes: cloneBytes(record.bytes),
+    ...(record.importCompanion ? { importCompanion: structuredClone(record.importCompanion) } : {}),
     ...(record.presentation !== undefined ? { presentation: clonePresentation(record.presentation) } : {}),
   };
 }
@@ -625,6 +628,7 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
         saveToken: crypto.randomUUID(),
         revision: snapshot.revision,
         bytes: cloneBytes(snapshot.bytes),
+        ...(snapshot.importCompanion ? { importCompanion: structuredClone(snapshot.importCompanion) } : {}),
         importedSource: snapshot.importedSource ? {
           name: snapshot.importedSource.name,
           format: snapshot.importedSource.format,
@@ -651,6 +655,7 @@ export function createLocalCopies(options: { workFileWrites?: boolean } = {}): L
           saveToken: crypto.randomUUID(),
           revision: snapshot.revision,
           bytes: snapshot.bytes,
+          ...(snapshot.importCompanion ? { importCompanion: structuredClone(snapshot.importCompanion) } : {}),
           ...(snapshot.importedSource !== undefined ? { importedSource: snapshot.importedSource } : {}),
           ...(snapshot.presentation !== undefined ? { presentation: snapshot.presentation } : {}),
         };

@@ -143,6 +143,12 @@ export class WorkerDesignerClient {
     async newBudgetWorkingSize() {
         return expectResponse("opened_window", await this.#command({ type: "new_budget", occurrence_id: freshOccurrenceId(), profile: "working_size" }));
     }
+    async newBlankWorkbook() {
+        return expectResponse("opened_window", await this.#command({ type: "new_blank_workbook", occurrence_id: freshOccurrenceId(), profile: "working_size" }));
+    }
+    async writeCellAt(expectedRevision, collection, row, column, input) {
+        return this.trackerCommand({ type: "write_cell_at", expected_revision: expectedRevision, collection, row, column, input });
+    }
     async newTable(name, columns) {
         return expectResponse("opened", await this.#command({ type: "new_table", occurrence_id: freshOccurrenceId(), name, columns }));
     }
@@ -166,6 +172,9 @@ export class WorkerDesignerClient {
     /** Forward typed commands, including insert_row position, unchanged to Rust. */
     async trackerCommand(request) {
         return expectResponse("published", await this.#command(request));
+    }
+    async editAuto(expectedRevision, target, input, dateOrder) {
+        return expectResponse("published", await this.#command({ type: "edit_scalar", expected_revision: expectedRevision, target, input: { kind: "auto", input, ...(dateOrder === undefined ? {} : { date_order: dateOrder }) } }));
     }
     async clearField(expectedRevision, target) {
         return expectResponse("published", await this.#command({ type: "edit_scalar", expected_revision: expectedRevision, target, input: { kind: "clear" } }));
@@ -191,6 +200,9 @@ export class WorkerDesignerClient {
     async setColumnWrap(expectedRevision, collection, field, wrap) {
         return this.trackerCommand({ type: "set_column_wrap", expected_revision: expectedRevision, collection, field, wrap });
     }
+    async setCellStyle(expectedRevision, collection, entities, fields, changes) {
+        return this.trackerCommand({ type: "set_cell_style", expected_revision: expectedRevision, collection, entities, fields, changes });
+    }
     async setColumnWidth(expectedRevision, collection, field, width) {
         return this.trackerCommand({ type: "set_column_width", expected_revision: expectedRevision, collection, field, width });
     }
@@ -202,6 +214,10 @@ export class WorkerDesignerClient {
             type: "bootstrap",
             occurrence_id: freshOccurrenceId(),
         }));
+    }
+    /** Recover the current imported mapping without reopening saved bytes. */
+    async inspectCurrentProject() {
+        return expectResponse("project_inspected", await this.#command({ type: "inspect_project" }));
     }
     async queryCapacity(expectedRevision) {
         return expectResponse("capacity", await this.#command(expectedRevision === undefined
@@ -282,22 +298,24 @@ export class WorkerDesignerClient {
         }
         return expectResponse("opened_window", reply.response);
     }
-    async exportProject(expectedRevision) {
+    async exportProject(expectedRevision, metadata) {
         const reply = await this.#send({
             id: this.#claimId(),
             kind: "export_project",
             expected_revision: expectedRevision,
+            ...(metadata === undefined ? {} : { metadata }),
         });
         if (reply.status !== "project_exported") {
             throw new Error(`Expected project export, received '${reply.status}'.`);
         }
         return reply.export;
     }
-    async exportProjectV3(expectedRevision) {
+    async exportProjectV3(expectedRevision, metadata) {
         const reply = await this.#send({
             id: this.#claimId(),
             kind: "export_project_v3",
             expected_revision: expectedRevision,
+            ...(metadata === undefined ? {} : { metadata }),
         });
         if (reply.status !== "project_exported") {
             throw new Error(`Expected project export, received '${reply.status}'.`);
@@ -315,11 +333,12 @@ export class WorkerDesignerClient {
         }
         return reply.export;
     }
-    async exportPortableRo(expectedRevision) {
+    async exportPortableRo(expectedRevision, metadata) {
         const reply = await this.#send({
             id: this.#claimId(),
             kind: "export_portable_ro",
             expected_revision: expectedRevision,
+            ...(metadata === undefined ? {} : { metadata }),
         });
         if (reply.status !== "portable_ro_exported") {
             throw new Error(`Expected portable .ro export, received '${reply.status}'.`);
@@ -556,6 +575,10 @@ function expectResponse(type, response) {
     // Validate the additive optional-field metadata without normalizing the
     // sparse Rust payload (or fabricating empty Text for absent slots).
     switch (response.type) {
+        case "project_inspected":
+            if (response.payload.import_metadata !== undefined)
+                validateImportMetadata(response.payload.import_metadata);
+            break;
         case "table":
             validateTablePresence(response.payload);
             break;

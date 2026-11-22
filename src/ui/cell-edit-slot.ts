@@ -16,7 +16,7 @@ export interface CellEditSlot {
 /** UI edit address, never a fabricated FieldProjection. Missing is not blank. */
 export function cellEditSlot(row: TableRow, column: TableColumn): CellEditSlot | null {
   const field = fieldForColumn(row, column.id);
-  if (field) return field.editable_scalar ? {
+  if (field) return field.editable_scalar && field.editable_scalar !== "auto" ? {
     target: field.target, kind: field.editable_scalar, original: seedTextOf(field), blank: false, formula: Boolean(field.formula), required: column.required,
   } : null;
   if (!column.required && row.blank_fields?.includes(column.id) && supportsOptional(column.field_type)) {
@@ -86,7 +86,7 @@ export function emptyCellEdit(slot: CellEditSlot): CellEdit | null {
 }
 
 export function completionFor(typed: string, values: string[]): string | null {
-  if (!typed) return null;
+  if (!typed || typed.startsWith("=") || !/\p{L}/u.test(typed)) return null;
   const prefix = typed.toLowerCase();
   const seen = new Set<string>();
   let match: string | null = null;

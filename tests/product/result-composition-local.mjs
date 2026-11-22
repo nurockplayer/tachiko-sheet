@@ -31,7 +31,7 @@ async function makeFixture() {
   const template = path.join(root, "acceptance", "j3-interop", "fixtures", "messy.xlsx");
   const expanded = path.join(fixtureDirectory, "expanded");
   await mkdir(expanded);
-  execFileSync("unzip", ["-q", template, "-d", expanded]);
+  execFileSync("python3", ["-c", "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])", template, expanded]);
   await writeFile(path.join(expanded, "xl", "workbook.xml"), `<?xml version="1.0" encoding="utf-8"?><x:workbook xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheets><x:sheet name="Catalog" sheetId="1" r:id="Rcatalog" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/><x:sheet name="Sales" sheetId="2" r:id="Rsales" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/></x:sheets></x:workbook>`);
   await writeFile(path.join(expanded, "xl", "_rels", "workbook.xml.rels"), `<?xml version="1.0" encoding="utf-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="/xl/worksheets/sheet1.xml" Id="Rcatalog"/><Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="/xl/worksheets/sheet2.xml" Id="Rsales"/></Relationships>`);
   await writeFile(path.join(expanded, "[Content_Types].xml"), `<?xml version="1.0" encoding="utf-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`);
@@ -39,7 +39,7 @@ async function makeFixture() {
   const sales = categories.map((_, index) => [`SKU-${String(index + 1).padStart(2, "0")}`, String(quantities[index])]);
   await writeFile(path.join(expanded, "xl", "worksheets", "sheet1.xml"), worksheet(["code", "category", "price"], catalog));
   await writeFile(path.join(expanded, "xl", "worksheets", "sheet2.xml"), worksheet(["product_code", "quantity"], sales));
-  execFileSync("zip", ["-Xqr", fixture, "."], { cwd: expanded });
+  execFileSync("python3", ["-c", "import os, sys, zipfile; z = zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_DEFLATED); [z.write(os.path.join(root, name)) for root, _, files in os.walk('.') for name in files]; z.close()", fixture], { cwd: expanded });
 }
 
 async function saveScreenshot(page, name, fullPage = true) {

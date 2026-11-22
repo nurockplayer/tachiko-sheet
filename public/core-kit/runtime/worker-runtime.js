@@ -48,8 +48,8 @@ export function startDesignerWorker(wasmUrl) {
                     case "export_project":
                     case "export_project_v3": {
                         const reply = event.data.kind === "export_project_v3"
-                            ? runtime.exportProjectV3(event.data.expected_revision)
-                            : runtime.exportProject(event.data.expected_revision);
+                            ? runtime.exportProjectV3(event.data.expected_revision, event.data.metadata)
+                            : runtime.exportProject(event.data.expected_revision, event.data.metadata);
                         if (reply.status === "error") {
                             scope.postMessage({ id: event.data.id, ...reply });
                         }
@@ -69,7 +69,7 @@ export function startDesignerWorker(wasmUrl) {
                         break;
                     }
                     case "export_portable_ro": {
-                        const reply = runtime.exportPortableRo(event.data.expected_revision);
+                        const reply = runtime.exportPortableRo(event.data.expected_revision, event.data.metadata);
                         if (reply.status === "error") {
                             scope.postMessage({ id: event.data.id, ...reply });
                         }

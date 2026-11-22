@@ -1,3 +1,4 @@
+import { standaloneImportedRoReopen } from "./imported-ro-journey.mjs";
 // #219: ordinary production UI and real Worker/WASM. The transport observer
 // records requests and can hold one real reply; it never manufactures a result.
 import assert from "node:assert/strict";
@@ -344,7 +345,7 @@ try {
   }
   await tabs().nth(1).click(); await selected(1);
   assert.equal(await cells().first().textContent(), "record-2");
-  // habit 24 imported: partial (XLSX + local copy; .ro pending Work).
+  // Habit 24: imported lifecycle, local copies and standalone .ro.
   const labels = async expected => {
     await ready();
     assert.deepEqual(await tabs().allTextContents(), expected);
@@ -406,6 +407,8 @@ try {
   await labels(["Renamed original", "Sheet 3"]);
   await tabs().first().click(); await selected(0);
   assert.equal(await cells().first().textContent(), "record-1");
+  page = await standaloneImportedRoReopen(page, async () => { await stop(); await start(); return page; }, work, ["Renamed original", "Sheet 3"]);
+  checks.push("8: standalone .ro reopen keeps imported sheet names and order");
   await mode("Import & export").click();
   await button("Prepare XLSX").click();
   const exportDialog = page.getByRole("dialog", { name: "Confirm download", exact: true });
@@ -423,7 +426,8 @@ try {
   await labels(["Renamed original", "Sheet 3"]);
   await tabs().first().click(); await selected(0);
   assert.equal(await cells().first().textContent(), "record-1");
-  checks.push("habit 24 imported: partial (XLSX + local copy; .ro pending Work): add/rename/delete Undo/Redo, order/content, Save/restart/reopen, XLSX download/re-import");
+  checks.push("habit 24 imported: add/rename/delete Undo/Redo, order/content, Save/restart/reopen, XLSX download/re-import");
+
   await close();
   await (await homeImportInput(page)).setInputFiles(fixture);
   preview = page.getByRole("dialog", { name: "Review import preview", exact: true });

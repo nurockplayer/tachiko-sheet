@@ -391,50 +391,91 @@ for (const [label, detectOutputHolders, hangs, fd] of [
     const closeGraceMs = 300;
     fixture = await setup(t, timeoutMs);
     const holder = `
-      const fs = require('node:fs');
-      setInterval(() => fs.writeFileSync('holder-heartbeat', String(Date.now())), 20);
-      setTimeout(() => process.exit(0), 3000);
+      process.on('SIGTERM', () => {});
+      setInterval(() => {}, 1000);
+      process.send('ready');
     `;
     const source = `
       const fs = require('node:fs');
+      process.on('SIGTERM', () => {});
       fs.writeFileSync('pids.json', JSON.stringify({ parent: process.pid }));
       const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(holder)}], {
-        detached: true, env: {}, stdio: ['ignore', ${fd === 1 ? "'inherit', 'ignore'" : "'ignore', 'inherit'"}],
+        detached: true, env: {}, stdio: ['ignore', ${fd === 1 ? "'inherit', 'ignore'" : "'ignore', 'inherit'"}, 'ipc'],
       });
       fs.writeFileSync('pids.json', JSON.stringify({ parent: process.pid, holder: child.pid }));
-      child.unref();
-      ${hangs ? 'setInterval(() => {}, 1000);' : 'process.exit(0);'}
+      child.once('message', () => {
+        child.disconnect();
+        process.send('ready');
+      });
+      process.once('message', () => process.exit(0));
     `;
-    const started = performance.now();
-    const code = await runStep(label, ['-e', source], {}, {
-      ...fixture.options, killGraceMs, closeGraceMs, detectOutputHolders,
+    // Control only the runner's deadlines/scans. Real children remain scheduled
+    // by the OS, and readiness does not consume the step's timeout budget.
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+    const originalSpawn = childProcess.spawn;
+    let step;
+    t.mock.method(childProcess, 'spawn', (command, args, options) => {
+      step = originalSpawn(command, args, { ...options, stdio: [...options.stdio, 'ipc'] });
+      return step;
     });
-    const elapsed = performance.now() - started;
-    assert.ok(elapsed < timeoutMs + killGraceMs + closeGraceMs + 1000, `output wait took ${elapsed} ms`);
+    syncBuiltinESMExports();
+    t.after(() => {
+      t.mock.restoreAll();
+      syncBuiltinESMExports();
+    });
+    let settled = false;
+    const pending = runStep(label, ['-e', source], {}, {
+      ...fixture.options, killGraceMs, closeGraceMs, detectOutputHolders,
+    }).then(code => { settled = true; return code; });
+    assert.deepEqual(await once(step, 'message'), ['ready', undefined]);
+    const exited = once(step, 'exit');
+    const closed = once(step, 'close');
+    if (hangs) {
+      // Sample ancestry while both processes are alive, then reach timeout.
+      t.mock.timers.tick(timeoutMs);
+    } else {
+      // No scan runs until the parent has exited. Otherwise escaped-exit can
+      // accidentally acquire ownership through ancestry and legitimately PASS.
+      step.send('exit');
+      await exited;
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    const ownsHolder = detectOutputHolders || hangs;
+    assert.equal(settled, false, 'runner returned with an open output holder');
+    if (ownsHolder) {
+      t.mock.timers.tick(killGraceMs);
+      await closed;
+    } else {
+      t.mock.timers.tick(closeGraceMs - 1);
+      assert.equal(step.stdout.destroyed, false, 'stdout closed before the output deadline');
+      assert.equal(settled, false);
+      t.mock.timers.tick(1);
+    }
+    const code = await pending;
+    assert.equal(step.stdout.destroyed, true, 'stdout must be closed before returning');
+    assert.equal(step.stderr.destroyed, true, 'stderr must be closed before returning');
     const expectedStatus = hangs ? 'TIMEOUT' : detectOutputHolders ? 'PASS' : 'FAIL';
     assert.equal(code, detectOutputHolders ? 0 : 1);
     assert.deepEqual(fixture.entries.map(({ status }) => status), ['START', expectedStatus]);
-    // A live parent lets ancestry discovery record the holder before timeout,
-    // even with output-holder detection disabled. That ownership now persists.
-    const ownsHolder = detectOutputHolders || hangs;
     assert.equal(fixture.options.summary[0].escapedOutput, ownsHolder ? undefined : true);
     const [local, upload] = await fixture.logs(label);
     assert.equal(local, upload);
     assert.equal(local, ownsHolder ? '' : 'escaped descendant held step output open after exit; failing step\n');
     const { holder: pid } = JSON.parse(await readFile(path.join(fixture.directory, 'pids.json'), 'utf8'));
     if (ownsHolder) {
-      // A dead orphan may remain a zombie; its heartbeat must stop on all hosts.
-      const heartbeat = () => readFile(path.join(fixture.directory, 'holder-heartbeat'), 'utf8').catch(error => {
-        if (error.code === 'ENOENT') return null;
-        throw error;
-      });
-      await new Promise(resolve => setTimeout(resolve, 100));
-      const stopped = await heartbeat();
-      await new Promise(resolve => setTimeout(resolve, 100));
-      assert.equal(await heartbeat(), stopped, 'output holder survived cleanup');
+      // These holders never close output voluntarily: close proves termination,
+      // including when a killed orphan remains a zombie under container PID 1.
+      if (process.platform === 'linux') {
+        const stat = await readFile(`/proc/${pid}/stat`, 'utf8').catch(error => {
+          if (error.code === 'ENOENT' || error.code === 'ESRCH') return null;
+          throw error;
+        });
+        assert.ok(stat === null || stat.slice(stat.lastIndexOf(')') + 2).startsWith('Z '), 'output holder survived cleanup');
+      } else {
+        assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+      }
     } else {
       assert.doesNotThrow(() => process.kill(pid, 0), 'test must exercise a surviving escaped holder');
-      assert.ok(elapsed >= closeGraceMs + (hangs ? timeoutMs + killGraceMs : 0));
     }
   });
 }

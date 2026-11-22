@@ -42,9 +42,11 @@ export type SourceValue = {
 export type SourceStyle = {
     number_format: string | null;
     bold: boolean;
+    italic?: boolean;
     fill: string | null;
     wrap: boolean;
     border: boolean;
+    border_sides?: Array<"top" | "right" | "bottom" | "left">;
     alignment: string | null;
 };
 export type SourceCell = {
