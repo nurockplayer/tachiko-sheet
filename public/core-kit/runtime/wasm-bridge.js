@@ -96,10 +96,12 @@ export async function createDesignerWasmBridge(wasmUrl) {
         openProjectWorkingSize: (bytes, occurrenceId) => openProjectArena(bytes, occurrenceId, () => exports.tachiko_designer_project_open_working_size()),
         openLocalDocument: (bytes, occurrenceId) => openProjectArena(bytes, occurrenceId, () => exports.tachiko_designer_project_open_local_document()),
         openLocalDocumentWorkingSize: (bytes, occurrenceId) => openProjectArena(bytes, occurrenceId, () => exports.tachiko_designer_project_open_local_document_working_size()),
-        exportProject: (expectedRevision) => {
-            const revision = encoder.encode(expectedRevision);
-            if (!writeRequest(revision)) {
-                return tooLargeReply("The expected revision exceeds the bridge limit.");
+        exportProject: (expectedRevision, metadata) => {
+            const revision = encoder.encode(metadata === undefined
+                ? expectedRevision
+                : JSON.stringify({ expected_revision: expectedRevision, metadata }));
+            if (!writeRequest(revision, metadata === undefined ? MAX_WIRE_REQUEST_BYTES : MAX_METADATA_REQUEST_BYTES)) {
+                return tooLargeReply("The project export request exceeds the bridge limit.");
             }
             exports.tachiko_designer_project_export();
             try {
@@ -120,6 +122,7 @@ export async function createDesignerWasmBridge(wasmUrl) {
                     export: {
                         revision: reply.response.payload.revision,
                         bytes: projectBytes.buffer,
+                        ...(reply.response.payload.import_metadata === undefined ? {} : { import_metadata: reply.response.payload.import_metadata }),
                     },
                 };
             }
@@ -127,10 +130,12 @@ export async function createDesignerWasmBridge(wasmUrl) {
                 exports.tachiko_designer_project_release();
             }
         },
-        exportProjectV3: (expectedRevision) => {
-            const revision = encoder.encode(expectedRevision);
-            if (!writeRequest(revision)) {
-                return tooLargeReply("The expected revision exceeds the bridge limit.");
+        exportProjectV3: (expectedRevision, metadata) => {
+            const revision = encoder.encode(metadata === undefined
+                ? expectedRevision
+                : JSON.stringify({ expected_revision: expectedRevision, metadata }));
+            if (!writeRequest(revision, metadata === undefined ? MAX_WIRE_REQUEST_BYTES : MAX_METADATA_REQUEST_BYTES)) {
+                return tooLargeReply("The project export request exceeds the bridge limit.");
             }
             exports.tachiko_designer_project_export_v3();
             try {
@@ -151,6 +156,7 @@ export async function createDesignerWasmBridge(wasmUrl) {
                     export: {
                         revision: reply.response.payload.revision,
                         bytes: projectBytes.buffer,
+                        ...(reply.response.payload.import_metadata === undefined ? {} : { import_metadata: reply.response.payload.import_metadata }),
                     },
                 };
             }
@@ -181,10 +187,12 @@ export async function createDesignerWasmBridge(wasmUrl) {
                 exports.tachiko_designer_project_release();
             }
         },
-        exportPortableRo: (expectedRevision) => {
-            const revision = encoder.encode(expectedRevision);
-            if (!writeRequest(revision))
-                return tooLargeReply("The expected revision exceeds the bridge limit.");
+        exportPortableRo: (expectedRevision, metadata) => {
+            const revision = encoder.encode(metadata === undefined
+                ? expectedRevision
+                : JSON.stringify({ expected_revision: expectedRevision, metadata }));
+            if (!writeRequest(revision, metadata === undefined ? MAX_WIRE_REQUEST_BYTES : MAX_METADATA_REQUEST_BYTES))
+                return tooLargeReply("The project export request exceeds the bridge limit.");
             exports.tachiko_designer_portable_ro_export();
             try {
                 const reply = readReply();
@@ -198,7 +206,7 @@ export async function createDesignerWasmBridge(wasmUrl) {
                     throw new Error("Designer portable .ro export length did not match its receipt.");
                 }
                 const bytes = new Uint8Array(exports.memory.buffer, exports.tachiko_designer_project_ptr(), receipt.byte_length).slice().buffer;
-                return { status: "ok", export: { revision: receipt.revision, bytes } };
+                return { status: "ok", export: { revision: receipt.revision, bytes, ...(receipt.import_metadata === undefined ? {} : { import_metadata: receipt.import_metadata }) } };
             }
             finally {
                 exports.tachiko_designer_project_release();

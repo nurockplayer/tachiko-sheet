@@ -241,6 +241,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   // New-table admission and authored schema keep the portable work-file copy
   // route, so their local copies stay portable `.ro` bytes.
   let requiresPortableSave = false;
+  let importedMapping: InteropMetadata | undefined;
   let closed = false;
   let epoch = 0;
 
@@ -475,12 +476,19 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         }
         continue;
       }
+      const inspect = client.inspectCurrentProject;
+      if (inspect) {
+        const inspection = await afterUsable(expected, dispatch(kit, () => inspect.call(client)));
+        requireCurrentProjectionRevision(occurrence.revision, inspection.revision, "current project inspection");
+        importedMapping = inspection.import_metadata ?? importedMapping;
+      }
       columnsRevision = loaded.columnsRevision;
       readDisplay = loaded.display;
       liveRead = {
         collection: key,
         view: {
           title: bootstrap.title,
+          ...(importedMapping ? { importMetadata: importedMapping } : {}),
           ...(openedFromWorkFile ? { openedFromWorkFile: true } : {}),
           ...(requiresPortableSave ? { requiresPortableSave: true } : {}),
           occurrence: occurrence.scope,
@@ -604,6 +612,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     dispatchOpen: () => Promise<OpenedProjection | OpenedWindowProjection>,
     fromWorkFile = false,
     fromNewTable = false,
+    importedMetadata?: InteropMetadata,
   ): Promise<WorkbookView> {
     try {
       const opened = await afterNotReplaced(expected, dispatch(kit, dispatchOpen));
@@ -614,6 +623,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         // The open may have replaced the resident core work; the old
         // projection is never safe to retain after an unknown reply.
         openedFromWorkFile = false;
+        importedMapping = undefined;
         requiresPortableSave = false;
         active = null;
         residentCollection = null;
@@ -623,6 +633,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       }
       throw error;
     }
+    importedMapping = importedMetadata;
     openedFromWorkFile = fromWorkFile;
     requiresPortableSave = fromNewTable;
     // The successful open replaced the resident occurrence even before its
@@ -697,14 +708,14 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         await dispatch(kit, () => inspect.call(client, transfer.slice(0), importedMetadata));
         assertNotReplaced(requestedAt);
         const open = capability(client.openImportedProjectWorkingSize, "working-size imported-project open");
-        return openSession(kit, client, requestedAt, () => open.call(client, transfer, importedMetadata));
+        return openSession(kit, client, requestedAt, () => open.call(client, transfer, importedMetadata), false, false, importedMetadata);
       }
       const open = capability(client.openProjectWorkingSize, "working-size project open");
       return openSession(kit, client, requestedAt, () => open.call(client, transfer));
     });
   }
 
-  async function openWorkFile(bytes: ArrayBuffer): Promise<WorkbookView> {
+  async function openWorkFile(bytes: ArrayBuffer, importedMetadata?: InteropMetadata): Promise<WorkbookView> {
     requireWorkFileSize(bytes.byteLength);
     const requestedAt = epoch;
     const transfer = bytes.slice(0);
@@ -714,6 +725,20 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       assertNotReplaced(requestedAt);
       // Verify is read-only. Refused packages cannot replace the current work.
       await afterNotReplaced(requestedAt, dispatch(kit, () => client.verifyPortableRo(transfer.slice(0))));
+      if (importedMetadata) {
+        const inspect = capability(client.inspectImportedProjectWorkingSize, "working-size imported-project inspection");
+        let accepted = true;
+        try {
+          await afterNotReplaced(requestedAt, dispatch(kit, () => inspect.call(client, transfer.slice(0), importedMetadata)));
+        } catch (error) {
+          if (!(typeof kit.DesignerRuntimeError === "function" && error instanceof kit.DesignerRuntimeError)) throw error;
+          accepted = false;
+        }
+        if (accepted) {
+          const open = capability(client.openImportedProjectWorkingSize, "working-size imported-project open");
+          return openSession(kit, client, requestedAt, () => open.call(client, transfer, importedMetadata), true, false, importedMetadata);
+        }
+      }
       const open = capability(client.openPortableRoWorkingSize, "working-size work-file open");
       return openSession(kit, client, requestedAt, () => open.call(client, transfer), true);
     });
@@ -733,7 +758,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         await dispatch(kit, () => inspect.call(client, bytes.slice(0), importedMetadata));
         assertNotReplaced(requestedAt);
         const open = capability(client.openImportedProjectWorkingSize, "working-size imported-project open");
-        return openSession(kit, client, requestedAt, () => open.call(client, bytes.slice(0), importedMetadata));
+        return openSession(kit, client, requestedAt, () => open.call(client, bytes.slice(0), importedMetadata), false, false, importedMetadata);
       }
       // The host record is a core-produced opaque transfer. It is cloned for
       // dispatch only; Sheet never parses, relabels, or rebuilds its bytes.
@@ -1430,7 +1455,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       assertUsable(expected);
       const project = await afterUsable(expected, dispatch(kit, () => client.exportProjectV3(live.revision)));
       requireCurrentProjectionRevision(live.revision, project.revision, "opaque project export");
-      return { revision: project.revision, bytes: project.bytes.slice(0) };
+      return { revision: project.revision, bytes: project.bytes.slice(0), ...((project.import_metadata ?? importedMapping) ? { importMetadata: project.import_metadata ?? importedMapping } : {}) };
     });
   }
 
@@ -1442,7 +1467,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       assertUsable(expected);
       const project = await afterUsable(expected, dispatch(kit, () => client.exportPortableRo(live.revision)));
       requireCurrentProjectionRevision(live.revision, project.revision, "work file export");
-      return { revision: project.revision, bytes: project.bytes.slice(0) };
+      return { revision: project.revision, bytes: project.bytes.slice(0), ...((project.import_metadata ?? importedMapping) ? { importMetadata: project.import_metadata ?? importedMapping } : {}) };
     });
   }
 
@@ -1606,6 +1631,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       } catch (error) {
         if (error instanceof UnknownOperationOutcomeError) {
           openedFromWorkFile = false;
+          importedMapping = undefined;
           requiresPortableSave = false;
           active = null;
           residentCollection = null;
@@ -1616,6 +1642,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         throw error;
       }
       openedFromWorkFile = false;
+      importedMapping = undefined;
       requiresPortableSave = false;
       active = null;
       residentCollection = null;
@@ -1769,6 +1796,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       return;
     }
     closed = true;
+    importedMapping = undefined;
     openedFromWorkFile = false;
     requiresPortableSave = false;
     epoch += 1;

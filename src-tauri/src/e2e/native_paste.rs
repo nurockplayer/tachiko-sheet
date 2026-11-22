@@ -70,8 +70,40 @@ pub fn activate(app: &tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(target_os = "linux")]
 pub fn activate(app: &tauri::AppHandle) -> Result<(), String> {
-    // Linux Paste is an app command, like Undo/Redo. Check the installed item
-    // and use the same dispatcher as its native menu event.
-    if crate::menu_command_hook(app, "paste") { Ok(()) }
-    else { Err("native Paste menu item missing".into()) }
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use gtk::prelude::*;
+    use tauri::Manager;
+
+    fn choose(container: &gtk::Container) -> Option<gtk::MenuItem> {
+        for child in container.children() {
+            let Ok(item) = child.downcast::<gtk::MenuItem>() else { continue };
+            if item.label().is_some_and(|label| label.replace('_', "") == "Paste") {
+                return Some(item);
+            }
+            let submenu = item.submenu().and_then(|menu| menu.downcast::<gtk::Container>().ok());
+            if let Some(found) = submenu.and_then(|menu| choose(&menu)) { return Some(found); }
+        }
+        None
+    }
+    let window = app.get_webview_window("main").ok_or("main window missing")?;
+    let gtk_window = window.gtk_window().map_err(|error| error.to_string())?;
+    let vbox = window.default_vbox().map_err(|error| error.to_string())?;
+    // The Paste item a person sees in the window's GTK menu bar.
+    let item = vbox.children().into_iter()
+        .filter_map(|child| child.downcast::<gtk::MenuBar>().ok())
+        .find_map(|bar| choose(bar.upcast_ref()))
+        .ok_or("native Paste menu item missing")?;
+    let activated = Rc::new(Cell::new(false));
+    let seen = activated.clone();
+    let handler = item.connect_activate(move |_| seen.set(true));
+    // Press Ctrl+V through the window's accelerator groups, as GTK does for a
+    // real key press before the webview sees it. GTK emits the item's
+    // `activate`, muda turns it into the menu event, and the app's menu
+    // handler pastes. No synthetic key event or libxdo.
+    let handled = gtk::accel_groups_activate(&gtk_window, *gtk::gdk::keys::constants::v, gtk::gdk::ModifierType::CONTROL_MASK);
+    item.disconnect(handler);
+    if !handled { return Err("Ctrl+V is not a window accelerator".into()); }
+    if !activated.get() { return Err("Ctrl+V did not activate the Paste menu item".into()); }
+    Ok(())
 }

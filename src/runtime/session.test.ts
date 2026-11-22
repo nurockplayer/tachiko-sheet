@@ -37,8 +37,8 @@ import {
 } from "./session.js";
 
 const TITLE = "Qualification workbook";
-const COLLECTION: CollectionSummary = { id: "col-1", key: "tasks", display_name: "tasks", entity_count: 1 };
-const COPY: CollectionSummary = { id: "col-2", key: "tasks-copy", display_name: "tasks copy", entity_count: 1 };
+const COLLECTION: CollectionSummary = { id: "col-1", key: "tasks", display_name: "tasks", headerless: false, data_start_row: 2, entity_count: 1 };
+const COPY: CollectionSummary = { id: "col-2", key: "tasks-copy", display_name: "tasks copy", headerless: false, data_start_row: 2, entity_count: 1 };
 const IMPACT: FieldTarget = { entity: "e1", field: "impact" };
 const NOTES: FieldTarget = { entity: "e1", field: "notes" };
 const FILES = { length: 18, item: () => null } as unknown as FileList;
@@ -378,6 +378,8 @@ class FakeClient {
     return { bootstrap: this.#bootstrap(), table: this.#table() };
   }
 
+  async inspectCurrentProject() { return { revision: this.#bootstrap().revision }; }
+
   async bootstrap() {
     this.calls.bootstrap += 1;
     this.#requireOpen();
@@ -708,7 +710,7 @@ function catalogTable(
   entityCount = 0,
 ): { collection: CollectionSummary; columns: typeof columns; rows: TableProjection["rows"] } {
   return {
-    collection: { id: `schema-${key}`, key, display_name: key, entity_count: entityCount },
+    collection: { id: `schema-${key}`, key, display_name: key, headerless: false, data_start_row: 2, entity_count: entityCount },
     columns,
     rows: [],
   };
@@ -1658,7 +1660,7 @@ describe("createSheetRuntime", () => {
         }),
       install: (client: FakeClient) => {
         client.hooks.bootstrap = async () => ({ title: TITLE, revision: "r1", default_collection: "tasks", collections: [
-          COLLECTION, { id: "col-2", key: "inventory", display_name: "inventory", entity_count: 0 },
+          COLLECTION, { id: "col-2", key: "inventory", display_name: "inventory", headerless: false, data_start_row: 2, entity_count: 0 },
         ] });
         client.hooks.queryTableWindow = async (_revision, key, start) => {
           if (key === "inventory") throw new Error("unavailable table");

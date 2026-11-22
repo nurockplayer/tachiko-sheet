@@ -970,7 +970,7 @@ export function SheetShell(props: SheetShellProps) {
   const mountedRef = useRef(false);
   const editorInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const columnCompletionRef = useRef<{ instance: number; viewKey: string; values: string[]; completeOnReply: boolean } | null>(null);
-  const completionSuffixRef = useRef<{ instance: number; start: number; end: number } | null>(null);
+  const completionSuffixRef = useRef<{ instance: number; start: number; end: number; typed: string } | null>(null);
   const completionSelectionRef = useRef<{ instance: number; start: number; end: number } | null>(null);
   useLayoutEffect(() => {
     const selection = completionSelectionRef.current;
@@ -2785,8 +2785,8 @@ export function SheetShell(props: SheetShellProps) {
         input.selectionStart !== live.value.length || input.selectionEnd !== live.value.length) return;
       const candidate = completionFor(live.value, current.values);
       if (candidate === null || candidate.slice(0, live.value.length).toLowerCase() !== live.value.toLowerCase()) return;
-      const value = live.value + candidate.slice(live.value.length);
-      const selection = { instance: live.instance, start: live.value.length, end: value.length };
+      const value = candidate;
+      const selection = { instance: live.instance, start: live.value.length, end: value.length, typed: live.value };
       completionSuffixRef.current = selection;
       completionSelectionRef.current = selection;
       if (live.entity === DRAFT_ROW) changeRowDraft(live.field, value);
@@ -4373,7 +4373,17 @@ export function SheetShell(props: SheetShellProps) {
   function workFileInput(locked: boolean): ReactNode {
     return <label className={`ts-button ts-home-file-action${locked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={locked}>
       <span>Open work file…</span>
-      <input data-testid="open-work-file" aria-label="Open work file" type="file" accept=".ro" disabled={locked} onChange={(event) => { const input = event.currentTarget; void openWorkFile(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
+      <input data-testid="open-work-file" aria-label="Open work file" type="file" accept=".ro" disabled={locked} onClick={async (event) => {
+        if (!hostFiles.pickWorkFile) return;
+        event.preventDefault();
+        setLocalError(null);
+        try {
+          const opened = await hostFiles.pickWorkFile();
+          if (!opened) return;
+          if ("refused" in opened) { setLocalError(opened.refused); return; }
+          await openWorkFile(opened.file);
+        } catch (error) { setLocalError(workFileOpenRefusal(error)); }
+      }} onChange={(event) => { const input = event.currentTarget; void openWorkFile(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
     </label>;
   }
 
@@ -4565,6 +4575,9 @@ export function SheetShell(props: SheetShellProps) {
         return;
       }
       if (!view) return;
+      if (command === "freeze-first-column" && !phoneLayout) {
+        updateGridSettings(current => ({ ...current, freezeFirstColumn: !current.freezeFirstColumn }));
+      }
       if (command === "save") void saveWork();
       if (command === "save-copy") {
         if (view.openedFromWorkFile && workFileSaveUnavailableReason) setLocalError(workFileSaveUnavailableReason);
@@ -6021,7 +6034,9 @@ export function SheetShell(props: SheetShellProps) {
         const input = event.currentTarget;
         const native = event.nativeEvent as InputEvent;
         const values = columnCompletionRef.current;
-        const typed = input.value;
+        const suffix = completionSuffixRef.current;
+        const typed = suffix && native.inputType?.startsWith("insert")
+          ? suffix.typed + input.value.slice(suffix.start) : input.value;
         completionSuffixRef.current = null;
         completionSelectionRef.current = null;
         const composing = native.isComposing || props.appearancePreference.getSnapshot().composing;
@@ -6033,15 +6048,20 @@ export function SheetShell(props: SheetShellProps) {
           ? completionFor(typed, values.values) : null;
         let value = typed;
         if (candidate !== null && editor) {
-          value = typed + candidate.slice(typed.length);
-          const selection = { instance: editor.instance, start: typed.length, end: value.length };
+          value = candidate;
+          const selection = { instance: editor.instance, start: typed.length, end: value.length, typed };
           completionSuffixRef.current = selection;
           completionSelectionRef.current = selection;
         }
         setFormulaCaret(input.selectionStart ?? typed.length);
         applyEditorValue(value);
       },
-      onSelect: (event) => setFormulaCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length),
+      onSelect: (event) => {
+        const input = event.currentTarget;
+        const suffix = completionSuffixRef.current;
+        if (suffix && (input.selectionStart !== suffix.start || input.selectionEnd !== suffix.end)) completionSuffixRef.current = null;
+        setFormulaCaret(input.selectionStart ?? input.value.length);
+      },
       onKeyUp: (event) => setFormulaCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length),
       onKeyDown: (event) => {
         const composing = isComposingEvent(event) || props.appearancePreference.getSnapshot().composing;
@@ -6054,7 +6074,7 @@ export function SheetShell(props: SheetShellProps) {
           event.stopPropagation();
           completionSuffixRef.current = null;
           completionSelectionRef.current = { ...suffix, end: suffix.start };
-          applyEditorValue(event.currentTarget.value.slice(0, suffix.start));
+          applyEditorValue(suffix.typed);
           return;
         }
         // Alt+Enter holds a line break in the multiline editor; elsewhere it
@@ -6694,6 +6714,10 @@ export function SheetShell(props: SheetShellProps) {
       <div className="ts-workbook" data-testid="project-ready" aria-busy={busy}>
         {renderToolbar()}
         <nav className="ts-work-context" aria-label="Workbook actions">
+          {!phoneLayout && <div className="ts-actions" role="group" aria-label="View commands">
+            <span className="ts-field-label">View</span>
+            <button type="button" className="ts-button" aria-pressed={Boolean(gridSettings.freezeFirstColumn)} onClick={() => updateGridSettings(current => ({ ...current, freezeFirstColumn: !current.freezeFirstColumn }))}>Freeze First Column</button>
+          </div>}
           <div className="ts-context-table">
             <label className="ts-field-label" htmlFor="ts-active-table">Table</label>
             <select id="ts-active-table" value={view.table.collection.key} onChange={(event) => void selectCollection(event.currentTarget.value)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || cellDraftActive || formulaDraftActive || rowDraftActive}>

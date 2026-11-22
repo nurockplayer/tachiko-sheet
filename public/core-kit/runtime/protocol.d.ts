@@ -1,4 +1,4 @@
-import type { CleanupOperation, CleanupPreview, FidelityFinding, ImportedProjection, ImportedWindowProjection, InteropMetadata, SourceWorkbook, SpreadsheetExport, SpreadsheetOperation } from "./interop-protocol.ts";
+import type { CleanupOperation, CleanupPreview, FidelityFinding, ImportedProjection, ImportedWindowProjection, InteropMetadata, SourceWorkbook, SpreadsheetExport, SpreadsheetOperation, SourceStyle } from "./interop-protocol.ts";
 export type FieldTarget = {
     entity: string;
     field: string;
@@ -7,6 +7,8 @@ export type CollectionSummary = {
     id: string;
     key: string;
     display_name: string;
+    headerless: boolean;
+    data_start_row: number;
     entity_count: number;
 };
 export type BootstrapProjection = {
@@ -15,6 +17,12 @@ export type BootstrapProjection = {
     default_collection: string;
     collections: CollectionSummary[];
     keyed_grouped_sum_definition_ids?: string[];
+};
+/** Current resident state; saved-byte inspection remains a separate operation. */
+export type ProjectInspectionProjection = {
+    revision: string;
+    /** Present after an imported worksheet lifecycle publication, including Undo. */
+    import_metadata?: InteropMetadata;
 };
 /** `projection_bytes` refuses an import and `saved_bytes` a whole-session save; neither is a counted resource. */
 export type CapacityLimits = Record<Exclude<CapacityLimitName, "projection_bytes" | "saved_bytes" | "source_bytes" | "expanded_bytes" | "xml_nodes" | "serialized_source_bytes" | "output_bytes">, number>;
@@ -103,7 +111,7 @@ export type FieldProjection = {
     } | null;
     calculated: CalculationProjection | null;
     diagnostics: DiagnosticProjection[];
-    editable_scalar: "number" | "text" | "boolean" | "date" | null;
+    editable_scalar: "auto" | "number" | "text" | "boolean" | "date" | null;
     /** Sheet's display text for a Number or Date cell, present only when the window asked for it. */
     display?: string;
 };
@@ -175,6 +183,8 @@ export type TableRowProjection = {
     /** fields contains present values only; blank_fields lists absent IDs in column order (omission means []). */
     blank_fields?: string[];
     fields: FieldProjection[];
+    /** Resolved styles in column order, as in imported rows. Omission means defaults. */
+    styles?: SourceStyle[];
 };
 export type TableProjection = {
     tracker_profile?: boolean;
@@ -460,10 +470,13 @@ export type PublicationProjection = {
 export type ProjectExportProjection = {
     revision: string;
     byte_length: number;
+    import_metadata?: InteropMetadata;
 };
 export type ProjectExport = {
     revision: string;
     bytes: ArrayBuffer;
+    /** Persist alongside bytes and pass to spreadsheet open_project. */
+    import_metadata?: InteropMetadata;
 };
 /** Opaque canonical path/byte entries from Rust; named/v3 occurrences use v3. */
 export type CanonicalProjectFile = {
@@ -576,7 +589,27 @@ export type FormulaFailureProjection = FailureProjection & {
     code: FormulaFailureCode;
 };
 export declare function isFormulaFailure(failure: FailureProjection): failure is FormulaFailureProjection;
+export type CellStyleChange = {
+    kind: "bold" | "italic";
+    value: boolean;
+} | {
+    kind: "toggle_bold" | "toggle_italic";
+} | {
+    kind: "fill";
+    color: string | null;
+} | {
+    kind: "border";
+    target: "top" | "right" | "bottom" | "left" | "outline" | "all";
+    value: boolean;
+};
 export type TrackerCommand = {
+    type: "write_cell_at";
+    expected_revision: string;
+    collection: string;
+    row: number;
+    column: number;
+    input: ScalarEditInput;
+} | {
     type: "edit_cells";
     expected_revision: string;
     edits: Array<{
@@ -679,6 +712,13 @@ export type TrackerCommand = {
     field: string;
     wrap: boolean | null;
 } | {
+    type: "set_cell_style";
+    expected_revision: string;
+    collection: string;
+    entities: string[];
+    fields: string[];
+    changes: CellStyleChange[];
+} | {
     type: "set_column_width";
     expected_revision: string;
     collection: string;
@@ -710,7 +750,12 @@ export type TrackerCommand = {
     type: "undo" | "redo";
     expected_revision: string;
 };
+export type AutoDateOrder = "month_first" | "day_first";
 export type ScalarEditInput = {
+    kind: "auto";
+    input: string;
+    date_order?: AutoDateOrder;
+} | {
     kind: "clear";
 } | {
     kind: "number";
@@ -803,6 +848,10 @@ export type DesignerRequest = {
     occurrence_id: string;
     profile?: "working_size";
 } | {
+    type: "new_blank_workbook";
+    occurrence_id: string;
+    profile: "working_size";
+} | {
     type: "new_table";
     occurrence_id: string;
     name: string;
@@ -826,6 +875,8 @@ export type DesignerRequest = {
 } | {
     type: "bootstrap";
     occurrence_id: string;
+} | {
+    type: "inspect_project";
 } | {
     type: "query_capacity";
     expected_revision?: string;
@@ -941,6 +992,9 @@ export type DesignerResponse = {
     type: "bootstrap";
     payload: BootstrapProjection;
 } | {
+    type: "project_inspected";
+    payload: ProjectInspectionProjection;
+} | {
     type: "capacity";
     payload: CapacityProjection;
 } | {
@@ -1046,10 +1100,12 @@ export type WorkerRequest = {
     id: number;
     kind: "export_project";
     expected_revision: string;
+    metadata?: InteropMetadata;
 } | {
     id: number;
     kind: "export_project_v3";
     expected_revision: string;
+    metadata?: InteropMetadata;
 } | {
     id: number;
     kind: "export_canonical_tree";
@@ -1058,6 +1114,7 @@ export type WorkerRequest = {
     id: number;
     kind: "export_portable_ro";
     expected_revision: string;
+    metadata?: InteropMetadata;
 } | {
     id: number;
     kind: "verify_portable_ro";

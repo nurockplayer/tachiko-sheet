@@ -15,10 +15,10 @@ vi.mock("../ui/SheetShell.js", () => ({ SheetShell: (props: SheetShellProps) => 
 } }));
 
 it.each([
-  ["rename", "publication"], ["rename", "reopen"], ["add", "publication"], ["delete", "publication"],
-])("keeps exports and Save refused after unknown %s and Refresh until authoritative %s", async (command, recovery) => {
+  ["rename", "publication"], ["rename", "inspect"], ["add", "publication"], ["delete", "publication"],
+])("keeps exports and Save refused after unknown %s until authoritative %s", async (command, recovery) => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  const collection = { id: "s1", key: "s1", display_name: "Original", entity_count: 0 };
+  const collection = { id: "s1", key: "s1", display_name: "Original", headerless: false, data_start_row: 2, entity_count: 0 };
   const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1", requiresPortableSave: true,
     collections: [collection], table: { revision: "r1", collection, columns: [], rows: [] } };
   const metadata = { version: 1 as const, sheets: [{ schema_id: "s1", name: "Original", has_header: true, columns: [], rows: [] }] };
@@ -79,8 +79,9 @@ it.each([
       runtime.renameTable.mockImplementation(async () => ({ view, publication: { ...publication, import_metadata: metadata } }));
       await act(async () => { await current().onRenameTable!({ occurrence: "o1", revision: "r1" }, "s1", "New"); });
     } else {
-      await act(async () => current().onClose());
-      await act(async () => current().onOpenSaved("Imported"));
+      runtime.read.mockResolvedValue({ ...view, importMetadata: metadata });
+      await act(async () => current().onRefresh());
+      expect(runtime.openOpaque).toHaveBeenCalledTimes(1);
     }
     for (const format of ["xlsx", "csv"] as const) {
       await act(async () => { expect(await current().onPrepareDownload!(format)).toBe(true); });
@@ -99,8 +100,8 @@ it.each([
 
 it("offers Save a copy on a reader-only host after imported XLSX addTable and saves its latest mapping", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  const collection = { id: "s1", key: "s1", display_name: "Original", entity_count: 0 };
-  const added = { id: "s2", key: "s2", display_name: "Added", entity_count: 0 };
+  const collection = { id: "s1", key: "s1", display_name: "Original", headerless: false, data_start_row: 2, entity_count: 0 };
+  const added = { id: "s2", key: "s2", display_name: "Added", headerless: false, data_start_row: 2, entity_count: 0 };
   const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1",
     collections: [collection], table: { revision: "r1", collection, columns: [], rows: [] } };
   const next: WorkbookView = { ...view, revision: "r2", requiresPortableSave: true, openedFromWorkFile: true,
@@ -135,7 +136,7 @@ it("offers Save a copy on a reader-only host after imported XLSX addTable and sa
 
 it("allows imported exports and Save after an unknown cell edit and Refresh", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  const collection = { id: "s1", key: "s1", display_name: "Original", entity_count: 0 };
+  const collection = { id: "s1", key: "s1", display_name: "Original", headerless: false, data_start_row: 2, entity_count: 0 };
   const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1",
     collections: [collection], table: { revision: "r1", collection, columns: [], rows: [] } };
   const metadata = { version: 1 as const, sheets: [{ schema_id: "s1", name: "Original", has_header: true, columns: [], rows: [] }] };

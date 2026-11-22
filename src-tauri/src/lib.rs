@@ -23,7 +23,7 @@ use std::sync::{Mutex, MutexGuard};
 use rfd::{AsyncFileDialog, AsyncMessageDialog, MessageButtons, MessageDialogResult, MessageLevel};
 use saves::{Claim, Published, Saves, WriteError};
 use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem};
-use tauri::webview::DownloadEvent;
+use tauri::webview::{DownloadEvent, PageLoadEvent};
 use tauri::{
     AppHandle, Manager, State, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
@@ -483,7 +483,14 @@ async fn save_export(
         Claim::Run => {}
     }
     let outcome = match request.body() {
-        tauri::ipc::InvokeBody::Raw(frame) => save_frame(&app, &saves, frame).await,
+        tauri::ipc::InvokeBody::Raw(frame) => {
+            let length = request.headers().get("tachiko-companion-length")
+                .and_then(|value| value.to_str().ok()).unwrap_or("0").parse::<usize>();
+            match length {
+                Ok(length) => save_frame(&app, &saves, frame, length).await,
+                Err(_) => Err("The companion could not be read. Nothing was saved.".to_owned()),
+            }
+        },
         // Not a frame this page sent: the save's real outcome is unknown here.
         tauri::ipc::InvokeBody::Json(_) => Err(
             "The export may not have been saved. Check the destination before relying on it."
@@ -496,10 +503,14 @@ async fn save_export(
 
 const SAVE_ID_HEADER: &str = "tachiko-save-id";
 
-async fn save_frame(app: &AppHandle, saves: &Saves, frame: &[u8]) -> Result<String, String> {
+async fn save_frame(app: &AppHandle, saves: &Saves, frame: &[u8], companion_length: usize) -> Result<String, String> {
     let Some((epoch, name, bytes)) = parse_save_frame(frame) else {
         return Err("The export could not be read. Nothing was saved.".to_owned());
     };
+    if companion_length > 4 * 1024 * 1024 || companion_length > bytes.len() {
+        return Err("The companion could not be read. Nothing was saved.".to_owned());
+    }
+    let (companion, bytes) = bytes.split_at(companion_length);
     #[cfg(feature = "e2e")]
     e2e::log(&format!("save requested {name}"));
     // One Save sheet at a time; the leave decision never waits on this.
@@ -507,7 +518,7 @@ async fn save_frame(app: &AppHandle, saves: &Saves, frame: &[u8]) -> Result<Stri
     let Some(destination) = choose_destination(app, &name).await else {
         return Ok("cancelled".to_owned());
     };
-    let published = saves.publish(epoch, bytes.to_vec(), destination).await;
+    let published = saves.publish_with_companion(epoch, bytes.to_vec(), destination, (!companion.is_empty()).then(|| companion.to_vec())).await;
     #[cfg(feature = "e2e")]
     e2e::log(&format!("saved {name}: {published:?}"));
     match published {
@@ -586,6 +597,7 @@ async fn tokio_sleep(duration: std::time::Duration) {
 const ZOOM_IN: &str = "zoom-in";
 const ZOOM_OUT: &str = "zoom-out";
 const ZOOM_RESET: &str = "zoom-reset";
+const FREEZE_FIRST_COLUMN: &str = "freeze-first-column";
 const ZOOM_STEPS: [f64; 11] = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
 
 #[derive(Clone, Copy)]
@@ -686,7 +698,7 @@ fn page_item(app: &AppHandle, command: &PageCommand) -> tauri::Result<MenuItem<t
 
 /// Tell the page which menu command was chosen. Ids come only from `PAGE_COMMANDS`.
 fn run_page_command(app: &AppHandle, id: &str) {
-    if PAGE_COMMANDS.iter().any(|command| command.id == id)
+    if (id == FREEZE_FIRST_COLUMN || PAGE_COMMANDS.iter().any(|command| command.id == id))
         && let Some(window) = app.get_webview_window(MAIN_WINDOW)
     {
         let _ = window.eval(format!(
@@ -768,6 +780,9 @@ fn app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         };
         match submenu.text()?.as_str() {
             "View" => {
+                submenu.append(&MenuItem::with_id(
+                    app, FREEZE_FIRST_COLUMN, "Freeze First Column", true, None::<&str>,
+                )?)?;
                 if !submenu.items()?.is_empty() {
                     submenu.append(&PredefinedMenuItem::separator(app)?)?;
                 }
@@ -915,12 +930,18 @@ pub fn run() {
                     .inner_size(1280.0, 820.0)
                     .min_inner_size(880.0, 600.0)
                     .on_navigation(move |url| on_navigation(&handle, url))
-                    .on_download(|_webview, event| on_download(&event));
+                    .on_download(|_webview, event| on_download(&event))
+                    .on_page_load(|window, payload| {
+                        if payload.event() == PageLoadEvent::Finished {
+                            close_diagnostic(&window, "page-loaded");
+                        }
+                    });
             // The packaged e2e run must not stall when its window is covered.
             #[cfg(feature = "e2e")]
             let window = window
                 .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
             let window = window.build()?;
+            close_diagnostic(&window, "window-built");
             let guarded = window.clone();
             window.on_window_event(move |event| match event {
                 WindowEvent::CloseRequested { api, .. }
