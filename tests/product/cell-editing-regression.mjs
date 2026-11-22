@@ -198,8 +198,9 @@ const cases = [
     assert.equal(await focused(at(3)), true);
     await completionEntry(page, at(2));
     await input.press("a"); await input.press("l");
-    await shownCompletion(input, "alpha", 2, 5);
+    await shownCompletion(input, "Alpha", 2, 5);
     await input.press("Tab"); await input.waitFor({ state: "hidden" });
+    assert.equal((await at(2).textContent()).trim(), "Alpha");
     assert.equal(await dispatches(page), count + 2);
     assert.equal(await focused(at(2, 1)), true);
   }],
@@ -210,7 +211,7 @@ const cases = [
     await input.press("a"); await input.press("l");
     await shownCompletion(input, "al", 2, 2);
     await input.press("p"); await input.press("h");
-    await shownCompletion(input, "alpha", 4, 5);
+    await shownCompletion(input, "Alpha", 4, 5);
     await input.press("Escape");
     await completionEntry(page, at(2)); await input.pressSequentially("lph");
     assert.equal(await input.inputValue(), "lph"); await input.press("Escape");
@@ -222,7 +223,7 @@ const cases = [
     for (const key of ["Backspace", "Delete"]) {
       const input = await completionEntry(page, at(2));
       await input.press("a"); await input.press("l");
-      await shownCompletion(input, "alpha", 2, 5);
+      await shownCompletion(input, "Alpha", 2, 5);
       await input.press(key); await shownCompletion(input, "al", 2, 2);
       await at(2, 1).click(); assert.equal(await input.inputValue(), "al");
       await input.focus(); await input.press("Escape");
