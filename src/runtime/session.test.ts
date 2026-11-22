@@ -378,6 +378,8 @@ class FakeClient {
     return { bootstrap: this.#bootstrap(), table: this.#table() };
   }
 
+  async inspectCurrentProject() { return { revision: this.#bootstrap().revision }; }
+
   async bootstrap() {
     this.calls.bootstrap += 1;
     this.#requireOpen();

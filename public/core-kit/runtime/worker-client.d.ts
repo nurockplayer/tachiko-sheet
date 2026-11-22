@@ -1,7 +1,7 @@
 import type { A1Translation, TranslateA1FormulaInput } from "./protocol.ts";
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportedWindowProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
 import { type DesignerClient } from "./client.ts";
-import type { FormulaCopy, TrackerCommand, BootstrapProjection, CapacityProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldExplanationProjection, FieldConstraintInput, NumberFormat, DateFormat, FieldTarget, OpenedProjection, OpenedWindowProjection, OccurrenceProjection, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, ProjectExport, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, SelectionStatisticsProjection, SelectionStatisticsRange, GroupDimension, GroupScope, GroupTotalsProjection } from "./protocol.ts";
+import type { FormulaCopy, TrackerCommand, BootstrapProjection, ProjectInspectionProjection, CapacityProjection, CanonicalTreeExport, CanonicalProjectFile, FieldBatchProjection, FieldExplanationProjection, FieldConstraintInput, NumberFormat, DateFormat, FieldTarget, OpenedProjection, OpenedWindowProjection, OccurrenceProjection, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, ProjectExport, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, SelectionStatisticsProjection, SelectionStatisticsRange, GroupDimension, GroupScope, GroupTotalsProjection } from "./protocol.ts";
 export type DesignerWorkerFactory = () => Worker;
 export declare class WorkerDesignerClient implements DesignerClient {
     #private;
@@ -46,6 +46,8 @@ export declare class WorkerDesignerClient implements DesignerClient {
     setColumnWidth(expectedRevision: string, collection: string, field: string, width: number | null): Promise<PublicationProjection>;
     moveColumn(expected: string, collection: string, field: string, toIndex: number): Promise<PublicationProjection>;
     bootstrap(): Promise<BootstrapProjection>;
+    /** Recover the current imported mapping without reopening saved bytes. */
+    inspectCurrentProject(): Promise<ProjectInspectionProjection>;
     queryCapacity(expectedRevision?: string): Promise<CapacityProjection>;
     inspectProject(bytes: ArrayBuffer): Promise<OpenedProjection>;
     inspectProjectWorkingSize(bytes: ArrayBuffer): Promise<OpenedWindowProjection>;
