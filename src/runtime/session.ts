@@ -1631,6 +1631,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       } catch (error) {
         if (error instanceof UnknownOperationOutcomeError) {
           openedFromWorkFile = false;
+          importedMapping = undefined;
           requiresPortableSave = false;
           active = null;
           residentCollection = null;
