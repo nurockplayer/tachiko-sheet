@@ -59,6 +59,9 @@ async function save(suggestedName: string, content: Blob | Promise<Blob>, compan
 
 /** The desktop host writes exports itself, after asking with a Save sheet. */
 export const tauriHostFiles: HostFiles = {
+  async pickWorkFile() {
+    return decodeOpenedFile(new Uint8Array(await invoke<ArrayBuffer>("take_opened_file", { pick: true })));
+  },
   async takeOpenedFile() {
     return decodeOpenedFile(new Uint8Array(await invoke<ArrayBuffer>("take_opened_file")));
   },

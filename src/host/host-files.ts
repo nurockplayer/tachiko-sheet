@@ -25,6 +25,8 @@ export interface HostFiles {
   readImportCompanion?(file: File, bytes: ArrayBuffer): Promise<ImportCompanion | undefined>;
   /** The file the OS or File > Open gave the desktop host, once; the browser has none. */
   takeOpenedFile?(): Promise<OpenedFile | null>;
+  /** Desktop Home picker, including the same attachments as OS/File > Open. */
+  pickWorkFile?(): Promise<OpenedFile | null>;
 }
 
 /** The browser: an ordinary download of a fresh object URL. */

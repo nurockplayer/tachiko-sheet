@@ -139,7 +139,18 @@ pub fn offer(app: &AppHandle, path: PathBuf) {
 }
 
 #[tauri::command]
-pub fn take_opened_file(files: State<'_, OpenedFiles>) -> Response {
+pub async fn take_opened_file(app: AppHandle, files: State<'_, OpenedFiles>, pick: Option<bool>) -> Response {
+    if pick == Some(true) {
+        let mut dialog = rfd::AsyncFileDialog::new().add_filter("Work files", &["ro"]);
+        if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+            dialog = dialog.set_parent(&window);
+        }
+        let Some(handle) = dialog.pick_file().await else { return Response::new(Vec::<u8>::new()); };
+        let path = handle.path().to_path_buf();
+        let frame = tauri::async_runtime::spawn_blocking(move || encode(Some(read(&path, MAX_BYTES))))
+            .await.expect("work file picker read worker");
+        return Response::new(frame);
+    }
     Response::new(encode(lock(&files.waiting).take()))
 }
 

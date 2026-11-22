@@ -1115,7 +1115,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       const metadata = await companionMetadata(bytes, companion);
       const opened = await replaceWork(() => metadata ? runtime.openWorkFile(bytes, metadata) : runtime.openWorkFile(bytes));
       if (opened.kind !== "confirmed") return;
-      if (!metadata || !viewRef.current?.importMetadata) setMessage(IMPORT_COMPANION_NOTE);
+      if ((companion || viewRef.current?.importMetadata) && (!metadata || !viewRef.current?.importMetadata)) setMessage(IMPORT_COMPANION_NOTE);
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
     } catch (error) {
       if (error instanceof OpenedProjectionRecoveryError) {
