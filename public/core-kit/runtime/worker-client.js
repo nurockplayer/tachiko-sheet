@@ -203,6 +203,10 @@ export class WorkerDesignerClient {
             occurrence_id: freshOccurrenceId(),
         }));
     }
+    /** Recover the current imported mapping without reopening saved bytes. */
+    async inspectCurrentProject() {
+        return expectResponse("project_inspected", await this.#command({ type: "inspect_project" }));
+    }
     async queryCapacity(expectedRevision) {
         return expectResponse("capacity", await this.#command(expectedRevision === undefined
             ? { type: "query_capacity" }
@@ -556,6 +560,10 @@ function expectResponse(type, response) {
     // Validate the additive optional-field metadata without normalizing the
     // sparse Rust payload (or fabricating empty Text for absent slots).
     switch (response.type) {
+        case "project_inspected":
+            if (response.payload.import_metadata !== undefined)
+                validateImportMetadata(response.payload.import_metadata);
+            break;
         case "table":
             validateTablePresence(response.payload);
             break;

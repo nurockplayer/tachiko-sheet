@@ -4325,7 +4325,17 @@ export function SheetShell(props: SheetShellProps) {
   function workFileInput(locked: boolean): ReactNode {
     return <label className={`ts-button ts-home-file-action${locked ? " ts-home-file-action--disabled" : ""}`} aria-disabled={locked}>
       <span>Open work file…</span>
-      <input data-testid="open-work-file" aria-label="Open work file" type="file" accept=".ro" disabled={locked} onChange={(event) => { const input = event.currentTarget; void openWorkFile(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
+      <input data-testid="open-work-file" aria-label="Open work file" type="file" accept=".ro" disabled={locked} onClick={async (event) => {
+        if (!hostFiles.pickWorkFile) return;
+        event.preventDefault();
+        setLocalError(null);
+        try {
+          const opened = await hostFiles.pickWorkFile();
+          if (!opened) return;
+          if ("refused" in opened) { setLocalError(opened.refused); return; }
+          await openWorkFile(opened.file);
+        } catch (error) { setLocalError(workFileOpenRefusal(error)); }
+      }} onChange={(event) => { const input = event.currentTarget; void openWorkFile(input.files?.[0] ?? null).finally(() => { input.value = ""; }); }} />
     </label>;
   }
 
