@@ -476,10 +476,12 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         }
         continue;
       }
-      const inspect = capability(client.inspectCurrentProject, "current project inspection");
-      const inspection = await afterUsable(expected, dispatch(kit, () => inspect.call(client)));
-      requireCurrentProjectionRevision(occurrence.revision, inspection.revision, "current project inspection");
-      importedMapping = inspection.import_metadata ?? importedMapping;
+      const inspect = client.inspectCurrentProject;
+      if (inspect) {
+        const inspection = await afterUsable(expected, dispatch(kit, () => inspect.call(client)));
+        requireCurrentProjectionRevision(occurrence.revision, inspection.revision, "current project inspection");
+        importedMapping = inspection.import_metadata ?? importedMapping;
+      }
       columnsRevision = loaded.columnsRevision;
       readDisplay = loaded.display;
       liveRead = {
