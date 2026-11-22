@@ -80,7 +80,7 @@ try {
     const start = await center(grip);
     await drag(start, { x: start.x + 40 * zoom / 100, y: start.y }); await ready();
     const after = (await header.boundingBox()).width;
-    assert.ok(Math.abs(after - before - 40 * zoom / 100) < 3, `resize uses logical width at ${zoom}%`);
+    assert.ok(Math.abs(after - before - 40 * zoom / 100) < 3, `resize uses logical width at ${zoom}%: before=${before}, after=${after}, expected delta=${40 * zoom / 100}`);
     assert.ok(await grid.locator("tbody tr.ts-row").count() < 300, "windowing stays enabled");
     const nameBox = page.getByLabel("Name Box", { exact: true });
     await nameBox.fill("D301"); await nameBox.press("Enter");
