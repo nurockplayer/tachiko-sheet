@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use tauri::ipc::Response;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager};
 
 use crate::{lock, MAIN_WINDOW};
 
@@ -24,6 +24,7 @@ const READY_EVENT: &str =
 #[derive(Debug, PartialEq)]
 enum Held {
     File { name: String, bytes: Vec<u8> },
+    ImportedFile { name: String, bytes: Vec<u8>, companion: Vec<u8> },
     Refused { message: String },
 }
 
@@ -85,6 +86,15 @@ fn read(path: &Path, limit: u64) -> Held {
         Ok(size) if size as u64 > limit => Held::Refused {
             message: format!("“{name}” is too large to open. Nothing was opened."),
         },
+        Ok(_) if name.to_ascii_lowercase().ends_with(".ro") => {
+            let mut sidecar = path.as_os_str().to_os_string();
+            sidecar.push(".import-metadata.json");
+            let mut companion = Vec::new();
+            // Optional host attachment: unreadable/oversized means absent; the page explains it.
+            let result = File::open(Path::new(&sidecar)).and_then(|file| file.take(4 * 1024 * 1024 + 1).read_to_end(&mut companion));
+            if result.is_err() || companion.len() > 4 * 1024 * 1024 { companion.clear(); }
+            Held::ImportedFile { name, bytes, companion }
+        },
         Ok(_) => Held::File { name, bytes },
     }
 }
@@ -93,6 +103,13 @@ fn read(path: &Path, limit: u64) -> Held {
 /// empty when no file is waiting.
 fn encode(held: Option<Held>) -> Vec<u8> {
     let (status, text, bytes) = match held {
+        Some(Held::ImportedFile { name, bytes, companion }) => {
+            let mut payload = Vec::new();
+            payload.extend_from_slice(&(companion.len() as u32).to_le_bytes());
+            payload.extend_from_slice(&companion);
+            payload.extend_from_slice(&bytes);
+            (2, name, payload)
+        },
         None => return Vec::new(),
         Some(Held::File { name, bytes }) => (0, name, bytes),
         Some(Held::Refused { message }) => (1, message, Vec::new()),
@@ -122,8 +139,20 @@ pub fn offer(app: &AppHandle, path: PathBuf) {
 }
 
 #[tauri::command]
-pub fn take_opened_file(files: State<'_, OpenedFiles>) -> Response {
-    Response::new(encode(lock(&files.waiting).take()))
+pub async fn take_opened_file(app: AppHandle, pick: Option<bool>) -> Response {
+    if pick == Some(true) {
+        let mut dialog = rfd::AsyncFileDialog::new().add_filter("Work files", &["ro"]);
+        if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+            dialog = dialog.set_parent(&window);
+        }
+        let Some(handle) = dialog.pick_file().await else { return Response::new(Vec::<u8>::new()); };
+        let path = handle.path().to_path_buf();
+        let frame = tauri::async_runtime::spawn_blocking(move || encode(Some(read(&path, MAX_BYTES))))
+            .await.expect("work file picker read worker");
+        return Response::new(frame);
+    }
+    let held = lock(&app.state::<OpenedFiles>().waiting).take();
+    Response::new(encode(held))
 }
 
 #[cfg(test)]
@@ -136,6 +165,19 @@ mod tests {
         let path = dir.join(name);
         std::fs::write(&path, content).unwrap();
         path
+    }
+
+    #[test]
+    fn ro_reads_optional_sidecar_without_touching_the_file() {
+        let path = temp_file("companion.ro", b"original-ro");
+        let sidecar = path.with_file_name("companion.ro.import-metadata.json");
+        std::fs::write(&sidecar, b"opaque-companion").unwrap();
+        assert!(matches!(read(&path, 100), Held::ImportedFile { bytes, companion, .. }
+            if bytes == b"original-ro" && companion == b"opaque-companion"));
+        std::fs::remove_file(sidecar).unwrap();
+        assert!(matches!(read(&path, 100), Held::ImportedFile { bytes, companion, .. }
+            if bytes == b"original-ro" && companion.is_empty()));
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]

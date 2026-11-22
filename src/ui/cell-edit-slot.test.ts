@@ -94,6 +94,11 @@ describe("cell editor options", () => {
 describe("column text completion", () => {
   it.each([
     ["", ["Alpha"], null],
+    ["to", ["Tokyo", "Osaka"], "Tokyo"],
+    ["o", ["Osaka", "Okinawa"], null],
+    ["=", ["=Tokyo"], null],
+    ["12", ["1234"], null],
+    ["2026-", ["2026-11-22"], null],
     ["al", ["Alpha", "Alpha", "Beta"], "Alpha"],
     ["al", ["Alpha", "alpha"], "Alpha"],
     ["AL", ["alpha", "Alpha"], "alpha"],

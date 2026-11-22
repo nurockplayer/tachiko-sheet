@@ -86,7 +86,7 @@ export function emptyCellEdit(slot: CellEditSlot): CellEdit | null {
 }
 
 export function completionFor(typed: string, values: string[]): string | null {
-  if (!typed) return null;
+  if (!typed || typed.startsWith("=") || !/\p{L}/u.test(typed)) return null;
   const prefix = typed.toLowerCase();
   const seen = new Set<string>();
   let match: string | null = null;
