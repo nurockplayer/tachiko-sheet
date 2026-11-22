@@ -22,7 +22,7 @@ tauri-build = { version = "=2.7.0", features = [] }
 # The Tachiko Work runtime at an exact, immutable source revision: the Web
 # kit's pinned producer source, including the native host bridge.
 # Re-pin only together with the matching kit and independent qualification.
-tachiko-designer-runtime = { git = "https://github.com/nurockplayer/tachiko-work", rev = "f5d3b2b59d695d95244b21647cc53bf4b302de9c" }
+tachiko-designer-runtime = { git = "https://github.com/nurockplayer/tachiko-work", rev = "2215c25bf97881e878ffcf9f092fdaa52decc9e1" }
 tauri = { version = "=2.12.0", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -43,6 +43,8 @@ windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Stor
 [target.'cfg(target_os = "linux")'.dependencies]
 # Already locked through Tauri; invoke WebKit's native Paste without libxdo.
 webkit2gtk = "=2.0.2"
+# Already locked through Tauri; the e2e driver activates the GTK menu's Paste.
+gtk = "=0.18.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Already in the graph through tao/wry; used only to route application
