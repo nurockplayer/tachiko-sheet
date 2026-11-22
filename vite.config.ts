@@ -1,4 +1,5 @@
-import { defineConfig, type Plugin } from "vite";
+import type { Plugin } from "vite";
+import { configDefaults, defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 /** Keep ignored kit imports on Vite's byte-preserving public-file path. */
@@ -33,6 +34,10 @@ export default defineConfig(({ mode }) => {
   const desktop = mode === "desktop";
   return {
     plugins: [publicCoreKitDevImports(), react()],
+    test: {
+      // This Playwright host suite uses node:test (see test:unit).
+      exclude: [...configDefaults.exclude, "src/host/local-copies.test.mjs"],
+    },
     base: "/",
     build: {
       outDir: acceptance ? "dist-acceptance" : desktop ? "dist-desktop" : "dist",
