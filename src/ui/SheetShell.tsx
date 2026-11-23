@@ -1261,7 +1261,8 @@ export function SheetShell(props: SheetShellProps) {
   const ledgerColumns = useMemo(() => interop?.ledgerColumns ? bindingCatalogNames(interop.ledgerColumns, interop.metadata, importedSourceName) : null, [interop?.ledgerColumns, interop?.metadata, importedSourceName]);
   // Resolve labels once for every consumer. IDs, keys and canonical projections
   // remain untouched; this array is presentation only.
-  const worksheet = Boolean(table?.collection.headerless && onWriteCellAt);
+  // Imported sheets retain main's header-inclusive labels and canonical geometry.
+  const worksheet = Boolean(table?.collection.headerless && onWriteCellAt && !importedSourceName && !interop?.metadata);
   // These addresses describe unallocated grid space, never canonical entities.
   const columns = useMemo<TableColumn[]>(() => {
     if (!table) return [];
@@ -1372,7 +1373,8 @@ export function SheetShell(props: SheetShellProps) {
   }, [focusedKey]);
   // Reads only the focused instance's own projected formula (#129): never a
   // column-level rule, a computed-column claim or a neighbour's value.
-  const formulaState = formulaBarState({
+  const worksheetFormulaLimitation = "Formulas and cell references are not available in blank worksheets yet because their displayed addresses cannot be matched safely.";
+  const formulaState = { ...formulaBarState({
     viewIdentity: viewKey ?? "",
     table,
     columns,
@@ -1382,7 +1384,7 @@ export function SheetShell(props: SheetShellProps) {
     // Another operation's publication replaces the projection; this bar's own
     // submit is the one busy case that must keep the bar editable for itself.
     locked: props.busy && !commitPending,
-  });
+  }), ...(worksheet ? { editable: false, reason: worksheetFormulaLimitation } : {}) };
   // A changed, identity-bound draft is unapplied user input: it blocks the same
   // operations as an open cell editor instead of silently vanishing with a new
   // revision. An unchanged bar value is only a selection, not a draft.
@@ -1872,6 +1874,16 @@ export function SheetShell(props: SheetShellProps) {
     const start = draft ? { row: displayRows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at;
     const pastedPosition = draft ? position : { entity: rowEntity(displayRows[start.row]!), field: columns[start.column]!.id };
     const pasteBlocked = controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen;
+    const pasteRowCount = worksheet ? displayRows.filter(row => !row.id.startsWith("worksheet-row:")).length : displayRows.length;
+    const pasteColumns = worksheet ? tableColumns(table) : columns;
+    if (worksheet && (start.row + decoded.length > pasteRowCount || start.column + (decoded[0]?.length ?? 0) > pasteColumns.length)) {
+      announceClipboard("Pasting into unused worksheet cells is not available yet. Type into these cells instead. Nothing was pasted.", true);
+      return;
+    }
+    if (worksheet && decoded.some(row => row.some(value => value.trimStart().startsWith("=")))) {
+      announceClipboard(`${worksheetFormulaLimitation} Nothing was pasted.`, true);
+      return;
+    }
     const copied = copiedFormulaRef.current;
     if (!valuesOnly && !draft && onCopyFormula && copied && copied.identity === collectionIdentity && Boolean(table.native_table_profile)
       && decoded.length === 1 && decoded[0]?.length === 1 && decoded[0][0] === copied.text) {
@@ -1895,8 +1907,6 @@ export function SheetShell(props: SheetShellProps) {
         // The plan is pure; anything else falls back to the ordinary value paste.
       }
     }
-    const pasteRowCount = worksheet ? displayRows.filter(row => !row.id.startsWith("worksheet-row:")).length : displayRows.length;
-    const pasteColumns = worksheet ? tableColumns(table) : columns;
     const viewRefusal = draft ? null : rowViewPasteRefusal(gridSettings, start.row, decoded.length, pasteRowCount);
     if (viewRefusal) { announceClipboard(viewRefusal, true); return; }
     const route = routePaste(decoded, { native: Boolean(table.native_table_profile), draft,
@@ -3182,7 +3192,7 @@ export function SheetShell(props: SheetShellProps) {
    */
   function referenceForCell(row: TableRow | null, column: TableColumn, draft: boolean): { token: string; into: "bar" | "cell" } | null {
     const into = formulaCaretInBar() ? "bar" : formulaCaretInCellEditor() ? "cell" : null;
-    if (!into || !table) return null;
+    if (!into || !table || worksheet) return null;
     const formulaEntity = into === "bar" ? formulaState.target?.entity : editor?.entity;
     // The editing cell itself is never a reference to insert.
     if (into === "cell" && row && rowEntity(row) === editor?.entity && column.id === editor?.field) return null;
@@ -3713,6 +3723,10 @@ export function SheetShell(props: SheetShellProps) {
       setEditor(null);
       setLocalError(null);
       return true;
+    }
+    if (worksheet && editor.value.trimStart().startsWith("=")) {
+      setLocalError(`${worksheetFormulaLimitation} The draft was kept.`);
+      return false;
     }
     const at = address(editor);
     const storedRow = table ? rowSource(table).byEntity(editor.entity) : undefined;
@@ -6285,7 +6299,7 @@ export function SheetShell(props: SheetShellProps) {
     // The outlined cells of the formula being typed. A1 rows follow the
     // displayed order, so a sorted view outlines the row the formula uses.
     const referencedRow = draft ? 0 : a1RowNumber(coordinate.row);
-    const formulaReferenced = !draft && referencedRanges.length > 0
+    const formulaReferenced = !worksheet && !draft && referencedRanges.length > 0
       && referencedRanges.some((range) => referencedRow >= range.top && referencedRow <= range.bottom
         && coordinate.column >= range.left && coordinate.column <= range.right);
     // The fill handle sits on the active range's lower-right cell, or on the
