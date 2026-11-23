@@ -1134,7 +1134,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
 
   function writeCellAt(witness: ViewWitness, collection: string, row: number, column: number, input: string) {
     return confirmedMutation(witness, (client, revision) =>
-      capability(client.writeCellAt, "worksheet cell entry").call(client, revision, collection, row, column, { kind: "auto", input }));
+      capability(client.writeCellAt, "worksheet cell entry").call(client, revision, collection, row + 1, column + 1, { kind: "auto", input }));
   }
 
   function pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]) {

@@ -247,6 +247,9 @@ const cases = [
       await page.getByTestId("worksheet:B4").click();
       await page.keyboard.type("Apple");
       await page.keyboard.press("Enter");
+      await settle(page);
+      const refusal = (await page.locator('[role="alert"]').allTextContents()).join("; ");
+      assert.equal((await page.getByTestId("worksheet:B4").textContent()).trim(), "Apple", refusal || "typing in B4 stored no value");
       await waitForCellText(page, "worksheet:B4", "Apple");
       assert.equal(fieldAt(await projection(page), 3, 1)?.stored?.value, "Apple", "Work stored Apple at the wrong position");
       await saveCopy(page, "habits-03");
