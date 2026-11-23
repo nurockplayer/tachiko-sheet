@@ -37,6 +37,7 @@ import {
   type SalesEntryTipMarker,
   type SavedCopySummary,
   type ScalarEdit,
+  type ScalarValueEdit,
   type NewTableColumn,
   type RowInitializer,
   type CellEdit,
@@ -1790,7 +1791,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.editCells(witness, edits));
   }
 
-  function writeCellAt(witness: ViewWitness, collection: string, row: number, column: number, input: string) {
+  function writeCellAt(witness: ViewWitness, collection: string, row: number, column: number, input: string | ScalarValueEdit) {
     return changeRows(witness, () => runtime.writeCellAt(witness, collection, row, column, input));
   }
 

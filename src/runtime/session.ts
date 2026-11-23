@@ -33,6 +33,7 @@ import {
   type FieldTarget,
   type KitLoader,
   type ScalarEdit,
+  type ScalarValueEdit,
   type NewTableColumn,
   type RowInitializer,
   type CellEdit,
@@ -508,6 +509,8 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     edit: ScalarEdit,
   ): Promise<PublicationProjection> {
     switch (edit.kind) {
+      case "auto":
+        return capability(client.editAuto, "Auto cell editing").call(client, expectedRevision, target, edit.input);
       case "number":
         return client.editNumber(expectedRevision, target, edit.input);
       case "text":
@@ -1133,9 +1136,9 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
-  function writeCellAt(witness: ViewWitness, collection: string, row: number, column: number, input: string) {
+  function writeCellAt(witness: ViewWitness, collection: string, row: number, column: number, input: string | ScalarValueEdit) {
     return confirmedMutation(witness, (client, revision) =>
-      capability(client.writeCellAt, "worksheet cell entry").call(client, revision, collection, row + 1, column + 1, { kind: "auto", input }));
+      capability(client.writeCellAt, "worksheet cell entry").call(client, revision, collection, row + 1, column + 1, typeof input === "string" ? { kind: "auto", input } : input));
   }
 
   function pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]) {

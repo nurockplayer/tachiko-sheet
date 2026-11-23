@@ -209,8 +209,10 @@ export function seedTextOf(field: FieldProjection): string {
  * Builds the typed edit intent for one scalar draft. Numbers cross as raw input;
  * the UI performs no numeric validation or coercion.
  */
-export function scalarEditOf(kind: "number" | "text" | "date", raw: string): ScalarValueEdit {
+export function scalarEditOf(kind: "auto" | "number" | "text" | "date", raw: string): ScalarValueEdit {
   switch (kind) {
+    case "auto":
+      return { kind: "auto", input: raw };
     case "number":
       return { kind: "number", input: raw };
     case "date":

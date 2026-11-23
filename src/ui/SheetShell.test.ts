@@ -9,7 +9,6 @@ import type { FieldProjection } from "../../public/core-kit/experimental-client.
 import type { AppearancePreferenceController, AppearancePreferenceSnapshot } from "../application/appearance-preference.js";
 import type { KeyedGroupedSumResult, SheetShellProps, WorkbookView } from "../contracts.js";
 import { BriefFacts } from "./BriefFacts.js";
-import { BlankWorksheet } from "./BlankWorksheet.js";
 import { TACHIKO_COMPACT_PORCELAIN_PROFILE } from "./interface-profile/profile.js";
 import {
   cellEditorListAttributes,
@@ -194,26 +193,32 @@ function render(props: Partial<SheetShellProps>): string {
   return renderToStaticMarkup(createElement(SheetShell, makeProps(props)));
 }
 
-describe("blank worksheet commit navigation", () => {
+describe("headerless worksheets use the existing grid", () => {
   let dispose: (() => Promise<void>) | undefined;
   afterEach(async () => { await dispose?.(); dispose = undefined; });
 
-  async function mount() {
+  async function mount(initial?: WorkbookView, overrides: Partial<SheetShellProps> = {}) {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
-    let view = makeView();
-    view.table = { ...view.table, rows: [], columns: [] };
-    const onDraftChange = vi.fn();
-    const draw = () => root.render(createElement(BlankWorksheet, { view, locked: false, onWrite, onDraftChange }));
+    let view = initial ?? makeView();
+    view = { ...view, table: { ...view.table, collection: { ...view.table.collection, headerless: true, data_start_row: 1 },
+      ...(initial ? {} : { rows: [], columns: [] }) } };
+    const onCommit = vi.fn<SheetShellProps["onCommit"]>(async () => ({ accepted: true }));
+    const onEditCells = vi.fn<NonNullable<SheetShellProps["onEditCells"]>>(async () => ({ kind: "confirmed" }));
+    const onSave = vi.fn(async () => true);
+    const onCreateCopy = vi.fn(async () => ({ saved: true as const }));
+    const draw = () => root.render(createElement(SheetShell, makeProps({ view, onCommit, onEditCells, onWriteCellAt: onWrite,
+      onSave, onCreateCopy, boundCopyName: "Saved worksheet", importedSourceName: initial ? "headerless.csv" : null, ...overrides })));
     const onWrite = vi.fn<NonNullable<SheetShellProps["onWriteCellAt"]>>(async (_witness, _collection, row, column, input) => {
       const columns = Array.from({ length: Math.max(view.table.columns.length, column + 1) }, (_, index) =>
-        view.table.columns[index] ?? { ...makeView().table.columns[0]!, id: `c-${index}`, key: `column-${index}` });
+        view.table.columns[index] ?? { id: `c-${index}`, key: `column-${index}`, display_name: `Column ${index + 1}`, field_type: "auto", required: false });
       const rows = Array.from({ length: Math.max(view.table.rows.length, row + 1) }, (_, index) =>
         view.table.rows[index] ?? { id: `row-${index}`, key: `row-${index}`, fields: [] });
       const target = rows[row]!;
-      rows[row] = { ...target, fields: [...target.fields.filter(field => field.target.field !== columns[column]!.id), projected(target.id!, columns[column]!.id, { kind: "text", value: input })] };
+      const field = projected(target.id, columns[column]!.id, { kind: "text", value: typeof input === "string" ? input : "input" in input ? input.input : String(input.value) }, { editable_scalar: "auto" });
+      rows[row] = { ...target, fields: [...target.fields.filter(field => field.target.field !== columns[column]!.id), field] };
       view = { ...view, table: { ...view.table, columns, rows } };
       draw();
       return { kind: "confirmed" };
@@ -221,51 +226,115 @@ describe("blank worksheet commit navigation", () => {
     dispose = async () => { await act(async () => root.unmount()); container.remove(); };
     await act(async () => draw());
     const cell = (address: string) => container.querySelector<HTMLElement>(`[data-address="${address}"]`)!;
-    const click = async (address: string) => act(async () => cell(address).click());
-    const key = async (value: string) => act(async () => {
-      document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true }));
+    const key = async (value: string, options: KeyboardEventInit = {}) => act(async () => {
+      document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true, ...options }));
     });
+    const focus = async (address: string) => act(async () => cell(address).focus());
     const type = async (value: string) => {
       await key(value[0]!);
-      const editor = container.querySelector<HTMLInputElement>('[data-testid="cell-editor"]')!;
+      const editor = container.querySelector<HTMLInputElement | HTMLTextAreaElement>('[data-testid="cell-editor"]')!;
       await act(async () => {
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(editor, value);
+        Object.getOwnPropertyDescriptor(editor instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, "value")!.set!.call(editor, value);
         editor.dispatchEvent(new Event("input", { bubbles: true }));
       });
     };
-    return { cell, click, key, type, onWrite };
+    return { container, cell, focus, key, type, onWrite, onCommit, onEditCells, onSave, onCreateCopy };
   }
 
-  it.each([
-    ["J1", "Tab", "K1", 0, 10],
-    ["A30", "Enter", "A31", 30, 0],
-  ] as const)("moves from %s with %s to the newly available %s", async (from, key, to, row, column) => {
+  it.each([["A1", "Hello", 0, 0], ["B4", "Apple", 3, 1]] as const)("writes unused %s through positional allocation", async (address, text, row, column) => {
     const ui = await mount();
-    await ui.click(from);
-    await ui.type("Apple");
-    await ui.key(key);
-    expect(ui.cell(to).getAttribute("aria-selected")).toBe("true");
-    expect(document.activeElement).toBe(ui.cell(to));
-    await ui.type("Orange");
+    await ui.focus(address);
+    await ui.type(text);
     await ui.key("Enter");
-    expect(ui.onWrite).toHaveBeenLastCalledWith(expect.anything(), "release_items", row, column, "Orange");
-    expect(ui.cell(from).textContent).toBe("Apple");
-    expect(ui.cell(to).textContent).toBe("Orange");
+    expect(ui.onWrite).toHaveBeenLastCalledWith(expect.anything(), "release_items", row, column, text);
+    expect(ui.onCommit).not.toHaveBeenCalled();
+    expect(ui.cell(address).textContent).toBe(text);
+    expect(ui.container.querySelector(".ts-table-panel .ts-grid-scroll")).not.toBeNull();
   });
 
-  it("commits A1 when clicking B4 and keeps subsequent typing in B4", async () => {
-    const ui = await mount();
-    await ui.type("Apple");
-    await ui.click("B4");
-    expect(ui.onWrite).toHaveBeenNthCalledWith(1, expect.anything(), "release_items", 0, 0, "Apple");
-    expect(ui.cell("A1").textContent).toBe("Apple");
-    expect(ui.cell("B4").getAttribute("aria-selected")).toBe("true");
-    expect(document.activeElement).toBe(ui.cell("B4"));
-    await ui.type("Orange");
+  it("preserves imported headerless Number editing (5 → 6)", async () => {
+    const ui = await mount(makeView());
+    await ui.focus("B1");
+    await ui.type("6");
     await ui.key("Enter");
-    expect(ui.onWrite).toHaveBeenNthCalledWith(2, expect.anything(), "release_items", 3, 1, "Orange");
-    expect(ui.cell("A1").textContent).toBe("Apple");
-    expect(ui.cell("B4").textContent).toBe("Orange");
+    expect(ui.onCommit).toHaveBeenCalledWith(expect.anything(), { entity: entityA, field: "c-impact" }, { kind: "number", input: "6" });
+    expect(ui.onWrite).not.toHaveBeenCalled();
+  });
+
+  it.each(["F2", "double-click"])("keeps imported headerless formulas intact on %s", async gesture => {
+    const ui = await mount(makeView());
+    await ui.focus("C1");
+    if (gesture === "F2") await ui.key("F2");
+    else await act(async () => { ui.cell("C1").dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); });
+    await ui.key("Enter");
+    expect(ui.container.querySelector('[data-testid="cell-editor"]')).toBeNull();
+    expect(ui.onCommit).not.toHaveBeenCalled();
+    expect(ui.onWrite).not.toHaveBeenCalled();
+    expect(ui.container.textContent).toContain("Edit the formula in the formula bar.");
+    await ui.key("F2", { shiftKey: true });
+    expect(ui.container.querySelector<HTMLInputElement>('[data-testid="formula-input"]')?.value).toBe("impact + friction");
+  });
+
+  it.each(["Enter", "Tab"])("unchanged %s navigates without a write or error", async key => {
+    const ui = await mount(makeView());
+    await ui.focus("B1");
+    await ui.key("F2");
+    await ui.key(key);
+    expect(ui.onCommit).not.toHaveBeenCalled();
+    expect(ui.onWrite).not.toHaveBeenCalled();
+    expect(ui.container.querySelector('[data-testid="cell-editor"]')).toBeNull();
+    expect(ui.container.querySelector('[role="alert"]')).toBeNull();
+    expect(document.activeElement).toBe(ui.cell(key === "Enter" ? "B2" : "C1"));
+  });
+
+  it("blocks Save and Save a copy and retains the draft across panel tabs", async () => {
+    const ui = await mount();
+    await ui.focus("B4");
+    await ui.type("Apple draft");
+    await ui.key("s", { ctrlKey: true });
+    const copy = Array.from(ui.container.querySelectorAll("button")).find(button => button.textContent === "Save a copy")!;
+    await act(async () => copy.click());
+    expect(ui.onSave).not.toHaveBeenCalled();
+    expect(ui.onCreateCopy).not.toHaveBeenCalled();
+    expect(ui.container.querySelector('[role="dialog"]')).toBeNull();
+    for (const tab of ["brief", "report", "summary", "interop", "table"]) {
+      await act(async () => ui.container.querySelector<HTMLButtonElement>(`#ts-tab-${tab}`)!.click());
+    }
+    expect(ui.container.querySelector<HTMLInputElement>('[data-testid="cell-editor"]')?.value).toBe("Apple draft");
+    expect(ui.onWrite).not.toHaveBeenCalled();
+  });
+
+  it("restores clipboard, Find, Delete/Backspace and persisted styles on a headerless import", async () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.rows[0]!.styles = [{ bold: true, italic: true, fill: "ffcc00", border: true }];
+    const ui = await mount(view, { importedSourceName: "headerless.xlsx" });
+    await ui.focus("A1");
+    expect(ui.cell("A1").style.fontWeight).toBe("700");
+    expect(ui.cell("A1").style.fontStyle).toBe("italic");
+    expect(ui.cell("A1").style.backgroundColor).toBe("#ffcc00");
+    const clipboardData = { setData: vi.fn(), getData: () => "Pasted" };
+    for (const name of ["copy", "cut", "paste"]) {
+      const event = new Event(name, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", { value: clipboardData });
+      await act(async () => { ui.cell("A1").dispatchEvent(event); });
+      expect(event.defaultPrevented).toBe(true);
+    }
+    expect(clipboardData.setData).toHaveBeenCalledWith("text/plain", "Alpha work");
+    expect(ui.onEditCells).toHaveBeenCalledWith(expect.anything(), [{ target: { entity: entityA, field: "c-title" }, input: { kind: "text", value: "Pasted" } }]);
+    for (const key of ["Delete", "Backspace"]) { await ui.focus("A1"); await ui.key(key); }
+    expect(ui.onEditCells).toHaveBeenCalledTimes(4);
+    await ui.key("f", { ctrlKey: true });
+    expect(ui.container.querySelector('[role="search"]')).not.toBeNull();
+  });
+
+  it("windows large imported headerless worksheets", async () => {
+    const view = makeView();
+    view.table.rows = Array.from({ length: 1000 }, (_, index) => ({ id: `r-${index}`, key: `r-${index}`, fields: [projected(`r-${index}`, "c-title", { kind: "text", value: `Row ${index}` })] }));
+    const ui = await mount(view);
+    expect(ui.container.querySelector('[role="grid"]')?.getAttribute("aria-rowcount")).toBe("1002");
+    expect(ui.container.querySelectorAll("tbody tr.ts-row").length).toBeLessThan(100);
+    expect(ui.container.querySelector(".ts-grid-spacer")).not.toBeNull();
   });
 });
 

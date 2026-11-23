@@ -18,7 +18,6 @@ import type { FieldProjection } from "../../public/core-kit/experimental-client.
 import { flushSync } from "react-dom";
 import { appearanceDensity } from "../application/appearance-preference.js";
 import { emptyLocalHistory } from "../application/local-history.js";
-import { BlankWorksheet } from "./BlankWorksheet.js";
 import { sameAppearanceChoice } from "../application/appearance-model.js";
 import type {
   AppearanceDensity,
@@ -129,7 +128,7 @@ import { useHostFiles } from "../host/host-files.js";
 import { PrintTable } from "./PrintTable.js";
 import "./sheet-shell.css";
 
-type EditableKind = "number" | "text" | "boolean" | "date";
+type EditableKind = "auto" | "number" | "text" | "boolean" | "date";
 type ActiveTab = "table" | "summary" | "report" | "brief" | "interop";
 
 const SAVE_BOUND_DESCRIPTION = "Save changes to this copy (like Excel's Save). The file you opened from is not changed.";
@@ -808,7 +807,6 @@ export function SheetShell(props: SheetShellProps) {
   const [captureCopyParentFailure, setCaptureCopyParentFailure] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const newWorkbookAfterClose = useRef(false);
-  const [blankDraftActive, setBlankDraftActive] = useState(false);
   const [shortcutHelp, setShortcutHelp] = useState(false);
   const shortcutHelpOriginRef = useRef<HTMLElement | null>(null);
   function openShortcutHelp(origin: HTMLElement | null) {
@@ -1263,9 +1261,17 @@ export function SheetShell(props: SheetShellProps) {
   const ledgerColumns = useMemo(() => interop?.ledgerColumns ? bindingCatalogNames(interop.ledgerColumns, interop.metadata, importedSourceName) : null, [interop?.ledgerColumns, interop?.metadata, importedSourceName]);
   // Resolve labels once for every consumer. IDs, keys and canonical projections
   // remain untouched; this array is presentation only.
-  const columns = useMemo(() => table ? tableColumns(table).map(column => ({
-    ...column, display_name: names.column(table.collection.id, column.id) ?? column.display_name,
-  })) : [], [table, names]);
+  const worksheet = Boolean(table?.collection.headerless && onWriteCellAt);
+  // These addresses describe unallocated grid space, never canonical entities.
+  const columns = useMemo(() => {
+    if (!table) return [];
+    const stored = tableColumns(table).map(column => ({
+      ...column, display_name: names.column(table.collection.id, column.id) ?? column.display_name,
+    }));
+    return worksheet ? [...stored, ...Array.from({ length: Math.max(10, stored.length + 1) - stored.length }, (_, offset) => ({
+      id: `worksheet-column:${stored.length + offset}`, key: "", display_name: a1ColumnLetter(stored.length + offset), field_type: "auto", required: false,
+    }))] : stored;
+  }, [table, names, worksheet]);
   const insertionLimitReached = Boolean(table?.native_table_profile && nativeInsertionLimitReached(rowSource(table).total));
   const hasDraftRow = Boolean(table?.native_table_profile && onInsertRow && !insertionLimitReached);
   const boundRowDraft = rowDraft?.occurrence === view?.occurrence && rowDraft?.collection === table?.collection.id ? rowDraft : null;
@@ -1304,10 +1310,13 @@ export function SheetShell(props: SheetShellProps) {
   const displaySignature = rowViewDisplaySignature(gridSettings);
   // A confirmed insertion is already in the installed projection, so its kept
   // entry is committed with the confirmation rather than by a later effect.
-  const displayRows = useMemo(
-    () => table ? rowViewOrder(rowSource(table).allRowsForNow(), columns, gridSettings) : [],
-    [columns, gridSettings, table],
-  );
+  const displayRows = useMemo(() => {
+    if (!table) return [];
+    const stored = rowViewOrder(rowSource(table).allRowsForNow(), columns, gridSettings);
+    return worksheet ? [...stored, ...Array.from({ length: Math.max(30, stored.length + 1) - stored.length }, (_, offset) => ({
+      id: `worksheet-row:${stored.length + offset}`, key: "", fields: [],
+    }))] : stored;
+  }, [columns, gridSettings, table, worksheet]);
   const gridWindowed = displayRows.length > GRID_WINDOW_THRESHOLD;
   useLayoutEffect(() => {
     const grid = gridScrollRef.current;
@@ -2321,13 +2330,18 @@ export function SheetShell(props: SheetShellProps) {
   useLayoutEffect(() => {
     if (!table || !collectionIdentity) return;
     const previous = focusedProjectionRef.current;
-    const dataRows = rowSource(table).allRowsForNow().map(rowEntity);
+    const dataRows = displayRows.map(rowEntity);
     const rows = [...dataRows, ...(hasDraftRow ? [DRAFT_ROW] : [])];
     const fields = columns.map(column => column.id);
     focusedProjectionRef.current = { identity: collectionIdentity, rows, fields };
     if (previous?.identity !== collectionIdentity) {
       setFocusedKey(null);
       lastCellRef.current = null;
+      if (worksheet && table.rows.length === 0 && columns[0] && displayRows[0]) {
+        const entity = rowEntity(displayRows[0]), field = columns[0].id;
+        setFocusedKey(cellKey(entity, field));
+        requestAnimationFrame(() => focusCell(entity, field));
+      }
       return;
     }
     setFocusedKey(current => {
@@ -2337,7 +2351,7 @@ export function SheetShell(props: SheetShellProps) {
       const nextRows = current?.startsWith(`${DRAFT_ROW}\u0000`) || dataRows.length === 0 ? rows : dataRows;
       return survivingFocusedKey(current, previous, { rows: nextRows, fields });
     });
-  }, [collectionIdentity, table, columns, hasDraftRow]);
+  }, [collectionIdentity, table, columns, hasDraftRow, displayRows]);
 
   useLayoutEffect(() => {
     if (gridWindowed) syncGridWindow();
@@ -2662,7 +2676,7 @@ export function SheetShell(props: SheetShellProps) {
     return () => document.removeEventListener("pointerdown", outside, true);
   }, [tableMenu]);
   const draftActive =
-    blankDraftActive || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
+    cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
     (renameTable !== null && renameTableDraftActive) || (newTableOpen && newTableDraftActive) || (duplicateOpen && duplicateDraftActive) || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null;
   const errorMessage = props.startupUnavailable ? null : localError ?? copyError ??
     (salesEntryOutcome?.kind === "refused" ? null : message && message.length > 0 ? message : null);
@@ -2951,7 +2965,7 @@ export function SheetShell(props: SheetShellProps) {
     setGroupResult(null);
     const trigger = groupTriggerRef.current;
     groupTriggerRef.current = null;
-    const target = trigger?.isConnected ? trigger : gridScrollRef.current?.querySelector<HTMLElement>("td[data-testid^='cell:']");
+    const target = trigger?.isConnected ? trigger : gridScrollRef.current?.querySelector<HTMLElement>("td[data-work-field]:not([data-entry-field])");
     target?.focus();
   }
 
@@ -2969,7 +2983,7 @@ export function SheetShell(props: SheetShellProps) {
     setGroupPanel(null);
     setGroupResult(null);
     groupTriggerRef.current = null;
-    if (panelHadFocus) gridScrollRef.current?.querySelector<HTMLElement>("td[data-testid^='cell:']")?.focus();
+    if (panelHadFocus) gridScrollRef.current?.querySelector<HTMLElement>("td[data-work-field]:not([data-entry-field])")?.focus();
   }, [groupPanel, groupPanelLive]);
 
   const groupShownScope = useMemo(
@@ -3697,6 +3711,32 @@ export function SheetShell(props: SheetShellProps) {
       setLocalError(null);
       return true;
     }
+    const at = address(editor);
+    const storedRow = table ? rowSource(table).byEntity(editor.entity) : undefined;
+    const storedColumn = table?.columns.find(column => column.id === editor.field);
+    if (worksheet && onWriteCellAt && witness && table && (!storedRow || !storedColumn || slot.blank || editor.kind === "auto")) {
+      if (formulaDraftActive) { setLocalError("Apply or cancel the formula you are editing before changing this cell."); return false; }
+      const input = editor.kind === "auto" ? editor.value : editor.kind === "boolean"
+        ? parseBooleanDraft(editor.value) === null ? null : { kind: "boolean" as const, value: parseBooleanDraft(editor.value)! }
+        : scalarEditOf(editor.kind, editor.value);
+      if (input === null) { setLocalError("Enter true or false for this boolean cell. The draft was kept."); return false; }
+      setCommitPending(true);
+      try {
+        // Positional allocation follows source order, even when existing rows are sorted.
+        const row = storedRow ? rowSource(table).indexOf(editor.entity) : at.row;
+        const column = storedColumn ? table.columns.indexOf(storedColumn) : at.column;
+        const outcome = await onWriteCellAt(witness, table.collection.key, row, column, input);
+        if (outcome.kind !== "confirmed") {
+          setLocalError("message" in outcome ? outcome.message : "The cell could not be confirmed. Refresh the work before continuing.");
+          return false;
+        }
+        setEditor(null); setLocalError(null);
+        return true;
+      } catch (error) {
+        setLocalError(explain(error, "The work could not apply this change. The draft was kept."));
+        return false;
+      } finally { setCommitPending(false); }
+    }
     // Publishing this value would install a new revision and drop the formula
     // draft the bar is still holding.
     if (formulaDraftActive) {
@@ -3868,7 +3908,7 @@ export function SheetShell(props: SheetShellProps) {
     requestAnimationFrame(() => {
       if (!completionMayUpdateUi(intent)) return;
       withAppFocus(() => {
-        const firstCell = gridScrollRef.current?.querySelector<HTMLElement>("td[data-testid^='cell:']");
+        const firstCell = gridScrollRef.current?.querySelector<HTMLElement>("td[data-work-field]:not([data-entry-field])");
         const firstEntry = shellRef.current?.querySelector<HTMLElement>(".ts-entry-row [data-entry-field]");
         (firstCell ?? firstEntry)?.focus();
       });
@@ -3886,7 +3926,7 @@ export function SheetShell(props: SheetShellProps) {
     requestAnimationFrame(() => {
       if (!completionMayUpdateUi(intent)) return;
       withAppFocus(() => {
-        const firstCell = gridScrollRef.current?.querySelector<HTMLElement>("td[data-testid^='cell:']");
+        const firstCell = gridScrollRef.current?.querySelector<HTMLElement>("td[data-work-field]:not([data-entry-field])");
         const firstEntry = shellRef.current?.querySelector<HTMLElement>(".ts-entry-row [data-entry-field]");
         (firstCell ?? firstEntry ?? duplicateTriggerRef.current)?.focus();
       });
@@ -3900,7 +3940,7 @@ export function SheetShell(props: SheetShellProps) {
     requestAnimationFrame(() => {
       if (!completionMayUpdateUi(intent)) return;
       withAppFocus(() => {
-        const first = gridScrollRef.current?.querySelector<HTMLElement>("td[data-testid^='cell:'], .ts-entry-row [data-entry-field]");
+        const first = gridScrollRef.current?.querySelector<HTMLElement>("td[data-work-field]:not([data-entry-field]), .ts-entry-row [data-entry-field]");
         first?.focus();
       });
     });
@@ -4251,7 +4291,12 @@ export function SheetShell(props: SheetShellProps) {
         if (accepted && completionMayUpdateUi(intent)) withAppFocus(() => {
           tabRunStartRef.current = nextRun;
           if (returnTarget) { setSelectedEntity(returnTarget.entity); focusCell(returnTarget.entity, returnTarget.field); }
-          else if (!moveFocus(event, position, step)) focusCell(position.entity, position.field);
+          else if (worksheet) {
+            const at = address(position);
+            const next = event.key === "Enter" ? { row: Math.max(0, at.row + (event.shiftKey ? -1 : 1)), column: at.column }
+              : { row: at.row, column: Math.max(0, at.column + (event.shiftKey ? -1 : 1)) };
+            requestAnimationFrame(() => gridScrollRef.current?.querySelector<HTMLElement>(`[data-address="${a1ColumnLetter(next.column)}${next.row + 1}"]`)?.focus());
+          } else if (!moveFocus(event, position, step)) focusCell(position.entity, position.field);
         });
       });
     }
@@ -4529,6 +4574,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function openCopyDialog(forClose = false): void {
     if (view?.openedFromWorkFile && workFileSaveUnavailableReason) return;
+    if (cellDraftActive) { setLocalError("Finish or clear the unfinished changes before saving a copy."); return; }
     // A copy snapshots the published revision, so it must never silently
     // leave out an unapplied formula.
     if (formulaDraftActive) {
@@ -4572,6 +4618,7 @@ export function SheetShell(props: SheetShellProps) {
       setLocalError("Apply or cancel the formula you are editing before saving.");
       return;
     }
+    if (cellDraftActive) { setLocalError("Finish or clear the unfinished changes before saving."); return; }
     if (!boundCopyName) { openCopyDialog(forClose); return; }
     if (!onSave || cellDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft) {
       setLocalError(rowDraftActive ? "Add or discard the new row first."
@@ -4781,6 +4828,7 @@ export function SheetShell(props: SheetShellProps) {
   async function createCopy(): Promise<void> {
     const name = copyName.trim();
     if (name === "" || copyPending || controlsLocked) return;
+    if (cellDraftActive) { setCopyError("Finish or clear the unfinished changes before creating a copy."); return; }
     if (rowDraftActive) {
       setCopyError("Add or discard the new row first.");
       return;
@@ -4912,9 +4960,14 @@ export function SheetShell(props: SheetShellProps) {
 
   function currentEditorSlot(state: GridPosition): CellEditSlot | null {
     if (!table) return null;
-    const row = rowSource(table).byEntity(state.entity);
+    const row = displayRows.find(candidate => rowEntity(candidate) === state.entity);
     const column = columns.find(candidate => candidate.id === state.field);
-    return row && column ? cellEditSlot(row, column) : null;
+    if (!row || !column) return null;
+    if (worksheet && (row.id.startsWith("worksheet-row:") || column.id.startsWith("worksheet-column:"))) {
+      return { target: { entity: state.entity, field: state.field }, kind: column.field_type as EditableKind,
+        original: "", blank: true, formula: false, required: column.required };
+    }
+    return cellEditSlot(row, column);
   }
 
   useEffect(() => {
@@ -5588,7 +5641,6 @@ export function SheetShell(props: SheetShellProps) {
 
   function renderTablePanel(): ReactNode {
     if (!table) return null;
-    if (table.collection.headerless && view && onWriteCellAt) return <BlankWorksheet key={`${view.occurrence}:${table.collection.id}`} view={view} locked={controlsLocked} onWrite={onWriteCellAt} onDraftChange={setBlankDraftActive} />;
     const totals = footerTotals?.totals ?? table.column_totals;
     const hasColumnTotals = totals !== undefined && Object.keys(totals).length > 0;
     const focusedColumn = columns.find(column => column.id === focusedKey?.split("\u0000")[1]) ?? columns[0];
@@ -6050,7 +6102,7 @@ export function SheetShell(props: SheetShellProps) {
     const entity = rowEntity(row);
     const isSelectedRow = entity === selectedEntity;
     return <tr key={row.id || entity} className={isSelectedRow ? "ts-row ts-row--selected" : "ts-row"} aria-rowindex={gridWindowed ? index + 2 : undefined}>
-      <th scope="row" className="ts-row-head" onMouseDown={event => event.preventDefault()} onClick={event => selectHeader("row", index, event.shiftKey)}>{a1RowNumber(index)}</th>
+      <th scope="row" className="ts-row-head" onMouseDown={event => event.preventDefault()} onClick={event => selectHeader("row", index, event.shiftKey)}>{worksheet ? index + 1 : a1RowNumber(index)}</th>
       {columns.map((column) => renderCell(row, entity, column))}
     </tr>;
   }
@@ -6220,7 +6272,7 @@ export function SheetShell(props: SheetShellProps) {
     };
     // A formula field instance is read-only in the grid; the bar edits it.
     const formulaCell = !draft && Boolean(row && isFormulaCell(row, column));
-    const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(row && !formulaCell && cellEditSlot(row, column))) && !controlsLocked;
+    const editable = (draft ? !cellDraftActive && currentness === "current" : Boolean(row && !formulaCell && currentEditorSlot({ entity, field: column.id }))) && !controlsLocked;
     const classes = ["ts-cell", `ts-cell--${display.tone}`];
     if (frozenColumnClass(column.id)) classes.push("ts-frozen-first-column");
     if (display.calculationFailed) classes.push("ts-cell--calc-failed");
@@ -6263,7 +6315,8 @@ export function SheetShell(props: SheetShellProps) {
         }}
         className={classes.join(" ")}
         style={{ textAlign: column.style?.alignment ?? (column.field_type === "number" || column.field_type === "date" ? "right" : column.field_type === "boolean" ? "center" : "left"), fontWeight: cellStyle?.bold ? 700 : undefined, fontStyle: cellStyle?.italic ? "italic" : undefined, backgroundColor: cellStyle?.fill ? `#${cellStyle.fill}` : undefined, borderTop: borderSides.includes("top") ? "1px solid black" : undefined, borderRight: borderSides.includes("right") ? "1px solid black" : undefined, borderBottom: borderSides.includes("bottom") ? "1px solid black" : undefined, borderLeft: borderSides.includes("left") ? "1px solid black" : undefined }}
-        data-testid={`cell:${entity}:${column.id}`}
+        data-testid={worksheet ? `worksheet:${a1ColumnLetter(coordinate.column)}${coordinate.row + 1}` : `cell:${entity}:${column.id}`}
+        data-address={worksheet ? `${a1ColumnLetter(coordinate.column)}${coordinate.row + 1}` : undefined}
         data-entry-field={draft ? column.id : undefined}
         aria-label={draft ? `New row ${column.display_name} (${column.field_type === "boolean" ? "Yes/No" : column.field_type === "number" ? "Number" : column.field_type === "date" ? "Date" : "Text"})` : undefined}
         aria-description={draft ? undefined : display.description}
