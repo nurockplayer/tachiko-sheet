@@ -1832,7 +1832,12 @@ export function SheetShell(props: SheetShellProps) {
     }
     const at = address(position), area = selectionRectangle ?? rectangle(at, at);
     try {
-      const edits = clearCellEdits(displayRows, columns, area, Boolean(table.native_table_profile), "cut");
+      const allocatedArea = worksheet ? { ...area,
+        bottom: Math.min(area.bottom, displayRows.findIndex(row => row.id.startsWith("worksheet-row:")) - 1),
+        right: Math.min(area.right, table.columns.length - 1),
+      } : area;
+      const edits = allocatedArea.bottom < allocatedArea.top || allocatedArea.right < allocatedArea.left ? []
+        : clearCellEdits(displayRows, columns, allocatedArea, Boolean(table.native_table_profile), "cut");
       if (!view || !witness || !onEditCells) { announceClipboard("Cutting cells is not available in this view.", true, true); return; }
       const rows = clipboardRows(position);
       const text = encodeTsv(rows);
@@ -2072,7 +2077,12 @@ export function SheetShell(props: SheetShellProps) {
     const at = address(position);
     const area = selectionRectangle ?? rectangle(at, at);
     try {
-      const edits = clearCellEdits(displayRows, columns, area, Boolean(table.native_table_profile));
+      const allocatedArea = worksheet ? { ...area,
+        bottom: Math.min(area.bottom, displayRows.findIndex(row => row.id.startsWith("worksheet-row:")) - 1),
+        right: Math.min(area.right, table.columns.length - 1),
+      } : area;
+      const edits = allocatedArea.bottom < allocatedArea.top || allocatedArea.right < allocatedArea.left ? []
+        : clearCellEdits(displayRows, columns, allocatedArea, Boolean(table.native_table_profile));
       keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
       if (!view || !witness || !onEditCells) { announceClipboard("Clearing cells is not available in this view.", true, true); return; }
       if (!edits.length) { announceClipboard("The selected cells are unchanged.", false, true); return; }
@@ -4312,7 +4322,11 @@ export function SheetShell(props: SheetShellProps) {
             const at = address(position);
             const next = event.key === "Enter" ? { row: Math.max(0, at.row + (event.shiftKey ? -1 : 1)), column: at.column }
               : { row: at.row, column: Math.max(0, at.column + (event.shiftKey ? -1 : 1)) };
-            requestAnimationFrame(() => gridScrollRef.current?.querySelector<HTMLElement>(`[data-address="${a1ColumnLetter(next.column)}${next.row + 1}"]`)?.focus());
+            const row = displayRows[next.row], column = columns[next.column];
+            if (row && column) {
+              setSelectedEntity(rowEntity(row));
+              focusCell(rowEntity(row), column.id, next.row);
+            } else requestAnimationFrame(() => gridScrollRef.current?.querySelector<HTMLElement>(`[data-address="${a1ColumnLetter(next.column)}${next.row + 1}"]`)?.focus());
           } else if (!moveFocus(event, position, step)) focusCell(position.entity, position.field);
         });
       });

@@ -378,6 +378,74 @@ describe("headerless worksheets use the existing grid", () => {
     expect(ui.onWrite).not.toHaveBeenCalled();
   });
 
+  it("commits a formula in an existing optional blank Number cell on import", async () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.columns[1] = { ...view.table.columns[1]!, required: false };
+    view.table.rows[0] = { ...view.table.rows[0]!,
+      fields: view.table.rows[0]!.fields.filter(field => field.target.field !== "c-impact"),
+      blank_fields: ["c-impact"],
+    };
+    const ui = await mount(view);
+    await ui.focus("B2");
+    await ui.type("=1+2");
+    await ui.key("Enter");
+    expect(ui.onCommit).toHaveBeenCalledWith(expect.anything(), { entity: entityA, field: "c-impact" }, { kind: "formula", source: "1+2" });
+    expect(ui.onWrite).not.toHaveBeenCalled();
+    expect(ui.container.querySelector('[data-testid="cell-editor"]')).toBeNull();
+  });
+
+  it.each([
+    ["row", "Delete", null], ["row", "Cut", null],
+    ["column", "Delete", null], ["column", "Cut", null],
+    ["row", "Delete", "headerless.csv"], ["row", "Cut", "headerless.csv"],
+    ["column", "Delete", "headerless.csv"], ["column", "Cut", "headerless.csv"],
+  ] as const)("clears stored cells on whole-%s %s (source %s)", async (axis, action, importedSourceName) => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.columns = view.table.columns.slice(0, 2).map(column => ({ ...column, required: false }));
+    view.table.rows = view.table.rows.map(row => ({ ...row, fields: row.fields.slice(0, 2) }));
+    const ui = await mount(view, { importedSourceName });
+    await act(async () => ui.container.querySelector<HTMLElement>(axis === "row" ? "tbody .ts-row-head" : "thead .ts-column-header")!.click());
+    if (action === "Delete") await ui.key("Delete");
+    else {
+      const event = new Event("cut", { bubbles: true, cancelable: true });
+      const setData = vi.fn();
+      Object.defineProperty(event, "clipboardData", { value: { setData } });
+      await act(async () => { document.activeElement!.dispatchEvent(event); });
+      expect(event.defaultPrevented).toBe(true);
+      expect(setData).toHaveBeenCalledWith("text/plain", expect.stringContaining("Alpha work"));
+    }
+    const targets = axis === "row" ? [{ entity: entityA, field: "c-title" }, { entity: entityA, field: "c-impact" }]
+      : [{ entity: entityA, field: "c-title" }, { entity: entityB, field: "c-title" }];
+    expect(ui.onEditCells).toHaveBeenCalledExactlyOnceWith(expect.anything(), targets.map(target => ({ target, input: { kind: "clear" } })));
+    expect(ui.onWrite).not.toHaveBeenCalled();
+  });
+
+  it.each([null, "headerless.csv"])("reveals the next windowed row after editing while scrolled away (source %s)", async importedSourceName => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.columns = view.table.columns.slice(0, 1);
+    view.table.rows = Array.from({ length: 1000 }, (_, index) => ({
+      id: `r-${index}`, key: `r-${index}`, fields: [projected(`r-${index}`, "c-title", { kind: "text", value: `Row ${index}` })],
+    }));
+    const ui = await mount(view, { importedSourceName });
+    const firstAddress = importedSourceName ? "A2" : "A1";
+    const nextAddress = importedSourceName ? "A3" : "A2";
+    await ui.focus(firstAddress);
+    await ui.type("Changed");
+    const grid = ui.container.querySelector<HTMLElement>(".ts-grid-scroll")!;
+    await act(async () => { grid.scrollTop = 20000; grid.dispatchEvent(new Event("scroll")); });
+    expect(ui.cell(nextAddress)).toBeUndefined();
+    expect(ui.container.querySelector('[data-testid="cell-editor"]')).not.toBeNull();
+    await ui.key("Enter");
+    await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+    expect(ui.onCommit).toHaveBeenCalledWith(expect.anything(), { entity: "r-0", field: "c-title" }, { kind: "text", value: "Changed" });
+    expect(ui.container.querySelector('[data-testid="cell-editor"]')).toBeNull();
+    expect(ui.cell(nextAddress)).toBeDefined();
+    expect(document.activeElement).toBe(ui.cell(nextAddress));
+  });
+
   it.each(["F2", "double-click"])("keeps imported headerless formulas intact on %s", async gesture => {
     const ui = await mount(makeView());
     await ui.focus("C2");
