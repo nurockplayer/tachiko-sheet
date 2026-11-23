@@ -2001,8 +2001,11 @@ export function SheetShell(props: SheetShellProps) {
     if (targetRow < 0) targetRow = 0;
     let targetColumn = 0;
     const row = grid.querySelector<HTMLTableRowElement>("tbody tr.ts-row");
-    for (const cell of row?.querySelectorAll<HTMLTableCellElement>("td[data-work-field]") ?? []) {
-      if (cell.getBoundingClientRect().left <= pointerX) targetColumn = columns.findIndex(column => column.id === cell.dataset.workField);
+    const frozenCell = row?.querySelector<HTMLTableCellElement>("td.ts-frozen-first-column[data-work-field]");
+    if (!frozenCell || pointerX >= frozenCell.getBoundingClientRect().right) {
+      for (const cell of row?.querySelectorAll<HTMLTableCellElement>("td[data-work-field]") ?? []) {
+        if (cell.getBoundingClientRect().left <= pointerX) targetColumn = columns.findIndex(column => column.id === cell.dataset.workField);
+      }
     }
     const horizontal = (targetColumn < drag.source.left || targetColumn > drag.source.right)
       && (targetRow >= drag.source.top && targetRow <= drag.source.bottom
