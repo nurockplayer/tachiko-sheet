@@ -1263,7 +1263,7 @@ export function SheetShell(props: SheetShellProps) {
   // remain untouched; this array is presentation only.
   const worksheet = Boolean(table?.collection.headerless && onWriteCellAt);
   // These addresses describe unallocated grid space, never canonical entities.
-  const columns = useMemo(() => {
+  const columns = useMemo<TableColumn[]>(() => {
     if (!table) return [];
     const stored = tableColumns(table).map(column => ({
       ...column, display_name: names.column(table.collection.id, column.id) ?? column.display_name,

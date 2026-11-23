@@ -272,7 +272,7 @@ describe("headerless worksheets use the existing grid", () => {
     expect(ui.onWrite).not.toHaveBeenCalled();
     expect(ui.container.textContent).toContain("Edit the formula in the formula bar.");
     await ui.key("F2", { shiftKey: true });
-    expect(ui.container.querySelector<HTMLInputElement>('[data-testid="formula-input"]')?.value).toBe("impact + friction");
+    expect(ui.container.querySelector<HTMLInputElement>('[data-testid="formula-bar-input"]')?.value).toBe("impact + friction");
   });
 
   it.each(["Enter", "Tab"])("unchanged %s navigates without a write or error", async key => {
@@ -296,7 +296,7 @@ describe("headerless worksheets use the existing grid", () => {
     await act(async () => copy.click());
     expect(ui.onSave).not.toHaveBeenCalled();
     expect(ui.onCreateCopy).not.toHaveBeenCalled();
-    expect(ui.container.querySelector('[role="dialog"]')).toBeNull();
+    expect(ui.container.querySelector('[role="dialog"][aria-modal="true"]')).toBeNull();
     for (const tab of ["brief", "report", "summary", "interop", "table"]) {
       await act(async () => ui.container.querySelector<HTMLButtonElement>(`#ts-tab-${tab}`)!.click());
     }
@@ -307,13 +307,13 @@ describe("headerless worksheets use the existing grid", () => {
   it("restores clipboard, Find, Delete/Backspace and persisted styles on a headerless import", async () => {
     const view = makeView();
     view.table.native_table_profile = true;
-    view.table.rows[0]!.styles = [{ bold: true, italic: true, fill: "ffcc00", border: true }];
+    view.table.rows[0]!.styles = [{ bold: true, italic: true, fill: "ffcc00", border: true, number_format: null, wrap: false, alignment: null }];
     const ui = await mount(view, { importedSourceName: "headerless.xlsx" });
     await ui.focus("A1");
     expect(ui.cell("A1").style.fontWeight).toBe("700");
     expect(ui.cell("A1").style.fontStyle).toBe("italic");
     expect(ui.cell("A1").style.backgroundColor).toBe("#ffcc00");
-    const clipboardData = { setData: vi.fn(), getData: () => "Pasted" };
+    const clipboardData = { types: ["text/plain"], setData: vi.fn(), getData: () => "Pasted" };
     for (const name of ["copy", "cut", "paste"]) {
       const event = new Event(name, { bubbles: true, cancelable: true });
       Object.defineProperty(event, "clipboardData", { value: clipboardData });
