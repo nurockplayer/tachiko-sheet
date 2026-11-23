@@ -17,17 +17,22 @@ describe("fill handle drag", () => {
     expect(fillDragTarget(rectangle({ row: 2, column: 1 }, { row: 2, column: 3 }), 4)).toEqual({ top: 2, left: 1, bottom: 4, right: 3 });
   });
 
-  it("returns null when the pointer is not below the range", () => {
-    expect(fillDragTarget(cell(2, 1), 1)).toBeNull();
+  it("extends above the source", () => {
+    expect(fillDragTarget(cell(2, 1), 1)).toEqual({ top: 1, left: 1, bottom: 2, right: 1 });
   });
 
   it("returns null when the pointer is still on the source row", () => {
     expect(fillDragTarget(cell(2, 1), 2)).toBeNull();
   });
 
-  it("returns null for a source spanning several rows", () => {
-    expect(fillDragTarget(rectangle({ row: 0, column: 0 }, { row: 2, column: 0 }), 4)).toBeNull();
+  it("keeps a single-column source height for a horizontal drag", () => {
+    expect(fillDragTarget(rectangle({ row: 0, column: 0 }, { row: 2, column: 0 }), 4, 2, true)).toEqual({ top: 0, left: 0, bottom: 2, right: 2 });
   });
+});
+
+it("extends left and right without changing rows", () => {
+  expect(fillDragTarget(cell(2, 2), 5, 0, true)).toEqual({ top: 2, left: 0, bottom: 2, right: 2 });
+  expect(fillDragTarget(cell(2, 2), 5, 4, true)).toEqual({ top: 2, left: 2, bottom: 2, right: 4 });
 });
 
 describe("double-click fill limit", () => {

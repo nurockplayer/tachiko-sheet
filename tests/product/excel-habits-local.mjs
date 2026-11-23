@@ -923,6 +923,118 @@ const cases = [
     await settle(page);
     assert.deepEqual(await snapshot(), rightToLeftValues, "Redo did not restore the right-to-left fill");
     await assertFillSelection(doubleTable, [0, 1, 2, 3], [0, 1], "right-to-left drag Redo", 1);
+
+    // #338: pointer drags in both axes, real Work formula copies and atomic Undo.
+    await newTable(page, "Fill directions", ["A", "B", "C", "D"].map(name => ({ name, type: "number" })));
+    for (let row = 0; row < 3; row += 1) await addRow(page, [String(row + 2), "3", "4", "9"], row + 1);
+    const directions = await projection(page);
+    const id = (row, column) => cellIdFor(directions, row, column);
+    const directionValues = async () => {
+      const latest = await projection(page);
+      return Promise.all([0, 1, 2].flatMap(row => [0, 1, 2, 3].map(column => cellText(page, latest, row, column))));
+    };
+    const dragHandleTo = async (row, column) => {
+      const handle = await fillHandleBox(page);
+      const target = await page.getByTestId(id(row, column)).boundingBox();
+      await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 8 });
+      await page.mouse.up();
+      await settle(page);
+    };
+    const checkDirectionSelection = async (rows, columns, activeRow, activeColumn) => {
+      const selected = await page.locator(".ts-cell--range-selected").evaluateAll(nodes => nodes.map(node => node.dataset.testid));
+      assert.deepEqual(selected.sort(), rows.flatMap(row => columns.map(column => id(row, column))).sort());
+      assert.equal(await activeId(page), id(activeRow, activeColumn));
+    };
+    await page.getByTestId(id(0, 1)).click();
+    let before = await directionValues();
+    // Horizontal displacement wins even with vertical motion into another row.
+    await dragHandleTo(1, 3);
+    assert.deepEqual((await directionValues()).slice(0, 4), ["2", "3", "3", "3"]);
+    await checkDirectionSelection([0], [1, 2, 3], 0, 1);
+    await page.keyboard.press("Control+z"); await settle(page);
+    assert.deepEqual(await directionValues(), before, "one Undo did not restore the right fill");
+    await checkDirectionSelection([0], [1, 2, 3], 0, 1);
+
+    await page.getByTestId(id(0, 3)).click();
+    before = await directionValues();
+    await dragHandleTo(0, 1);
+    assert.deepEqual((await directionValues()).slice(0, 4), ["2", "9", "9", "9"], "left value fill did not copy the source");
+    await checkDirectionSelection([0], [1, 2, 3], 0, 3);
+    await page.keyboard.press("Control+z"); await settle(page);
+    assert.deepEqual(await directionValues(), before, "one Undo did not restore the left value fill");
+    await checkDirectionSelection([0], [1, 2, 3], 0, 3);
+
+    // TODO: enable sideways relative formula fills after https://github.com/nurockplayer/tachiko-work/issues/921.
+    await replaceCell(page, id(0, 3), "=C2*2");
+    await page.getByTestId(id(0, 3)).click();
+    before = await directionValues();
+    const selectedBeforeLeft = await selectedCount(page);
+    await dragHandleTo(0, 1);
+    assert.deepEqual(await directionValues(), before, "refused left formula fill changed cells");
+    assert.equal(await selectedCount(page), selectedBeforeLeft, "refused left formula fill changed selection");
+    assert.equal(await activeId(page), id(0, 3));
+    assert.equal((await page.locator(".ts-clipboard-status").first().textContent()).trim(), "Filling formulas sideways is not available yet.");
+
+    await replaceCell(page, id(0, 2), "=B2*2");
+    await page.getByTestId(id(0, 2)).click();
+    const beforeRightRefusal = await directionValues();
+    const selectedBeforeRight = await selectedCount(page);
+    await dragHandleTo(0, 3);
+    assert.deepEqual(await directionValues(), beforeRightRefusal, "refused right formula fill changed cells");
+    assert.equal(await selectedCount(page), selectedBeforeRight, "refused right formula fill changed selection");
+    assert.equal(await activeId(page), id(0, 2));
+    assert.equal((await page.locator(".ts-clipboard-status").first().textContent()).trim(), "Filling formulas sideways is not available yet.");
+    await page.keyboard.press("Control+z"); await settle(page);
+    assert.deepEqual(await directionValues(), before, "refused formula fill added an Undo step");
+
+    await replaceCell(page, id(2, 3), "=A4*2");
+    await page.getByTestId(id(2, 3)).click();
+    before = await directionValues();
+    await dragHandleTo(0, 3);
+    const up = await directionValues();
+    assert.deepEqual([up[3], up[7], up[11]], ["4", "6", "8"], "up fill did not shift relative rows");
+    await checkDirectionSelection([0, 1, 2], [3], 2, 3);
+    await page.keyboard.press("Control+z"); await settle(page);
+    assert.deepEqual(await directionValues(), before, "one Undo did not restore the up fill");
+    await checkDirectionSelection([0, 1, 2], [3], 2, 3);
+
+    await page.getByTestId(id(0, 0)).click();
+    await page.getByTestId(id(1, 0)).click({ modifiers: ["Shift"] });
+    before = await directionValues();
+    await dragHandleTo(1, 2);
+    assert.deepEqual((await directionValues()).slice(0, 8), ["2", "2", "2", "4", "3", "3", "3", "9"], "column source fill did not copy values and recalculate D2 (=C2*2)");
+    await checkDirectionSelection([0, 1], [0, 1, 2], 0, 0);
+    await page.keyboard.press("Control+z"); await settle(page);
+    assert.deepEqual(await directionValues(), before);
+
+    await page.getByTestId(id(2, 0)).click();
+    await page.getByTestId(id(2, 1)).click({ modifiers: ["Shift"] });
+    before = await directionValues();
+    await dragHandleTo(0, 1);
+    assert.deepEqual((await directionValues()).slice(0, 8), ["4", "3", "4", "8", "4", "3", "4", "9"]);
+    await checkDirectionSelection([0, 1, 2], [0, 1], 2, 0);
+    await page.keyboard.press("Control+z"); await settle(page);
+    assert.deepEqual(await directionValues(), before);
+
+    await newTable(page, "Fill refusal", [{ name: "Text", type: "text" }, { name: "Number", type: "number" }]);
+    await addRow(page, ["not a number", "7"], 1);
+    const refusal = await projection(page);
+    await page.getByTestId(cellIdFor(refusal, 0, 0)).click();
+    const refusedHandle = await fillHandleBox(page);
+    const refusedTarget = await page.getByTestId(cellIdFor(refusal, 0, 1)).boundingBox();
+    const selectedBefore = await selectedCount(page);
+    await page.mouse.move(refusedHandle.x + 3, refusedHandle.y + 3);
+    await page.mouse.down();
+    await page.mouse.move(refusedTarget.x + refusedTarget.width / 2, refusedTarget.y + refusedTarget.height / 2, { steps: 8 });
+    await page.mouse.up(); await settle(page);
+    assert.equal(await cellText(page, await projection(page), 0, 0), "not a number");
+    assert.equal(await cellText(page, await projection(page), 0, 1), "7");
+    assert.equal(await selectedCount(page), selectedBefore, "refused fill changed selection");
+    assert.equal(await activeId(page), cellIdFor(refusal, 0, 0));
+    assert.match(await page.locator(".ts-clipboard-status").first().textContent(), /number/i);
+
   } },
   { id: "23", name: "Row operations", tier: "A", run: async (page) => {
     await example(page);

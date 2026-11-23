@@ -974,7 +974,7 @@ export function SheetShell(props: SheetShellProps) {
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const tabRunStartRef = useRef<GridPosition | null>(null);
   const dragSelectRef = useRef<{ anchor: GridPosition; moved: boolean } | null>(null);
-  const fillDragRef = useRef<{ source: CellRectangle; identity: string | null; revision: string | undefined } | null>(null);
+  const fillDragRef = useRef<{ source: CellRectangle; startX: number; startY: number; identity: string | null; revision: string | undefined } | null>(null);
   const [fillPreview, setFillPreview] = useState<CellRectangle | null>(null);
   // The window mouseup listener is registered once; it reads the live preview
   // and the latest finishFillDrag through refs.
@@ -997,6 +997,7 @@ export function SheetShell(props: SheetShellProps) {
   }, []);
   useEffect(() => {
     let scrollTimer: number | null = null;
+    let pointerX = 0;
     let pointerY = 0;
     const stopScroll = () => {
       if (scrollTimer !== null) window.clearInterval(scrollTimer);
@@ -1008,13 +1009,14 @@ export function SheetShell(props: SheetShellProps) {
       const bottom = grid.getBoundingClientRect().top + grid.clientTop + grid.clientHeight;
       if (pointerY < bottom) { stopScroll(); return; }
       grid.scrollTop += Math.min(60, 6 + (pointerY - bottom) * 0.4);
-      updateFillPreviewRef.current(pointerY);
+      updateFillPreviewRef.current(pointerX, pointerY);
     };
     const move = (event: MouseEvent) => {
       if (!fillDragRef.current) return;
       if (event.buttons === 0) { dropFillDrag(); return; }
+      pointerX = event.clientX;
       pointerY = event.clientY;
-      updateFillPreviewRef.current(pointerY);
+      updateFillPreviewRef.current(pointerX, pointerY);
       const grid = gridScrollRef.current!;
       const bottom = grid.getBoundingClientRect().top + grid.clientTop + grid.clientHeight;
       if (pointerY >= bottom) {
@@ -1982,7 +1984,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   /** The drag's rows are positions in the view it started on, so they only mean the same cells on that view. */
-  function updateFillPreviewAt(pointerY: number): void {
+  function updateFillPreviewAt(pointerX: number, pointerY: number): void {
     const grid = gridScrollRef.current;
     const drag = fillDragRef.current;
     if (!grid || !drag) return;
@@ -1996,30 +1998,43 @@ export function SheetShell(props: SheetShellProps) {
       const index = rowIndexByEntity.get(entity)!;
       targetRow = Math.max(targetRow, index);
     }
-    const target = fillDragTarget(drag.source, targetRow);
+    if (targetRow < 0) targetRow = 0;
+    let targetColumn = 0;
+    const row = grid.querySelector<HTMLTableRowElement>("tbody tr.ts-row");
+    const frozenCell = row?.querySelector<HTMLTableCellElement>("td.ts-frozen-first-column[data-work-field]");
+    if (!frozenCell || pointerX >= frozenCell.getBoundingClientRect().right) {
+      for (const cell of row?.querySelectorAll<HTMLTableCellElement>("td[data-work-field]") ?? []) {
+        if (cell.getBoundingClientRect().left <= pointerX) targetColumn = columns.findIndex(column => column.id === cell.dataset.workField);
+      }
+    }
+    const horizontal = (targetColumn < drag.source.left || targetColumn > drag.source.right)
+      && (targetRow >= drag.source.top && targetRow <= drag.source.bottom
+        || Math.abs(pointerX - drag.startX) > Math.abs(pointerY - drag.startY));
+    const target = fillDragTarget(drag.source, targetRow, targetColumn, horizontal);
     fillPreviewRef.current = target;
     setFillPreview(target);
   }
 
-  function finishFillDrag(area: CellRectangle, drag: { identity: string | null; revision: string | undefined }): void {
+  function finishFillDrag(area: CellRectangle, drag: { source: CellRectangle; identity: string | null; revision: string | undefined }): void {
     if (drag.identity !== collectionIdentity || drag.revision !== view?.revision) {
       announceClipboard("The table changed during the drag. Nothing was filled.", true, true);
       return;
     }
-    fillDown(area, true);
+    fillDown(area, true, drag.source);
   }
 
-  function fillDown(area: CellRectangle | null = selectionRectangle, fromFillHandle = false): void {
+  function fillDown(area: CellRectangle | null = selectionRectangle, fromFillHandle = false, source?: CellRectangle): void {
     if (controlsLocked || rowCommandPendingRef.current || currentness !== "current" || editor || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || modalInteractionOpen) {
       announceClipboard("Finish the current edit or operation before filling cells.", true, true); return;
     }
     if (!table || !view || !witness) { announceClipboard("Filling cells is not available in this view.", true, true); return; }
     try {
-      const plan = fillDownPlan(displayRows, columns, area, Boolean(table.native_table_profile), !gridSettings.sort && !gridSettings.filters?.length);
+      const plan = fillDownPlan(displayRows, columns, area, Boolean(table.native_table_profile), !gridSettings.sort && !gridSettings.filters?.length, source);
       const intent = completionIntent();
-      const anchor = boundSelection?.anchor ?? { entity: rowEntity(displayRows[area!.top]!), field: columns[area!.left]!.id };
+      const anchor = boundSelection?.anchor ?? { entity: rowEntity(displayRows[source?.top ?? area!.top]!), field: columns[source?.left ?? area!.left]!.id };
       const endColumn = anchor.field === columns[area!.left]!.id ? area!.right : area!.left;
-      const end = { entity: rowEntity(displayRows[area!.bottom]!), field: columns[endColumn]!.id };
+      const endRow = anchor.entity === rowEntity(displayRows[area!.top]!) ? area!.bottom : area!.top;
+      const end = { entity: rowEntity(displayRows[endRow]!), field: columns[endColumn]!.id };
       const selectFilledRange = () => {
         if (!fromFillHandle || !completionMayUpdateUi(intent)) return;
         setCellSelection({ identity: collectionIdentity!, revision: pasteTargetRef.current.revision!, anchor, end, fromFillHandle: true });
@@ -6113,9 +6128,11 @@ export function SheetShell(props: SheetShellProps) {
       && (selectionRectangle
         ? coordinate.row === selectionRectangle.bottom && coordinate.column === selectionRectangle.right
         : focusedKey === key);
-    const fillPreviewed = Boolean(fillPreview && coordinate.row > fillPreview.top
+    const fillPreviewed = Boolean(fillPreview && coordinate.row >= fillPreview.top
       && coordinate.row <= fillPreview.bottom
-      && coordinate.column >= fillPreview.left && coordinate.column <= fillPreview.right);
+      && coordinate.column >= fillPreview.left && coordinate.column <= fillPreview.right
+      && !(fillDragRef.current && coordinate.row >= fillDragRef.current.source.top && coordinate.row <= fillDragRef.current.source.bottom
+        && coordinate.column >= fillDragRef.current.source.left && coordinate.column <= fillDragRef.current.source.right));
     if (display.emptyTextMarker) classes.push("ts-cell--empty-text");
     if (rangeSelected) classes.push("ts-cell--range-selected");
     const edges = !draft && boundCopiedArea ? copiedEdges(boundCopiedArea, coordinate.row, coordinate.column) : null;
@@ -6172,10 +6189,7 @@ export function SheetShell(props: SheetShellProps) {
         onMouseEnter={(event) => {
           if (fillDragRef.current) {
             if (event.buttons === 0) { fillDragRef.current = null; fillPreviewRef.current = null; setFillPreview(null); return; }
-            // Overshooting onto the new-row line fills to the last row.
-            const target = fillDragTarget(fillDragRef.current.source, draft ? displayRows.length - 1 : coordinate.row);
-            fillPreviewRef.current = target;
-            setFillPreview(target);
+            updateFillPreviewAt(event.clientX, event.clientY);
             return;
           }
           if (!dragSelectRef.current) return;
@@ -6260,11 +6274,7 @@ export function SheetShell(props: SheetShellProps) {
             // The second press of a double-click must not start a fill drag.
             if (event.detail > 1) return;
             const source = selectionRectangle ?? rectangle(coordinate, coordinate);
-            if (source.bottom > source.top) {
-              announceClipboard("Fill from one row. Filling a series isn't available yet. Nothing was filled.", true, true);
-              return;
-            }
-            fillDragRef.current = { source, identity: collectionIdentity, revision: view?.revision };
+            fillDragRef.current = { source, startX: event.clientX, startY: event.clientY, identity: collectionIdentity, revision: view?.revision };
             fillPreviewRef.current = null;
             setFillPreview(null);
           }}
