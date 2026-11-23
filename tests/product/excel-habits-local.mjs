@@ -5,7 +5,7 @@ import { standaloneImportedRoReopen } from "./imported-ro-journey.mjs";
 import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1119,7 +1119,7 @@ const cases = [
       await rm(work, { recursive: true, force: true });
     }
   } },
-  { id: "28", name: "Direct formatting", tier: "A", run: async (page) => {
+  { id: "28", name: "Direct formatting", tier: "A", note: "Bold, italic, fill and borders use Work presentation styles; checked through save and XLSX export.", run: async (page) => {
     await example(page);
     const table = await projection(page);
     const id = cellIdFor(table, 0, 0);
@@ -1127,7 +1127,73 @@ const cases = [
     await page.keyboard.press("Control+b");
     await settle(page);
     const weight = await page.getByTestId(id).evaluate((node) => Number(getComputedStyle(node).fontWeight));
-    assert.ok(weight >= 600, `Ctrl+B left the cell at font-weight ${weight}; there is no cell formatting`);
+    assert.ok(weight >= 600, `Ctrl+B left the cell at font-weight ${weight}`);
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.ok(await page.getByTestId(id).evaluate(node => Number(getComputedStyle(node).fontWeight)) < 600, "Undo did not remove bold");
+    await page.keyboard.press("Control+y");
+    await settle(page);
+    assert.ok(await page.getByTestId(id).evaluate(node => Number(getComputedStyle(node).fontWeight)) >= 600, "Redo did not restore bold");
+    await page.keyboard.press("Control+i");
+    await settle(page);
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).fontStyle), "italic");
+    await page.getByLabel("Fill colour").fill("#ffff00");
+    await settle(page);
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).backgroundColor), "rgb(255, 255, 0)");
+    await page.getByRole("button", { name: "All borders" }).click();
+    await settle(page);
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).borderTopStyle), "solid");
+    assert.deepEqual(fieldAt(await projection(page), 0, 0)?.stored, fieldAt(table, 0, 0)?.stored, "formatting changed the cell value or formula");
+    await page.getByTestId(id).click();
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.notEqual(await page.getByTestId(id).evaluate(node => getComputedStyle(node).borderTopColor), "rgb(0, 0, 0)", "Undo did not remove the border");
+    await page.keyboard.press("Control+y");
+    await settle(page);
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).borderTopColor), "rgb(0, 0, 0)", "Redo did not restore the border");
+    if (process.env.HABITS_SHOTS) {
+      await mkdir(process.env.HABITS_SHOTS, { recursive: true });
+      await page.getByTestId(cellIdFor(table, 0, 1)).click();
+      await page.screenshot({ path: path.join(process.env.HABITS_SHOTS, "habit28-applied.png"), fullPage: true });
+    }
+    await saveCopy(page, "habits-28");
+    await page.reload();
+    await waitForColdHome(page);
+    await page.getByRole("button", { name: "Open saved habits-28", exact: true }).click();
+    await ready(page);
+    assert.ok(await page.getByTestId(id).evaluate(node => Number(getComputedStyle(node).fontWeight)) >= 600, "bold did not survive reopen");
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).fontStyle), "italic", "italic did not survive reopen");
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).backgroundColor), "rgb(255, 255, 0)", "fill did not survive reopen");
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).borderTopColor), "rgb(0, 0, 0)", "border did not survive reopen");
+    if (process.env.HABITS_SHOTS) {
+      await page.getByTestId(cellIdFor(table, 0, 1)).click();
+      await page.screenshot({ path: path.join(process.env.HABITS_SHOTS, "habit28-reopened.png"), fullPage: true });
+    }
+    await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+    await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
+    const consent = page.getByRole("dialog", { name: "Confirm download", exact: true });
+    await consent.waitFor();
+    const download = page.waitForEvent("download");
+    await consent.getByRole("button", { name: "Download", exact: true }).click();
+    const work = await mkdtemp(path.join(tmpdir(), "habits-28-"));
+    try {
+      const file = path.join(work, "export.xlsx");
+      await (await download).saveAs(file);
+      const xml = sheetXml(file);
+      assert.match(xml, /<b\s*\/>/, "XLSX lacks bold");
+      assert.match(xml, /<i\s*\/>/, "XLSX lacks italic");
+      assert.match(xml, /FFFF00/i, "XLSX lacks yellow fill");
+      assert.match(xml, /<top[^>]*style=/, "XLSX lacks a top border");
+    } finally { await rm(work, { recursive: true, force: true }); }
+    await page.getByRole("tab", { name: "Table", exact: true }).click();
+    await page.getByTestId(id).click();
+    await page.keyboard.press("Control+b");
+    await settle(page);
+    assert.ok(await page.getByTestId(id).evaluate(node => Number(getComputedStyle(node).fontWeight)) < 600, "Ctrl+B did not remove bold");
+    await page.keyboard.press("Control+i");
+    await settle(page);
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).fontStyle), "normal");
+
   } },
   { id: "29", name: "Number display", tier: "A", run: async (page) => {
     await newTable(page, "Percent", [{ name: "Name" }, { name: "Rate", type: "number" }]);
