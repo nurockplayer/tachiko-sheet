@@ -227,6 +227,10 @@ const cases = [
     await page.keyboard.press("Enter");
     await waitForCellText(page, "worksheet:A1", "Hello");
     assert.equal(fieldAt(await projection(page), 0, 0)?.stored?.value, "Hello", "Hello was not stored by Work");
+    await page.keyboard.type("World");
+    await page.keyboard.press("Enter");
+    await waitForCellText(page, "worksheet:A2", "World");
+    assert.equal(fieldAt(await projection(page), 1, 0)?.stored?.value, "World", "Enter did not move typing to A2 after allocation");
   } },
   { id: "03", name: "Blank-cell typing", tier: "A", run: async () => {
     const profile = await mkdtemp(path.join(tmpdir(), "habits-03-"));

@@ -906,6 +906,7 @@ export function SheetShell(props: SheetShellProps) {
   // which the newest render refreshes, so the destination lookup and the row
   // reveal always speak about the same projection.
   const settleFormulaHandoffRef = useRef<() => void>(() => {});
+  const focusWorksheetCellRef = useRef<(row: number, column: number) => void>(() => {});
   const newTableFocusIntentRef = useRef<number | null>(null);
   const duplicateFocusIntentRef = useRef<number | null>(null);
   const [addSheetFocus, setAddSheetFocus] = useState<{ generation: number; occurrence: string; source: string } | null>(null);
@@ -2388,6 +2389,12 @@ export function SheetShell(props: SheetShellProps) {
     // This render's helpers own the handoff from now on, so a continuation
     // that runs after this commit settles through them, not its own closure.
     settleFormulaHandoffRef.current = settleFormulaHandoff;
+    focusWorksheetCellRef.current = (rowIndex, columnIndex) => {
+      const row = displayRows[rowIndex], column = columns[columnIndex];
+      if (!row || !column) return;
+      setSelectedEntity(rowEntity(row));
+      focusCell(rowEntity(row), column.id, rowIndex);
+    };
     settleFormulaHandoff();
   });
 
@@ -4322,11 +4329,9 @@ export function SheetShell(props: SheetShellProps) {
             const at = address(position);
             const next = event.key === "Enter" ? { row: Math.max(0, at.row + (event.shiftKey ? -1 : 1)), column: at.column }
               : { row: at.row, column: Math.max(0, at.column + (event.shiftKey ? -1 : 1)) };
-            const row = displayRows[next.row], column = columns[next.column];
-            if (row && column) {
-              setSelectedEntity(rowEntity(row));
-              focusCell(rowEntity(row), column.id, next.row);
-            } else requestAnimationFrame(() => gridScrollRef.current?.querySelector<HTMLElement>(`[data-address="${a1ColumnLetter(next.column)}${next.row + 1}"]`)?.focus());
+            requestAnimationFrame(() => {
+              if (completionMayUpdateUi(intent)) withAppFocus(() => focusWorksheetCellRef.current(next.row, next.column));
+            });
           } else if (!moveFocus(event, position, step)) focusCell(position.entity, position.field);
         });
       });

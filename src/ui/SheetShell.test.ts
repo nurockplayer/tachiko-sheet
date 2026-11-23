@@ -253,6 +253,23 @@ describe("headerless worksheets use the existing grid", () => {
     expect(ui.container.querySelector(".ts-table-panel .ts-grid-scroll")).not.toBeNull();
   });
 
+  it.each([["Enter", "A2", 1, 0], ["Tab", "B1", 0, 1]] as const)("continues typing at %s's destination %s after allocation", async (key, destination, row, column) => {
+    const ui = await mount();
+    await ui.focus("A1");
+    await ui.type("Hello");
+    await ui.key(key);
+    await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+    expect(ui.onWrite).toHaveBeenNthCalledWith(1, expect.anything(), "release_items", 0, 0, "Hello");
+    expect(ui.cell("A1").textContent).toBe("Hello");
+    expect(document.activeElement).toBe(ui.cell(destination));
+    await ui.type("World");
+    await ui.key("Enter");
+    await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+    expect(ui.onWrite).toHaveBeenNthCalledWith(2, expect.anything(), "release_items", row, column, "World");
+    expect(ui.cell(destination).textContent).toBe("World");
+    expect(ui.onCommit).not.toHaveBeenCalled();
+  });
+
   it("allocates beyond hidden stored rows when typing into filtered synthetic space", async () => {
     const view = makeView();
     view.table.columns = [view.table.columns[0]!];
