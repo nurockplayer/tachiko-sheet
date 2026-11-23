@@ -84,8 +84,8 @@ it.each(["imported", "native", "pathless"] as const)("opens a %s .ro from the de
     expect(browserDatabase).not.toHaveBeenCalled();
     if (kind === "imported") {
       expect(runtime.openWorkFile).toHaveBeenCalledWith(bytes.buffer, metadata);
-      expect(container.textContent).toContain("Renamed Second");
-      expect(container.textContent!.indexOf("Renamed Second")).toBeLessThan(container.textContent!.indexOf("First"));
+      expect(Array.from(container.querySelectorAll('[aria-label="Sheets"] [role="tab"]'), tab => tab.textContent))
+        .toEqual(["Renamed Second", "First"]);
     } else {
       expect(runtime.openWorkFile).toHaveBeenCalledWith(bytes.buffer);
     }
