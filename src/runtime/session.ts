@@ -658,7 +658,15 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     return read.view;
   }
 
+  function newBlankWorkbook(): Promise<WorkbookView> {
+    return createWorkbook();
+  }
+
   function newTable(name: string, columns: NewTableColumn[]): Promise<WorkbookView> {
+    return createWorkbook(name, columns);
+  }
+
+  function createWorkbook(name?: string, columns: NewTableColumn[] = []): Promise<WorkbookView> {
     const requestedAt = epoch;
     const inputs = columns.map((column) => ({ ...column }));
     return enqueue(async () => {
@@ -676,8 +684,9 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         noResident = true;
       }
       if (!noResident) throw new Error("A table is still open. Reload before creating a new table.");
-      const create = capability(client.newTableWorkingSize, "new table");
-      return openSession(kit, client, requestedAt, () => create.call(client, name, inputs), false, true);
+      return openSession(kit, client, requestedAt, () => name === undefined
+        ? capability(client.newBlankWorkbook, "blank workbook").call(client)
+        : capability(client.newTableWorkingSize, "new table").call(client, name, inputs), false, true);
     });
   }
 
@@ -1121,6 +1130,11 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       const command = capability(client.trackerCommand, "cell edits");
       return command.call(client, { type: "edit_cells", expected_revision: revision, edits: inputs });
     });
+  }
+
+  function writeCellAt(witness: ViewWitness, collection: string, row: number, column: number, input: string) {
+    return confirmedMutation(witness, (client, revision) =>
+      capability(client.writeCellAt, "worksheet cell entry").call(client, revision, collection, row, column, { kind: "auto", input }));
   }
 
   function pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]) {
@@ -1834,7 +1848,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   return {
     get requestByteLimit() { return requestByteLimit; },
     prepare,
-    addTable, newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setCellStyle, setColumnWidth, queryCapacity, querySelectionStatistics, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    addTable, newTable, newBlankWorkbook, writeCellAt, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setCellStyle, setColumnWidth, queryCapacity, querySelectionStatistics, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };

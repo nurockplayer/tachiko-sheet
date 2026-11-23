@@ -18,6 +18,7 @@ import type { FieldProjection } from "../../public/core-kit/experimental-client.
 import { flushSync } from "react-dom";
 import { appearanceDensity } from "../application/appearance-preference.js";
 import { emptyLocalHistory } from "../application/local-history.js";
+import { BlankWorksheet } from "./BlankWorksheet.js";
 import { sameAppearanceChoice } from "../application/appearance-model.js";
 import type {
   AppearanceDensity,
@@ -560,6 +561,8 @@ export function SheetShell(props: SheetShellProps) {
     onOpenWorkFile = async () => { throw new Error("Opening work files is unavailable."); },
     workFileOmissions = [],
     onNewTable,
+    onNewBlankWorkbook,
+    onWriteCellAt,
     onInsertRow,
     onAddColumn,
     onSetColumnRequiredness,
@@ -804,6 +807,8 @@ export function SheetShell(props: SheetShellProps) {
   const [copyParentFailureMessage, setCopyParentFailureMessage] = useState<string | null>(null);
   const [captureCopyParentFailure, setCaptureCopyParentFailure] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
+  const newWorkbookAfterClose = useRef(false);
+  const [blankDraftActive, setBlankDraftActive] = useState(false);
   const [shortcutHelp, setShortcutHelp] = useState(false);
   const shortcutHelpOriginRef = useRef<HTMLElement | null>(null);
   function openShortcutHelp(origin: HTMLElement | null) {
@@ -2657,7 +2662,7 @@ export function SheetShell(props: SheetShellProps) {
     return () => document.removeEventListener("pointerdown", outside, true);
   }, [tableMenu]);
   const draftActive =
-    cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
+    blankDraftActive || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
     (renameTable !== null && renameTableDraftActive) || (newTableOpen && newTableDraftActive) || (duplicateOpen && duplicateDraftActive) || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null;
   const errorMessage = props.startupUnavailable ? null : localError ?? copyError ??
     (salesEntryOutcome?.kind === "refused" ? null : message && message.length > 0 ? message : null);
@@ -4627,6 +4632,10 @@ export function SheetShell(props: SheetShellProps) {
         if (active?.closest('input, textarea, [contenteditable="true"]')) { document.execCommand(command); return; }
       }
       if (modalInteractionOpen) return;
+      if (command === "new-table" && onNewBlankWorkbook) {
+        void requestNewWorkbook();
+        return;
+      }
       if (command === "new-table") {
         if (view) { setLocalError("Close this work first to start a new table."); return; }
         // controlsLocked already covers unknown currentness.
@@ -4829,6 +4838,35 @@ export function SheetShell(props: SheetShellProps) {
     await closeWork();
   }
 
+  async function requestNewWorkbook(): Promise<void> {
+    if (!onNewBlankWorkbook || controlsLocked || modalInteractionOpen || props.startupUnavailable) return;
+    if (view) {
+      newWorkbookAfterClose.current = true;
+      await requestClose();
+    } else {
+      try { await onNewBlankWorkbook(); }
+      catch (error) { setLocalError(explain(error, "The workbook could not be created.")); }
+    }
+  }
+
+  useEffect(() => {
+    if (!view && !controlsLocked && newWorkbookAfterClose.current) {
+      newWorkbookAfterClose.current = false;
+      void requestNewWorkbook();
+    }
+  }, [view, controlsLocked]);
+
+  useEffect(() => {
+    const keydown = (event: globalThis.KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "n" && !event.isComposing && onNewBlankWorkbook) {
+        event.preventDefault();
+        void requestNewWorkbook();
+      }
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  });
+
   async function closeWork(): Promise<void> {
     if (saveStatus === "saving") return;
     invalidateCloseSaveIntent();
@@ -4843,6 +4881,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function keepEditing(): void {
+    newWorkbookAfterClose.current = false;
     invalidateCloseSaveIntent();
     setCloseSaveAttempted(false);
     setCloseOpen(false);
@@ -5549,6 +5588,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function renderTablePanel(): ReactNode {
     if (!table) return null;
+    if (table.collection.headerless && view && onWriteCellAt) return <BlankWorksheet key={`${view.occurrence}:${table.collection.id}`} view={view} locked={controlsLocked} onWrite={onWriteCellAt} onDraftChange={setBlankDraftActive} />;
     const totals = footerTotals?.totals ?? table.column_totals;
     const hasColumnTotals = totals !== undefined && Object.keys(totals).length > 0;
     const focusedColumn = columns.find(column => column.id === focusedKey?.split("\u0000")[1]) ?? columns[0];

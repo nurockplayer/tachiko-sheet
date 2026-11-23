@@ -1050,6 +1050,14 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   });
 
   function newTable(name: string, columns: NewTableColumn[]): Promise<boolean> {
+    return createNewWorkbook(() => runtime.newTable(name, columns));
+  }
+
+  function newBlankWorkbook(): Promise<boolean> {
+    return createNewWorkbook(() => runtime.newBlankWorkbook());
+  }
+
+  function createNewWorkbook(create: () => Promise<WorkbookView>): Promise<boolean> {
     if (blockUnknownOpenRecovery() || !begin()) return Promise.resolve(false);
     const unconfirmed = new Error("Tachiko couldn't confirm the table was created. Nothing was saved — choose Create to try again.");
     const failure = (error: unknown): unknown => {
@@ -1066,7 +1074,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       guardReplacement(true);
       setMessage(null);
       setCurrentness("pending");
-      return mutationCompletion.newTable(() => replaceWork(() => runtime.newTable(name, columns)), unconfirmed, end, failure);
+      return mutationCompletion.newTable(() => replaceWork(create), unconfirmed, end, failure);
     } catch (error) {
       const rejected = failure(error);
       end();
@@ -1782,6 +1790,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.editCells(witness, edits));
   }
 
+  function writeCellAt(witness: ViewWitness, collection: string, row: number, column: number, input: string) {
+    return changeRows(witness, () => runtime.writeCellAt(witness, collection, row, column, input));
+  }
+
   function pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]) {
     return changeRows(witness, () => runtime.pasteCells(witness, collection, startEntity, startField, rows));
   }
@@ -2387,6 +2399,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           workFileOmissions={currentWorkFileOmissions()}
           onOpenFiles={openFiles}
           onNewTable={newTable}
+          onNewBlankWorkbook={newBlankWorkbook}
+          onWriteCellAt={writeCellAt}
           onEditCells={editCells}
           onCopyFormula={copyFormula}
           onPasteCells={pasteCells}

@@ -646,7 +646,7 @@ struct PageCommand {
 
 const NEW_TABLE: PageCommand = PageCommand {
     id: "new-table",
-    label: "New Table…",
+    label: "New Workbook",
     accelerator: "CmdOrCtrl+N",
 };
 const OPEN: PageCommand = PageCommand {

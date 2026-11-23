@@ -110,6 +110,8 @@ export interface SheetRuntime {
   /** Read-only, cached client/kit readiness; never opens or creates work. */
   prepare(): Promise<void>;
   newTable(name: string, columns: NewTableColumn[]): Promise<WorkbookView>;
+  newBlankWorkbook(): Promise<WorkbookView>;
+  writeCellAt(witness: ViewWitness, collection: string, row: number, column: number, input: string): Promise<ConfirmedPublication>;
   addTable(witness: ViewWitness, name: string, columns: NewTableColumn[]): Promise<ConfirmedPublication>;
   insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[]): Promise<ConfirmedPublication>;
   editCells(witness: ViewWitness, edits: CellEdit[]): Promise<ConfirmedPublication>;
@@ -403,6 +405,8 @@ export interface SheetShellProps {
   workFileSaveUnavailableReason?: string | null;
   workFileOmissions?: string[];
   onNewTable?(name: string, columns: NewTableColumn[]): Promise<boolean>;
+  onNewBlankWorkbook?(): Promise<boolean>;
+  onWriteCellAt?(witness: ViewWitness, collection: string, row: number, column: number, input: string): Promise<RowCommandOutcome>;
   onEditCells?(witness: ViewWitness, edits: CellEdit[]): Promise<RowCommandOutcome>;
   onCopyFormula?(witness: ViewWitness, request: FormulaCopy): Promise<RowCommandOutcome>;
   onPasteCells?(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]): Promise<RowCommandOutcome>;
