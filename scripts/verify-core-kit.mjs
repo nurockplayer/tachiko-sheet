@@ -14,6 +14,14 @@ import { fileURLToPath } from 'node:url';
 const qualifiedArtifacts = [
   {
     // Re-pin: two clean detached exports match; producer receipt on #246.
+    // PR #590 owns the review gate; adopts blank worksheet entry for #305 rows 02/03.
+    sourceCommit: '51eab693a6cde0955e7f3bd1eea3dcbe45a3a5f7',
+    artifactManifestSha256: 'bd62dfa2d298cd9078d22b76a7b36bc8ca4ec83ffb834f4b61547c40e5883d98',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/pull/590',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7113009096',
+  },
+  {
+    // Re-pin: two clean detached exports match; producer receipt on #246.
     // PR #577 owns the review gate; blank workbooks and positional writes are not adopted.
     sourceCommit: 'e28ac837e39924b4dd3c674f8bb04a4d45e54330',
     artifactManifestSha256: 'd7b496c267398cc6cb9c3949340f7565972cc74887bfe062d3a3ecb5633f4799',
