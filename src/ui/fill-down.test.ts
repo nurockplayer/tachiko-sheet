@@ -93,3 +93,79 @@ describe("fill down request planning", () => {
       .toThrow("The fill range exceeds the 100,000-cell limit. Nothing was filled.");
   });
 });
+
+describe("directional fill planning", () => {
+  const booleanColumns = [column("a"), { ...column("b"), field_type: "boolean" }];
+  const source = { top: 0, left: 0, bottom: 0, right: 0 };
+  const area = { ...source, right: 1 };
+  function booleanRow(index: number, value: string): TableRow {
+    const result = row(index, { a: value });
+    result.fields.push({
+      target: { entity: `entity-${index}`, field: "b" }, address: `${index}.b`,
+      stored: { kind: "boolean", value: true }, editable_scalar: "boolean",
+      formula: null, calculated: null, diagnostics: [],
+    });
+    return result;
+  }
+
+  it.each(["TRUE", "True", "tRuE", "FALSE", "False", "fAlSe"])("normalizes %s when filling into Yes/No", value => {
+    expect(fillDownPlan([booleanRow(0, value)], booleanColumns, area, true, true, source)).toEqual({
+      kind: "values", count: 1,
+      edits: [{ target: { entity: "entity-0", field: "b" }, input: { kind: "boolean", value: value.toLowerCase() === "true" } }],
+    });
+  });
+
+  it.each(["1", "0", "not a boolean", " true "])("refuses the whole fill for %s after planning a valid Boolean", value => {
+    const rows = [booleanRow(0, "TRUE"), booleanRow(1, value)];
+    if (value === "1" || value === "0") rows[1]!.fields[0] = {
+      ...rows[1]!.fields[0]!, stored: { kind: "number", value: Number(value) }, editable_scalar: "number",
+    };
+    const before = structuredClone(rows);
+    expect(() => fillDownPlan(rows, booleanColumns, { ...area, bottom: 1 }, true, true, { ...source, bottom: 1 }))
+      .toThrow("A filled Yes/No value must be true or false. Nothing was filled.");
+    expect(rows).toEqual(before);
+  });
+
+  it("clears an optional Yes/No cell for an empty source without converting it to false", () => {
+    expect(fillDownPlan([booleanRow(0, "")], booleanColumns, area, true, true, source)).toEqual({
+      kind: "values", count: 1,
+      edits: [{ target: { entity: "entity-0", field: "b" }, input: { kind: "clear" } }],
+    });
+  });
+
+  it("refuses an empty source for a required Yes/No cell", () => {
+    expect(() => fillDownPlan([booleanRow(0, "")], [booleanColumns[0]!, { ...booleanColumns[1]!, required: true }], area, true, true, source))
+      .toThrow("This Yes/No column needs a value in every row.");
+  });
+
+  it.each([0, 2])("refuses a sideways formula copy into column %s", destination => {
+    const rows = [row(0, { a: "1", b: "2", c: "3" }, ["b"])];
+    const source = { top: 0, left: 1, bottom: 0, right: 1 };
+    const area = { ...source, left: Math.min(1, destination), right: Math.max(1, destination) };
+    expect(() => fillDownPlan(rows, [...columns, column("c")], area, true, true, source))
+      .toThrow("Filling formulas sideways is not available yet.");
+  });
+
+  it("copies each value in a column horizontally in one batch", () => {
+    const rows = [row(0, { a: "x", b: "old" }), row(1, { a: "y", b: "old" })];
+    expect(fillDownPlan(rows, columns, { top: 0, left: 0, bottom: 1, right: 1 }, true, true, { top: 0, left: 0, bottom: 1, right: 0 })).toEqual({
+      kind: "values", count: 2, edits: [
+        { target: { entity: "entity-0", field: "b" }, input: { kind: "text", value: "x" } },
+        { target: { entity: "entity-1", field: "b" }, input: { kind: "text", value: "y" } },
+      ],
+    });
+  });
+
+  it("delegates upward formula references to Work", () => {
+    const rows = [row(0, { a: "1", b: "2" }), row(1, { a: "3", b: "4" }, ["b"])];
+    const source = { top: 1, left: 1, bottom: 1, right: 1 };
+    const area = { ...source, top: 0 };
+    expect(fillDownPlan(rows, columns, area, true, true, source)).toEqual({
+      kind: "formula", count: 1, request: {
+        source: { entity: "entity-1", field: "b" },
+        destinations: [{ entity: "entity-0", field: "b" }],
+        fixed_references: [], relative_rows: false, relative_columns: false,
+      },
+    });
+  });
+});

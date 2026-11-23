@@ -75,7 +75,7 @@ import { ColumnRuleDialog } from "./ColumnRuleDialog.js";
 import { ColumnAlignmentDialog } from "./ColumnAlignmentDialog.js";
 import { ColumnFormatDialog } from "./ColumnFormatDialog.js";
 import { columnFormatSettlement, nextStripAlignment, nextStripNumberFormat, type StripNumberAction } from "./column-format.js";
-import type { DateFormat } from "../../public/core-kit/runtime/protocol.js";
+import type { CellStyleChange, DateFormat } from "../../public/core-kit/runtime/protocol.js";
 import { columnRuleKind } from "./column-rule.js";
 import { duplicateLanding, supportsDuplicateTable } from "./duplicate-table.js";
 import { DRAFT_ROW, draftInitializers, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
@@ -564,7 +564,7 @@ export function SheetShell(props: SheetShellProps) {
     onAddColumn,
     onSetColumnRequiredness,
     onSetColumnConstraint,
-    onSetColumnNumberFormat, onSetColumnDateFormat, onSetColumnAlignment, onSetColumnWidth,
+    onSetColumnNumberFormat, onSetColumnDateFormat, onSetColumnAlignment, onSetCellStyle, onSetColumnWidth,
     onRenameColumn,
     onRemoveColumn,
     onMoveColumn,
@@ -994,7 +994,7 @@ export function SheetShell(props: SheetShellProps) {
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const tabRunStartRef = useRef<GridPosition | null>(null);
   const dragSelectRef = useRef<{ anchor: GridPosition; moved: boolean } | null>(null);
-  const fillDragRef = useRef<{ source: CellRectangle; identity: string | null; revision: string | undefined } | null>(null);
+  const fillDragRef = useRef<{ source: CellRectangle; startX: number; startY: number; identity: string | null; revision: string | undefined } | null>(null);
   const [fillPreview, setFillPreview] = useState<CellRectangle | null>(null);
   // The window mouseup listener is registered once; it reads the live preview
   // and the latest finishFillDrag through refs.
@@ -1019,7 +1019,8 @@ export function SheetShell(props: SheetShellProps) {
   }, []);
   useEffect(() => {
     let scrollTimer: number | null = null;
-    let pointerX = 0, pointerY = 0;
+    let pointerX = 0;
+    let pointerY = 0;
     const stopScroll = () => {
       if (scrollTimer !== null) window.clearInterval(scrollTimer);
       scrollTimer = null;
@@ -1037,7 +1038,7 @@ export function SheetShell(props: SheetShellProps) {
       }
       if (pointerY < bottom) { stopScroll(); return; }
       grid.scrollTop += Math.min(60, 6 + (pointerY - bottom) * 0.4);
-      updateFillPreviewRef.current(pointerY);
+      updateFillPreviewRef.current(pointerX, pointerY);
     };
     const move = (event: MouseEvent) => {
       if (dragSelectRef.current) {
@@ -1056,8 +1057,9 @@ export function SheetShell(props: SheetShellProps) {
       }
       if (!fillDragRef.current) return;
       if (event.buttons === 0) { dropFillDrag(); return; }
+      pointerX = event.clientX;
       pointerY = event.clientY;
-      updateFillPreviewRef.current(pointerY);
+      updateFillPreviewRef.current(pointerX, pointerY);
       const grid = gridScrollRef.current!;
       const bottom = grid.getBoundingClientRect().top + grid.clientTop + grid.clientHeight;
       if (pointerY >= bottom) {
@@ -2046,7 +2048,7 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   /** The drag's rows are positions in the view it started on, so they only mean the same cells on that view. */
-  function updateFillPreviewAt(pointerY: number): void {
+  function updateFillPreviewAt(pointerX: number, pointerY: number): void {
     const grid = gridScrollRef.current;
     const drag = fillDragRef.current;
     if (!grid || !drag) return;
@@ -2060,30 +2062,43 @@ export function SheetShell(props: SheetShellProps) {
       const index = rowIndexByEntity.get(entity)!;
       targetRow = Math.max(targetRow, index);
     }
-    const target = fillDragTarget(drag.source, targetRow);
+    if (targetRow < 0) targetRow = 0;
+    let targetColumn = 0;
+    const row = grid.querySelector<HTMLTableRowElement>("tbody tr.ts-row");
+    const frozenCell = row?.querySelector<HTMLTableCellElement>("td.ts-frozen-first-column[data-work-field]");
+    if (!frozenCell || pointerX >= frozenCell.getBoundingClientRect().right) {
+      for (const cell of row?.querySelectorAll<HTMLTableCellElement>("td[data-work-field]") ?? []) {
+        if (cell.getBoundingClientRect().left <= pointerX) targetColumn = columns.findIndex(column => column.id === cell.dataset.workField);
+      }
+    }
+    const horizontal = (targetColumn < drag.source.left || targetColumn > drag.source.right)
+      && (targetRow >= drag.source.top && targetRow <= drag.source.bottom
+        || Math.abs(pointerX - drag.startX) > Math.abs(pointerY - drag.startY));
+    const target = fillDragTarget(drag.source, targetRow, targetColumn, horizontal);
     fillPreviewRef.current = target;
     setFillPreview(target);
   }
 
-  function finishFillDrag(area: CellRectangle, drag: { identity: string | null; revision: string | undefined }): void {
+  function finishFillDrag(area: CellRectangle, drag: { source: CellRectangle; identity: string | null; revision: string | undefined }): void {
     if (drag.identity !== collectionIdentity || drag.revision !== view?.revision) {
       announceClipboard("The table changed during the drag. Nothing was filled.", true, true);
       return;
     }
-    fillDown(area, true);
+    fillDown(area, true, drag.source);
   }
 
-  function fillDown(area: CellRectangle | null = selectionRectangle, fromFillHandle = false): void {
+  function fillDown(area: CellRectangle | null = selectionRectangle, fromFillHandle = false, source?: CellRectangle): void {
     if (controlsLocked || rowCommandPendingRef.current || currentness !== "current" || editor || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || modalInteractionOpen) {
       announceClipboard("Finish the current edit or operation before filling cells.", true, true); return;
     }
     if (!table || !view || !witness) { announceClipboard("Filling cells is not available in this view.", true, true); return; }
     try {
-      const plan = fillDownPlan(displayRows, columns, area, Boolean(table.native_table_profile), !gridSettings.sort && !gridSettings.filters?.length);
+      const plan = fillDownPlan(displayRows, columns, area, Boolean(table.native_table_profile), !gridSettings.sort && !gridSettings.filters?.length, source);
       const intent = completionIntent();
-      const anchor = boundSelection?.anchor ?? { entity: rowEntity(displayRows[area!.top]!), field: columns[area!.left]!.id };
+      const anchor = boundSelection?.anchor ?? { entity: rowEntity(displayRows[source?.top ?? area!.top]!), field: columns[source?.left ?? area!.left]!.id };
       const endColumn = anchor.field === columns[area!.left]!.id ? area!.right : area!.left;
-      const end = { entity: rowEntity(displayRows[area!.bottom]!), field: columns[endColumn]!.id };
+      const endRow = anchor.entity === rowEntity(displayRows[area!.top]!) ? area!.bottom : area!.top;
+      const end = { entity: rowEntity(displayRows[endRow]!), field: columns[endColumn]!.id };
       const selectFilledRange = () => {
         if (!fromFillHandle || !completionMayUpdateUi(intent)) return;
         setCellSelection({ identity: collectionIdentity!, revision: pasteTargetRef.current.revision!, anchor, end, fromFillHandle: true });
@@ -3880,6 +3895,26 @@ export function SheetShell(props: SheetShellProps) {
     });
   }, [view, commitPending, tab, addSheetFocus]);
 
+  function formatSelection(change: CellStyleChange): void {
+    const [entity, field] = focusedKey?.split("\u0000") ?? [];
+    const position = entity && field ? { entity, field } : null;
+    if (!position || position.entity === DRAFT_ROW || !table || !witness || !onSetCellStyle || controlsLocked || cellDraftActive || formulaDraftActive) return;
+    const at = address(position);
+    const area = selectionRectangle ?? rectangle(at, at);
+    const entities = displayRows.slice(area.top, area.bottom + 1).map(rowEntity);
+    const fields = columns.slice(area.left, area.right + 1).map(column => column.id);
+    const request = { type: "set_cell_style", expected_revision: witness.revision, collection: table.collection.key, entities, fields, changes: [change] };
+    if (new TextEncoder().encode(JSON.stringify(request)).byteLength > props.requestByteLimit) {
+      setColumnAnnouncement("This selection is too large to format at once. Select fewer cells.");
+      return;
+    }
+    void runStripCommand(async () => {
+      const result = await onSetCellStyle(witness, table.collection.key, entities, fields, [change]);
+      if (result.kind === "confirmed" && boundSelection) setWidthSelectionRebind({ identity: collectionIdentity, revision: boundSelection.revision });
+      return result;
+    }, "selection");
+  }
+
   function onCellKeyDown(
     event: ReactKeyboardEvent<HTMLTableCellElement>,
     entity: string,
@@ -3888,6 +3923,11 @@ export function SheetShell(props: SheetShellProps) {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     const draft = entity === DRAFT_ROW;
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown", "Escape"].includes(event.key) || (event.key === "Enter" && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey))) tabRunStartRef.current = null;
+    if (!draft && !editor && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && ["b", "i"].includes(event.key.toLowerCase()) && clipboardPosition(event.target)) {
+      event.preventDefault();
+      if (!event.repeat) formatSelection({ kind: event.key.toLowerCase() === "b" ? "toggle_bold" : "toggle_italic" });
+      return;
+    }
     // Paste Special: its choices at the cell (Ctrl+Alt+V, or Ctrl+⌘V on a Mac), or values straight away (Ctrl+Shift+V, ⌘⇧V).
     if (!draft && !editor && event.key.toLowerCase() === "v") {
       if (event.ctrlKey && (event.altKey || event.metaKey) && !event.shiftKey) {
@@ -5795,6 +5835,14 @@ export function SheetShell(props: SheetShellProps) {
         {table.native_table_profile ? <p className="ts-hint ts-table-row-note">{saveStatus === "saved" ? "A copy of this work is saved on this device." : "Nothing is saved until you choose Save a copy."}</p> : null}
         <div className="ts-actions ts-row-actions ts-table-row-actions">
           {focusedColumn ? <div role="toolbar" aria-label="Format" className="ts-format-strip">
+            {onSetCellStyle ? <>
+              <button type="button" className="ts-button" aria-label="Bold" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "toggle_bold" })}><b>B</b></button>
+              <button type="button" className="ts-button" aria-label="Italic" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "toggle_italic" })}><i>I</i></button>
+              <label>Fill <input aria-label="Fill colour" type="color" disabled={columnChangesBlocked} onChange={event => formatSelection({ kind: "fill", color: event.currentTarget.value.toUpperCase() })} /></label>
+              <button type="button" className="ts-button" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "fill", color: null })}>No fill</button>
+              <button type="button" className="ts-button" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "border", target: "all", value: true })}>All borders</button>
+              <button type="button" className="ts-button" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "border", target: "all", value: false })}>No borders</button>
+            </> : null}
             {onSetColumnAlignment ? ([ ["left", "Align left", "≡←"], ["center", "Align center", "≡"], ["right", "Align right", "→≡"] ] as const).map(([value, label, glyph]) => <button key={value} type="button" className="ts-button" aria-label={label} title={label} aria-pressed={focusedColumn.style?.alignment === value} aria-disabled={stripPending || undefined} disabled={(columnChangesBlocked && !stripPending) || !witness} onClick={() => {
               if (!witness) return;
               void runStripCommand(() => onSetColumnAlignment(witness, table.collection.key, focusedColumn.id, nextStripAlignment(focusedColumn.style?.alignment, value)), focusedColumnName, true);
@@ -6144,9 +6192,11 @@ export function SheetShell(props: SheetShellProps) {
       && (selectionRectangle
         ? coordinate.row === selectionRectangle.bottom && coordinate.column === selectionRectangle.right
         : focusedKey === key);
-    const fillPreviewed = Boolean(fillPreview && coordinate.row > fillPreview.top
+    const fillPreviewed = Boolean(fillPreview && coordinate.row >= fillPreview.top
       && coordinate.row <= fillPreview.bottom
-      && coordinate.column >= fillPreview.left && coordinate.column <= fillPreview.right);
+      && coordinate.column >= fillPreview.left && coordinate.column <= fillPreview.right
+      && !(fillDragRef.current && coordinate.row >= fillDragRef.current.source.top && coordinate.row <= fillDragRef.current.source.bottom
+        && coordinate.column >= fillDragRef.current.source.left && coordinate.column <= fillDragRef.current.source.right));
     if (display.emptyTextMarker) classes.push("ts-cell--empty-text");
     if (rangeSelected) classes.push("ts-cell--range-selected");
     const edges = !draft && boundCopiedArea ? copiedEdges(boundCopiedArea, coordinate.row, coordinate.column) : null;
@@ -6155,6 +6205,8 @@ export function SheetShell(props: SheetShellProps) {
     if (fillPreviewed) classes.push("ts-cell--fill-preview");
     if (editing) classes.push("ts-cell--editing");
     if (focusedKey === key) classes.push("ts-cell--focused");
+    const cellStyle = row?.styles?.[columns.findIndex(item => item.id === column.id)];
+    const borderSides = cellStyle?.border_sides ?? (cellStyle?.border ? ["top", "right", "bottom", "left"] : []);
     return (
       <td
         key={column.id}
@@ -6163,7 +6215,7 @@ export function SheetShell(props: SheetShellProps) {
           else cellRefs.current.delete(key);
         }}
         className={classes.join(" ")}
-        style={{ textAlign: column.style?.alignment ?? (column.field_type === "number" || column.field_type === "date" ? "right" : column.field_type === "boolean" ? "center" : "left") }}
+        style={{ textAlign: column.style?.alignment ?? (column.field_type === "number" || column.field_type === "date" ? "right" : column.field_type === "boolean" ? "center" : "left"), fontWeight: cellStyle?.bold ? 700 : undefined, fontStyle: cellStyle?.italic ? "italic" : undefined, backgroundColor: cellStyle?.fill ? `#${cellStyle.fill}` : undefined, borderTop: borderSides.includes("top") ? "1px solid black" : undefined, borderRight: borderSides.includes("right") ? "1px solid black" : undefined, borderBottom: borderSides.includes("bottom") ? "1px solid black" : undefined, borderLeft: borderSides.includes("left") ? "1px solid black" : undefined }}
         data-testid={`cell:${entity}:${column.id}`}
         data-entry-field={draft ? column.id : undefined}
         aria-label={draft ? `New row ${column.display_name} (${column.field_type === "boolean" ? "Yes/No" : column.field_type === "number" ? "Number" : column.field_type === "date" ? "Date" : "Text"})` : undefined}
@@ -6203,10 +6255,7 @@ export function SheetShell(props: SheetShellProps) {
         onMouseEnter={(event) => {
           if (fillDragRef.current) {
             if (event.buttons === 0) { fillDragRef.current = null; fillPreviewRef.current = null; setFillPreview(null); return; }
-            // Overshooting onto the new-row line fills to the last row.
-            const target = fillDragTarget(fillDragRef.current.source, draft ? displayRows.length - 1 : coordinate.row);
-            fillPreviewRef.current = target;
-            setFillPreview(target);
+            updateFillPreviewAt(event.clientX, event.clientY);
             return;
           }
         }}
@@ -6284,11 +6333,7 @@ export function SheetShell(props: SheetShellProps) {
             // The second press of a double-click must not start a fill drag.
             if (event.detail > 1) return;
             const source = selectionRectangle ?? rectangle(coordinate, coordinate);
-            if (source.bottom > source.top) {
-              announceClipboard("Fill from one row. Filling a series isn't available yet. Nothing was filled.", true, true);
-              return;
-            }
-            fillDragRef.current = { source, identity: collectionIdentity, revision: view?.revision };
+            fillDragRef.current = { source, startX: event.clientX, startY: event.clientY, identity: collectionIdentity, revision: view?.revision };
             fillPreviewRef.current = null;
             setFillPreview(null);
           }}

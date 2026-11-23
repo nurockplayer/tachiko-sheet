@@ -1,15 +1,15 @@
 import type { CellRectangle } from "./clipboard.js";
 
 /**
- * The rectangle a fill-handle drag would fill: the source's columns from its
- * top row down to the row under the pointer. Null when the pointer is not
- * below the source, or when the source spans several rows (a series is out of
- * scope; the caller announces that case).
+ * The source plus the extension along the pointer's dominant axis.
  */
-export function fillDragTarget(source: CellRectangle, pointerRow: number): CellRectangle | null {
-  if (source.bottom > source.top) return null;
-  if (pointerRow <= source.bottom) return null;
-  return { top: source.top, left: source.left, bottom: pointerRow, right: source.right };
+export function fillDragTarget(source: CellRectangle, pointerRow: number, pointerColumn = source.right, horizontal = false): CellRectangle | null {
+  if (horizontal) {
+    if (pointerColumn >= source.left && pointerColumn <= source.right) return null;
+    return { ...source, left: Math.min(source.left, pointerColumn), right: Math.max(source.right, pointerColumn) };
+  }
+  if (pointerRow >= source.top && pointerRow <= source.bottom) return null;
+  return { ...source, top: Math.min(source.top, pointerRow), bottom: Math.max(source.bottom, pointerRow) };
 }
 
 /**

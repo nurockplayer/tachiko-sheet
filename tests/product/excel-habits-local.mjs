@@ -5,7 +5,7 @@ import { standaloneImportedRoReopen } from "./imported-ro-journey.mjs";
 import { installPublishedTablePatcher } from "./published-table-patcher.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -923,6 +923,118 @@ const cases = [
     await settle(page);
     assert.deepEqual(await snapshot(), rightToLeftValues, "Redo did not restore the right-to-left fill");
     await assertFillSelection(doubleTable, [0, 1, 2, 3], [0, 1], "right-to-left drag Redo", 1);
+
+    // #338: pointer drags in both axes, real Work formula copies and atomic Undo.
+    await newTable(page, "Fill directions", ["A", "B", "C", "D"].map(name => ({ name, type: "number" })));
+    for (let row = 0; row < 3; row += 1) await addRow(page, [String(row + 2), "3", "4", "9"], row + 1);
+    const directions = await projection(page);
+    const id = (row, column) => cellIdFor(directions, row, column);
+    const directionValues = async () => {
+      const latest = await projection(page);
+      return Promise.all([0, 1, 2].flatMap(row => [0, 1, 2, 3].map(column => cellText(page, latest, row, column))));
+    };
+    const dragHandleTo = async (row, column) => {
+      const handle = await fillHandleBox(page);
+      const target = await page.getByTestId(id(row, column)).boundingBox();
+      await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 8 });
+      await page.mouse.up();
+      await settle(page);
+    };
+    const checkDirectionSelection = async (rows, columns, activeRow, activeColumn) => {
+      const selected = await page.locator(".ts-cell--range-selected").evaluateAll(nodes => nodes.map(node => node.dataset.testid));
+      assert.deepEqual(selected.sort(), rows.flatMap(row => columns.map(column => id(row, column))).sort());
+      assert.equal(await activeId(page), id(activeRow, activeColumn));
+    };
+    await page.getByTestId(id(0, 1)).click();
+    let before = await directionValues();
+    // Horizontal displacement wins even with vertical motion into another row.
+    await dragHandleTo(1, 3);
+    assert.deepEqual((await directionValues()).slice(0, 4), ["2", "3", "3", "3"]);
+    await checkDirectionSelection([0], [1, 2, 3], 0, 1);
+    await page.keyboard.press("Control+z"); await settle(page);
+    assert.deepEqual(await directionValues(), before, "one Undo did not restore the right fill");
+    await checkDirectionSelection([0], [1, 2, 3], 0, 1);
+
+    await page.getByTestId(id(0, 3)).click();
+    before = await directionValues();
+    await dragHandleTo(0, 1);
+    assert.deepEqual((await directionValues()).slice(0, 4), ["2", "9", "9", "9"], "left value fill did not copy the source");
+    await checkDirectionSelection([0], [1, 2, 3], 0, 3);
+    await page.keyboard.press("Control+z"); await settle(page);
+    assert.deepEqual(await directionValues(), before, "one Undo did not restore the left value fill");
+    await checkDirectionSelection([0], [1, 2, 3], 0, 3);
+
+    // TODO: enable sideways relative formula fills after https://github.com/nurockplayer/tachiko-work/issues/921.
+    await replaceCell(page, id(0, 3), "=C2*2");
+    await page.getByTestId(id(0, 3)).click();
+    before = await directionValues();
+    const selectedBeforeLeft = await selectedCount(page);
+    await dragHandleTo(0, 1);
+    assert.deepEqual(await directionValues(), before, "refused left formula fill changed cells");
+    assert.equal(await selectedCount(page), selectedBeforeLeft, "refused left formula fill changed selection");
+    assert.equal(await activeId(page), id(0, 3));
+    assert.equal((await page.locator(".ts-clipboard-status").first().textContent()).trim(), "Filling formulas sideways is not available yet.");
+
+    await replaceCell(page, id(0, 2), "=B2*2");
+    await page.getByTestId(id(0, 2)).click();
+    const beforeRightRefusal = await directionValues();
+    const selectedBeforeRight = await selectedCount(page);
+    await dragHandleTo(0, 3);
+    assert.deepEqual(await directionValues(), beforeRightRefusal, "refused right formula fill changed cells");
+    assert.equal(await selectedCount(page), selectedBeforeRight, "refused right formula fill changed selection");
+    assert.equal(await activeId(page), id(0, 2));
+    assert.equal((await page.locator(".ts-clipboard-status").first().textContent()).trim(), "Filling formulas sideways is not available yet.");
+    await page.keyboard.press("Control+z"); await settle(page);
+    assert.deepEqual(await directionValues(), before, "refused formula fill added an Undo step");
+
+    await replaceCell(page, id(2, 3), "=A4*2");
+    await page.getByTestId(id(2, 3)).click();
+    before = await directionValues();
+    await dragHandleTo(0, 3);
+    const up = await directionValues();
+    assert.deepEqual([up[3], up[7], up[11]], ["4", "6", "8"], "up fill did not shift relative rows");
+    await checkDirectionSelection([0, 1, 2], [3], 2, 3);
+    await page.keyboard.press("Control+z"); await settle(page);
+    assert.deepEqual(await directionValues(), before, "one Undo did not restore the up fill");
+    await checkDirectionSelection([0, 1, 2], [3], 2, 3);
+
+    await page.getByTestId(id(0, 0)).click();
+    await page.getByTestId(id(1, 0)).click({ modifiers: ["Shift"] });
+    before = await directionValues();
+    await dragHandleTo(1, 2);
+    assert.deepEqual((await directionValues()).slice(0, 8), ["2", "2", "2", "4", "3", "3", "3", "9"], "column source fill did not copy values and recalculate D2 (=C2*2)");
+    await checkDirectionSelection([0, 1], [0, 1, 2], 0, 0);
+    await page.keyboard.press("Control+z"); await settle(page);
+    assert.deepEqual(await directionValues(), before);
+
+    await page.getByTestId(id(2, 0)).click();
+    await page.getByTestId(id(2, 1)).click({ modifiers: ["Shift"] });
+    before = await directionValues();
+    await dragHandleTo(0, 1);
+    assert.deepEqual((await directionValues()).slice(0, 8), ["4", "3", "4", "8", "4", "3", "4", "9"]);
+    await checkDirectionSelection([0, 1, 2], [0, 1], 2, 0);
+    await page.keyboard.press("Control+z"); await settle(page);
+    assert.deepEqual(await directionValues(), before);
+
+    await newTable(page, "Fill refusal", [{ name: "Text", type: "text" }, { name: "Number", type: "number" }]);
+    await addRow(page, ["not a number", "7"], 1);
+    const refusal = await projection(page);
+    await page.getByTestId(cellIdFor(refusal, 0, 0)).click();
+    const refusedHandle = await fillHandleBox(page);
+    const refusedTarget = await page.getByTestId(cellIdFor(refusal, 0, 1)).boundingBox();
+    const selectedBefore = await selectedCount(page);
+    await page.mouse.move(refusedHandle.x + 3, refusedHandle.y + 3);
+    await page.mouse.down();
+    await page.mouse.move(refusedTarget.x + refusedTarget.width / 2, refusedTarget.y + refusedTarget.height / 2, { steps: 8 });
+    await page.mouse.up(); await settle(page);
+    assert.equal(await cellText(page, await projection(page), 0, 0), "not a number");
+    assert.equal(await cellText(page, await projection(page), 0, 1), "7");
+    assert.equal(await selectedCount(page), selectedBefore, "refused fill changed selection");
+    assert.equal(await activeId(page), cellIdFor(refusal, 0, 0));
+    assert.match(await page.locator(".ts-clipboard-status").first().textContent(), /number/i);
+
   } },
   { id: "23", name: "Row operations", tier: "A", run: async (page) => {
     await example(page);
@@ -1119,7 +1231,7 @@ const cases = [
       await rm(work, { recursive: true, force: true });
     }
   } },
-  { id: "28", name: "Direct formatting", tier: "A", run: async (page) => {
+  { id: "28", name: "Direct formatting", tier: "A", note: "Bold, italic, fill and borders use Work presentation styles; checked through save and XLSX export.", run: async (page) => {
     await example(page);
     const table = await projection(page);
     const id = cellIdFor(table, 0, 0);
@@ -1127,7 +1239,73 @@ const cases = [
     await page.keyboard.press("Control+b");
     await settle(page);
     const weight = await page.getByTestId(id).evaluate((node) => Number(getComputedStyle(node).fontWeight));
-    assert.ok(weight >= 600, `Ctrl+B left the cell at font-weight ${weight}; there is no cell formatting`);
+    assert.ok(weight >= 600, `Ctrl+B left the cell at font-weight ${weight}`);
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.ok(await page.getByTestId(id).evaluate(node => Number(getComputedStyle(node).fontWeight)) < 600, "Undo did not remove bold");
+    await page.keyboard.press("Control+y");
+    await settle(page);
+    assert.ok(await page.getByTestId(id).evaluate(node => Number(getComputedStyle(node).fontWeight)) >= 600, "Redo did not restore bold");
+    await page.keyboard.press("Control+i");
+    await settle(page);
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).fontStyle), "italic");
+    await page.getByLabel("Fill colour").fill("#ffff00");
+    await settle(page);
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).backgroundColor), "rgb(255, 255, 0)");
+    await page.getByRole("button", { name: "All borders" }).click();
+    await settle(page);
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).borderTopStyle), "solid");
+    assert.deepEqual(fieldAt(await projection(page), 0, 0)?.stored, fieldAt(table, 0, 0)?.stored, "formatting changed the cell value or formula");
+    await page.getByTestId(id).click();
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.notEqual(await page.getByTestId(id).evaluate(node => getComputedStyle(node).borderTopColor), "rgb(0, 0, 0)", "Undo did not remove the border");
+    await page.keyboard.press("Control+y");
+    await settle(page);
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).borderTopColor), "rgb(0, 0, 0)", "Redo did not restore the border");
+    if (process.env.HABITS_SHOTS) {
+      await mkdir(process.env.HABITS_SHOTS, { recursive: true });
+      await page.getByTestId(cellIdFor(table, 0, 1)).click();
+      await page.screenshot({ path: path.join(process.env.HABITS_SHOTS, "habit28-applied.png"), fullPage: true });
+    }
+    await saveCopy(page, "habits-28");
+    await page.reload();
+    await waitForColdHome(page);
+    await page.getByRole("button", { name: "Open saved habits-28", exact: true }).click();
+    await ready(page);
+    assert.ok(await page.getByTestId(id).evaluate(node => Number(getComputedStyle(node).fontWeight)) >= 600, "bold did not survive reopen");
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).fontStyle), "italic", "italic did not survive reopen");
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).backgroundColor), "rgb(255, 255, 0)", "fill did not survive reopen");
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).borderTopColor), "rgb(0, 0, 0)", "border did not survive reopen");
+    if (process.env.HABITS_SHOTS) {
+      await page.getByTestId(cellIdFor(table, 0, 1)).click();
+      await page.screenshot({ path: path.join(process.env.HABITS_SHOTS, "habit28-reopened.png"), fullPage: true });
+    }
+    await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+    await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
+    const consent = page.getByRole("dialog", { name: "Confirm download", exact: true });
+    await consent.waitFor();
+    const download = page.waitForEvent("download");
+    await consent.getByRole("button", { name: "Download", exact: true }).click();
+    const work = await mkdtemp(path.join(tmpdir(), "habits-28-"));
+    try {
+      const file = path.join(work, "export.xlsx");
+      await (await download).saveAs(file);
+      const xml = sheetXml(file);
+      assert.match(xml, /<b\s*\/>/, "XLSX lacks bold");
+      assert.match(xml, /<i\s*\/>/, "XLSX lacks italic");
+      assert.match(xml, /FFFF00/i, "XLSX lacks yellow fill");
+      assert.match(xml, /<top[^>]*style=/, "XLSX lacks a top border");
+    } finally { await rm(work, { recursive: true, force: true }); }
+    await page.getByRole("tab", { name: "Table", exact: true }).click();
+    await page.getByTestId(id).click();
+    await page.keyboard.press("Control+b");
+    await settle(page);
+    assert.ok(await page.getByTestId(id).evaluate(node => Number(getComputedStyle(node).fontWeight)) < 600, "Ctrl+B did not remove bold");
+    await page.keyboard.press("Control+i");
+    await settle(page);
+    assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).fontStyle), "normal");
+
   } },
   { id: "29", name: "Number display", tier: "A", run: async (page) => {
     await newTable(page, "Percent", [{ name: "Name" }, { name: "Rate", type: "number" }]);

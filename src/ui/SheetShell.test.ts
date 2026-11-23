@@ -165,6 +165,7 @@ function summaryResult(definitionId: string, value: number): KeyedGroupedSumResu
 function makeProps(overrides: Partial<SheetShellProps> = {}): SheetShellProps {
   return {
     appearancePreference,
+    requestByteLimit: 65_536,
     view: null,
     busy: false,
     dirty: false,
@@ -219,6 +220,27 @@ describe("keyboard history queue", () => {
     };
     return { container, update, key, cell, view };
   }
+
+  it("refuses an oversized formatting selection before sending a command or adding history", async () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.rows = Array.from({ length: 1800 }, (_, index) => {
+      const entity = index === 0 ? entityA : `row-${String(index).padStart(36, "0")}`;
+      return { id: entity, key: entity, fields: view.table.columns.map(column => projected(entity, column.id, { kind: "text", value: "value" })) };
+    });
+    const onSetCellStyle = vi.fn(async () => ({ kind: "confirmed" as const }));
+    const onHistory = vi.fn(async () => null);
+    const ui = await mount({ view, onSetCellStyle, onHistory, localHistory: { occurrence: view.occurrence, revision: view.revision, undoCount: 0, redoCount: 0 } });
+    const entities = view.table.rows.map(row => row.key);
+    const request = { type: "set_cell_style", expected_revision: view.revision, collection: view.table.collection.key, entities, fields: view.table.columns.map(column => column.id), changes: [{ kind: "toggle_bold" }] };
+    expect(new TextEncoder().encode(JSON.stringify(request)).byteLength).toBeGreaterThan(65_536);
+    await act(async () => ui.cell().dispatchEvent(new KeyboardEvent("keydown", { key: "End", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })));
+    await ui.key("b");
+    expect(onSetCellStyle).not.toHaveBeenCalled();
+    expect(ui.container.textContent).toContain("This selection is too large to format at once. Select fewer cells.");
+    await ui.key("z");
+    expect(onHistory).not.toHaveBeenCalled();
+  });
 
   it.each(["Shift+click", "Ctrl+Shift+End"])("preserves B2 as the range anchor after scrolling a 450-row table (%s)", async extension => {
     const view = makeView();
@@ -289,6 +311,53 @@ describe("keyboard history queue", () => {
     } finally {
       await dispose?.(); dispose = undefined;
       vi.unstubAllGlobals();
+    }
+  });
+
+  it("targets the frozen column above scrolled cells and fills through the first visible column", async () => {
+    const { useState } = await vi.importActual<typeof import("react")>("react");
+    vi.mocked(React.useState).mockImplementation(((initial: unknown) => useState(
+      initial && typeof initial === "object" && "byCollection" in initial
+        ? { occurrence: "occ-1", byCollection: { release_items: { freezeFirstColumn: true } } }
+        : initial,
+    )) as typeof React.useState);
+    const view = makeView();
+    view.table.native_table_profile = true;
+    for (const column of view.table.columns) column.field_type = "number";
+    for (const row of view.table.rows) {
+      for (const [index, field] of row.fields.entries()) {
+        field.stored = { kind: "number", value: index + 1 };
+        field.editable_scalar = "number";
+        field.formula = null;
+      }
+    }
+    const onEditCells = vi.fn<NonNullable<SheetShellProps["onEditCells"]>>(async () => ({ kind: "confirmed" }));
+    try {
+      const ui = await mount({ view, onEditCells });
+      const grid = ui.container.querySelector<HTMLElement>(".ts-grid-scroll")!;
+      vi.spyOn(grid, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 500, 300));
+      Object.defineProperty(grid, "clientHeight", { value: 300, configurable: true });
+      const row = ui.container.querySelector<HTMLTableRowElement>("tbody tr.ts-row")!;
+      ui.container.querySelectorAll<HTMLTableRowElement>("tbody tr.ts-row").forEach((item, index) =>
+        vi.spyOn(item, "getBoundingClientRect").mockReturnValue(new DOMRect(0, index * 30, 500, 30)));
+      const cells = row.querySelectorAll<HTMLTableCellElement>("td[data-work-field]");
+      [100, 0, 100, 200].forEach((left, index) => vi.spyOn(cells[index]!, "getBoundingClientRect").mockReturnValue(new DOMRect(left, 0, 100, 30)));
+      expect(cells[0]!.classList.contains("ts-frozen-first-column")).toBe(true);
+      const drag = async (x: number) => {
+        await act(async () => {
+          ui.container.querySelector<HTMLElement>('[data-testid="fill-handle"]')!.dispatchEvent(new MouseEvent("mousedown", { button: 0, buttons: 1, clientX: 190, clientY: 15, bubbles: true }));
+          window.dispatchEvent(new MouseEvent("mousemove", { buttons: 1, clientX: x, clientY: 15 }));
+          window.dispatchEvent(new MouseEvent("mouseup", { clientX: x, clientY: 15 }));
+        });
+      };
+      await drag(195);
+      expect(onEditCells).not.toHaveBeenCalled();
+      await drag(220);
+      expect(onEditCells).toHaveBeenCalledOnce();
+      expect(onEditCells.mock.calls[0]![1].map(edit => edit.target.field)).toEqual(["c-impact", "c-priority", "c-notes"]);
+    } finally {
+      vi.mocked(React.useState).mockImplementation(useState);
+      vi.restoreAllMocks();
     }
   });
 
