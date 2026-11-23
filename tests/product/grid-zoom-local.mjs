@@ -130,6 +130,13 @@ try {
   await scrollport.evaluate(node => { node.style.width = ""; });
   for (const zoom of [50, 200]) {
     await setZoom(zoom);
+    // Earlier resize cases widened A; keep freeze eligible at both scales.
+    const header = grid.getByRole("columnheader", { name: "Column 1", exact: true });
+    await header.hover();
+    const grip = page.getByRole("separator", { name: "Resize Column 1", exact: true });
+    const start = await center(grip);
+    const width = (await header.boundingBox()).width;
+    await drag(start, { x: start.x + 140 * zoom / 100 - width, y: start.y }); await ready();
     const trigger = grid.getByRole("button", { name: "Column actions for Column 1", exact: true });
     await trigger.click();
     const menu = grid.locator("details[open] .ts-command-menu");
