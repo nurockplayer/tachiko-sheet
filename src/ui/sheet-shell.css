@@ -2582,6 +2582,7 @@ g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
 
 /* Compact reviews use the same natural reflow as short viewports. */
 @media (max-width: 599px) {
+  .ts-view-commands { display: none; }
   .ts-modal--review { min-height: 0; }
   .ts-modal--review .ts-dialog-intro { gap: 12px; }
   .ts-modal--review .ts-dialog-scroll {
