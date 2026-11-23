@@ -14,7 +14,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../../public/core-kit/experimental-client.js";
-import type { A1Geometry, A1RefusalCode, A1Translation, A1TranslationNote, CapacityProjection, SelectionStatisticsProjection, SelectionStatisticsRange, ColumnTotalsProjection, DistinctValuesProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, GroupTotalsProjection, KeyedGroupedSumProjection, TableWindowProjection, DateFormat, NumberFormat, CellAlignment } from "../../public/core-kit/runtime/protocol.js";
+import type { A1Geometry, A1RefusalCode, A1Translation, A1TranslationNote, CellStyleChange, CapacityProjection, SelectionStatisticsProjection, SelectionStatisticsRange, ColumnTotalsProjection, DistinctValuesProjection, DuplicateCollectionProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, GroupTotalsProjection, KeyedGroupedSumProjection, TableWindowProjection, DateFormat, NumberFormat, CellAlignment } from "../../public/core-kit/runtime/protocol.js";
 import { MAX_WIRE_REQUEST_BYTES, MAX_PROJECT_TRANSFER_BYTES } from "../host/native-runtime.js";
 import type {
   CleanupOperation,
@@ -1160,6 +1160,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     }, true);
   }
 
+  function setCellStyle(witness: ViewWitness, collection: string, entities: string[], fields: string[], changes: CellStyleChange[]) {
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.setCellStyle, "cell style");
+      return command.call(client, revision, collection, entities, fields, changes);
+    });
+  }
+
   function setColumnAlignment(witness: ViewWitness, collection: string, field: string, alignment: CellAlignment | null) {
     return confirmedMutation(witness, (client, revision) => {
       const command = capability(client.setColumnAlignment, "column alignment");
@@ -1827,7 +1834,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   return {
     get requestByteLimit() { return requestByteLimit; },
     prepare,
-    addTable, newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setColumnWidth, queryCapacity, querySelectionStatistics, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    addTable, newTable, insertRow, editCells, pasteCells, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setCellStyle, setColumnWidth, queryCapacity, querySelectionStatistics, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };

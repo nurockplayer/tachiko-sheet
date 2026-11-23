@@ -9,7 +9,7 @@ import type {
   PublicationProjection,
   TableProjection,
 } from "../public/core-kit/experimental-client.js";
-import type { A1Geometry, CapacityProjection, SelectionStatisticsProjection, SelectionStatisticsRange, ColumnTotalsProjection, DistinctValuesProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, KeyedGroupedSumProjection, NameFailure, DateFormat, NumberFormat, CellAlignment } from "../public/core-kit/runtime/protocol.js";
+import type { CellStyleChange, A1Geometry, CapacityProjection, SelectionStatisticsProjection, SelectionStatisticsRange, ColumnTotalsProjection, DistinctValuesProjection, FieldConstraintInput, FormulaCopy, GroupDimension, GroupScope, KeyedGroupedSumProjection, NameFailure, DateFormat, NumberFormat, CellAlignment } from "../public/core-kit/runtime/protocol.js";
 import type { A1TranslationOutcome, GroupTotalsOutcome } from "./runtime/session.js";
 import type {
   CleanupOperation,
@@ -120,6 +120,7 @@ export interface SheetRuntime {
   /** Read Work's capacity accounting for a revision; null when the kit lacks the capability. */
   queryCapacity(expectedRevision?: string): Promise<CapacityProjection | null>;
   setColumnWidth(witness: ViewWitness, collection: string, field: string, width: number | null): Promise<ConfirmedPublication>;
+  setCellStyle(witness: ViewWitness, collection: string, entities: string[], fields: string[], changes: CellStyleChange[]): Promise<ConfirmedPublication>;
   setColumnAlignment(witness: ViewWitness, collection: string, field: string, alignment: CellAlignment | null): Promise<ConfirmedPublication>;
   setColumnDateFormat(witness: ViewWitness, collection: string, field: string, format: DateFormat | null): Promise<ConfirmedPublication>;
   setColumnNumberFormat(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null): Promise<ConfirmedPublication>;
@@ -381,6 +382,7 @@ export interface CommitOutcome {
 export type CreateCopyOutcome = { saved: true } | { saved: false; reason: string };
 export interface SheetShellProps {
   appearancePreference: AppearancePreferenceController;
+  requestByteLimit: number;
   view: WorkbookView | null;
   capacity?: { rows: number; maximum: number } | null;
   busy: boolean;
@@ -409,6 +411,7 @@ export interface SheetShellProps {
   onSetColumnRequiredness?(witness: ViewWitness, collection: string, field: string, required: boolean): Promise<RowCommandOutcome>;
   onSetColumnConstraint?(witness: ViewWitness, collection: string, field: string, constraint: FieldConstraintInput): Promise<RowCommandOutcome>;
   onSetColumnWidth?(witness: ViewWitness, collection: string, field: string, width: number | null): Promise<RowCommandOutcome>;
+  onSetCellStyle?(witness: ViewWitness, collection: string, entities: string[], fields: string[], changes: CellStyleChange[]): Promise<RowCommandOutcome>;
   onSetColumnAlignment?(witness: ViewWitness, collection: string, field: string, alignment: CellAlignment | null): Promise<RowCommandOutcome>;
   onSetColumnDateFormat?(witness: ViewWitness, collection: string, field: string, format: DateFormat | null): Promise<RowCommandOutcome>;
   onSetColumnNumberFormat?(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null): Promise<RowCommandOutcome>;
