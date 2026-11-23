@@ -213,19 +213,62 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
 const cases = [
   { id: "01", name: "First launch", tier: "A", manual: "needs a clean OS install" },
   { id: "02", name: "New workbook", tier: "A", run: async (page) => {
-    await home(page);
+    await example(page);
+    await saveCopy(page, "before-new-workbook");
+    const before = await projection(page);
     await page.keyboard.press("Control+n");
-    const opened = await page.getByRole("grid", { name: "Table", exact: true }).waitFor({ timeout: 2000 }).then(() => true, () => false);
-    assert.ok(opened, "Ctrl+N opened no blank workbook; Home still shows only the start screen");
-    await page.locator(".ts-entry-row td[data-entry-field]").first().click();
+    await page.getByTestId("worksheet:A1").waitFor();
+    await ready(page);
+    assert.equal(await page.getByRole("dialog").count(), 0, "New workbook required a wizard");
+    assert.equal((await projection(page)).rows.length, 0, "the new workbook is not blank");
+    assert.notEqual((await projection(page)).collection.id, before.collection.id, "New kept the old worksheet");
+    assert.equal(await activeId(page), "worksheet:A1", "the blank worksheet has no active cell");
     await page.keyboard.type("Hello");
     await page.keyboard.press("Enter");
-    await settle(page);
+    await waitForCellText(page, "worksheet:A1", "Hello");
+    assert.equal(fieldAt(await projection(page), 0, 0)?.stored?.value, "Hello", "Hello was not stored by Work");
+    await page.keyboard.type("World");
+    await page.keyboard.press("Enter");
+    await waitForCellText(page, "worksheet:A2", "World");
+    assert.equal(fieldAt(await projection(page), 1, 0)?.stored?.value, "World", "Enter did not move typing to A2 after allocation");
   } },
   { id: "03", name: "Blank-cell typing", tier: "A", run: async () => {
-    // The draft row belongs to a table, and case 04 covers it. Replace this with
-    // the real gesture when a blank workbook has cells outside a table (Work #668).
-    assert.fail("there is no cell outside a table to type in");
+    const profile = await mkdtemp(path.join(tmpdir(), "habits-03-"));
+    let context;
+    const open = async () => {
+      context = await chromium.launchPersistentContext(profile, { ...launchOptions, viewport: { width: 1440, height: 900 } });
+      await installDistRoutes(context, dist);
+      await installPublishedTablePatcher(context);
+      await context.addInitScript(evidence);
+      const page = context.pages()[0] ?? await context.newPage();
+      page.setDefaultTimeout(4000);
+      return page;
+    };
+    try {
+      const page = await open();
+      await home(page);
+      await page.keyboard.press("Control+n");
+      await page.getByTestId("worksheet:B4").click();
+      await page.keyboard.type("Apple");
+      await page.keyboard.press("Enter");
+      await settle(page);
+      const refusal = (await page.locator('[role="alert"]').allTextContents()).join("; ");
+      assert.equal((await page.getByTestId("worksheet:B4").textContent()).trim(), "Apple", refusal || "typing in B4 stored no value");
+      await waitForCellText(page, "worksheet:B4", "Apple");
+      assert.equal(fieldAt(await projection(page), 3, 1)?.stored?.value, "Apple", "Work stored Apple at the wrong position");
+      await saveCopy(page, "habits-03");
+      await context.close();
+      const reopened = await open();
+      await home(reopened);
+      await reopened.getByRole("button", { name: "Open saved habits-03", exact: true }).click();
+      await ready(reopened);
+      await waitForCellText(reopened, "worksheet:B4", "Apple");
+      assert.equal(fieldAt(await projection(reopened), 3, 1)?.stored?.value, "Apple", "B4 did not survive save, browser restart and reopen");
+      assert.equal(await reopened.getByTestId("worksheet:A1").textContent(), "", "writing B4 populated A1");
+    } finally {
+      await context?.close().catch(() => {});
+      await rm(profile, { recursive: true, force: true });
+    }
   } },
   // The first case to open the app pays for the kit's cold start, which has passed 4 s under load.
   { id: "04", name: "Add data below table", tier: "A", waitMs: 15_000, run: async (page) => {

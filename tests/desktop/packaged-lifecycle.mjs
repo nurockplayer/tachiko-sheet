@@ -778,15 +778,15 @@ async function namedTableJourney() {
   assert.equal(await evaluate(`return document.querySelector('[data-testid="open-work-file"]')?.disabled;`), false, "desktop .ro Open is available");
   // The host's File and Edit menus: each id must really be in the menu, and reaches the page's own command.
   const menuCommand = (id) => evaluate(`await window.__TAURI_INTERNALS__.invoke("e2e_menu_command", { id: ${JSON.stringify(id)} }); return true;`);
-  // Wait until Home is ready: the menu does nothing while its New table is locked.
+  // Wait until Home is ready before creating a blank workbook from the native menu.
   await evaluate(`await waitFor(() => button("New table"), "New table enabled"); return true;`);
   await menuCommand("new-table");
   await evaluate(`
-    const form = await waitFor(() => dialog("New table"), "File > New Table dialog");
-    click(button("Cancel", form));
-    await waitFor(() => !dialog("New table"), "New table dialog closed");
+    const a1 = await waitFor(() => current() && document.querySelector('[data-testid="worksheet:A1"]'), "File > New Workbook blank worksheet");
+    if (a1.textContent !== "" || dialog("New table")) throw new Error("New Workbook did not open a blank worksheet without a table dialog");
     return true;
   `);
+  await closeToHome();
   await evaluate(`
     click(await waitFor(() => button("New table"), "New table"));
     const form = await waitFor(() => dialog("New table"), "New table dialog");

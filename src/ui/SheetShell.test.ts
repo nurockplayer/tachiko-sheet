@@ -193,6 +193,357 @@ function render(props: Partial<SheetShellProps>): string {
   return renderToStaticMarkup(createElement(SheetShell, makeProps(props)));
 }
 
+describe("headerless worksheets use the existing grid", () => {
+  let dispose: (() => Promise<void>) | undefined;
+  afterEach(async () => { await dispose?.(); dispose = undefined; });
+
+  async function mount(initial?: WorkbookView, overrides: Partial<SheetShellProps> = {}) {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    let view = initial ?? makeView();
+    view = { ...view, table: { ...view.table, collection: { ...view.table.collection, headerless: true, data_start_row: 1 },
+      ...(initial ? {} : { rows: [], columns: [] }) } };
+    const onCommit = vi.fn<SheetShellProps["onCommit"]>(async () => ({ accepted: true }));
+    const onEditCells = vi.fn<NonNullable<SheetShellProps["onEditCells"]>>(async () => ({ kind: "confirmed" }));
+    const onSave = vi.fn(async () => true);
+    const onCreateCopy = vi.fn(async () => ({ saved: true as const }));
+    const draw = () => root.render(createElement(SheetShell, makeProps({ view, onCommit, onEditCells, onWriteCellAt: onWrite,
+      onSave, onCreateCopy, boundCopyName: "Saved worksheet", importedSourceName: initial ? "headerless.csv" : null, ...overrides })));
+    const onWrite = vi.fn<NonNullable<SheetShellProps["onWriteCellAt"]>>(async (_witness, _collection, row, column, input) => {
+      const columns = Array.from({ length: Math.max(view.table.columns.length, column + 1) }, (_, index) =>
+        view.table.columns[index] ?? { id: `c-${index}`, key: `column-${index}`, display_name: `Column ${index + 1}`, field_type: "auto", required: false });
+      const rows = Array.from({ length: Math.max(view.table.rows.length, row + 1) }, (_, index) =>
+        view.table.rows[index] ?? { id: `row-${index}`, key: `row-${index}`, fields: [] });
+      const target = rows[row]!;
+      const field = projected(target.id, columns[column]!.id, { kind: "text", value: typeof input === "string" ? input : "input" in input ? input.input : String(input.value) }, { editable_scalar: "auto" });
+      rows[row] = { ...target, fields: [...target.fields.filter(field => field.target.field !== columns[column]!.id), field] };
+      view = { ...view, table: { ...view.table, columns, rows } };
+      draw();
+      return { kind: "confirmed" };
+    });
+    dispose = async () => { await act(async () => root.unmount()); container.remove(); };
+    await act(async () => draw());
+    const cell = (address: string) => container.querySelector<HTMLElement>(`[data-address="${address}"]`)
+      ?? container.querySelectorAll<HTMLTableRowElement>("tbody tr.ts-row")[Number(address.slice(1)) - 2]?.querySelectorAll<HTMLElement>("td")[address.charCodeAt(0) - 65]!;
+    const key = async (value: string, options: KeyboardEventInit = {}) => act(async () => {
+      document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true, ...options }));
+    });
+    const focus = async (address: string) => act(async () => cell(address).focus());
+    const type = async (value: string) => {
+      await key(value[0]!);
+      const editor = container.querySelector<HTMLInputElement | HTMLTextAreaElement>('[data-testid="cell-editor"]')!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(editor instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, "value")!.set!.call(editor, value);
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    return { container, cell, focus, key, type, onWrite, onCommit, onEditCells, onSave, onCreateCopy, currentView: () => view };
+  }
+
+  it.each([["A1", "Hello", 0, 0], ["B4", "Apple", 3, 1]] as const)("writes unused %s through positional allocation", async (address, text, row, column) => {
+    const ui = await mount();
+    await ui.focus(address);
+    await ui.type(text);
+    await ui.key("Enter");
+    expect(ui.onWrite).toHaveBeenLastCalledWith(expect.anything(), "release_items", row, column, text);
+    expect(ui.onCommit).not.toHaveBeenCalled();
+    expect(ui.cell(address).textContent).toBe(text);
+    expect(ui.container.querySelector(".ts-table-panel .ts-grid-scroll")).not.toBeNull();
+  });
+
+  it.each([["Enter", "A2", 1, 0], ["Tab", "B1", 0, 1]] as const)("continues typing at %s's destination %s after allocation", async (key, destination, row, column) => {
+    const ui = await mount();
+    await ui.focus("A1");
+    await ui.type("Hello");
+    await ui.key(key);
+    await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+    expect(ui.onWrite).toHaveBeenNthCalledWith(1, expect.anything(), "release_items", 0, 0, "Hello");
+    expect(ui.cell("A1").textContent).toBe("Hello");
+    expect(document.activeElement).toBe(ui.cell(destination));
+    await ui.type("World");
+    await ui.key("Enter");
+    await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+    expect(ui.onWrite).toHaveBeenNthCalledWith(2, expect.anything(), "release_items", row, column, "World");
+    expect(ui.cell(destination).textContent).toBe("World");
+    expect(ui.onCommit).not.toHaveBeenCalled();
+  });
+
+  it("allocates beyond hidden stored rows when typing into filtered synthetic space", async () => {
+    const view = makeView();
+    view.table.columns = [view.table.columns[0]!];
+    view.table.rows = ["Apple", "Banana", "Cherry"].map((value, index) => ({
+      id: `fruit-${index}`, key: `fruit-${index}`, fields: [projected(`fruit-${index}`, "c-title", { kind: "text", value })],
+    }));
+    const ui = await mount(view, { importedSourceName: null });
+    const filter = ui.container.querySelector<HTMLButtonElement>('[data-column-action="Filter…"]')!;
+    await act(async () => filter.click());
+    const input = ui.container.querySelector<HTMLInputElement>('[aria-label="Filter title"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Apple");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => ui.container.querySelector("form.ts-row-view-filter")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(ui.cell("A1").textContent).toBe("Apple");
+    expect(ui.cell("A2").textContent).toBe("");
+    await ui.focus("A2");
+    await ui.type("Orange");
+    await ui.key("Enter");
+    expect(ui.onWrite).toHaveBeenLastCalledWith(expect.anything(), "release_items", 3, 0, { kind: "text", value: "Orange" });
+    expect(ui.currentView().table.rows.map(row => row.fields[0]?.stored)).toEqual([
+      { kind: "text", value: "Apple" }, { kind: "text", value: "Banana" },
+      { kind: "text", value: "Cherry" }, { kind: "text", value: "Orange" },
+    ]);
+  });
+
+  it("pastes over the last stored headerless CSV row and appends the rest", async () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.columns = view.table.columns.slice(0, 2);
+    view.table.rows = ["Apple", "Banana", "Cherry"].map((value, index) => ({
+      id: `fruit-${index}`, key: `fruit-${index}`, fields: [
+        projected(`fruit-${index}`, "c-title", { kind: "text", value }),
+        projected(`fruit-${index}`, "c-impact", { kind: "number", value: index + 1 }),
+      ],
+    }));
+    const onPasteCells = vi.fn<NonNullable<SheetShellProps["onPasteCells"]>>(async () => ({ kind: "confirmed" }));
+    const ui = await mount(view, { onPasteCells });
+    await ui.focus("A4");
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: { types: ["text/plain"], getData: () => "Orange\t4\nPear\t5" } });
+    await act(async () => { ui.cell("A4").dispatchEvent(event); });
+    expect(onPasteCells).toHaveBeenCalledWith(expect.anything(), "release_items", "fruit-2", "c-title", [["Orange", "4"], ["Pear", "5"]]);
+    expect(ui.onEditCells).not.toHaveBeenCalled();
+    expect(ui.container.textContent).not.toContain("Nothing was pasted.");
+  });
+
+  it("refuses blank worksheet formulas and reference insertion without publishing", async () => {
+    const onTranslateA1Formula = vi.fn<NonNullable<SheetShellProps["onTranslateA1Formula"]>>();
+    const ui = await mount(undefined, { onTranslateA1Formula });
+    await ui.focus("A1");
+    await ui.type("=A2");
+    await act(async () => {
+      ui.cell("A2").dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      ui.cell("A2").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await ui.key("Enter");
+    expect(ui.onWrite).not.toHaveBeenCalled();
+    expect(ui.onCommit).not.toHaveBeenCalled();
+    expect(onTranslateA1Formula).not.toHaveBeenCalled();
+    expect(ui.container.querySelector<HTMLInputElement>('[data-testid="cell-editor"]')?.value).toBe("=A2");
+    expect(ui.container.textContent).toContain("Formulas and cell references are not available in blank worksheets yet because their displayed addresses cannot be matched safely.");
+    expect(ui.container.querySelector<HTMLInputElement>('[data-testid="formula-bar-input"]')?.readOnly).toBe(true);
+    expect(ui.container.querySelector(".ts-cell--formula-ref")).toBeNull();
+  });
+
+  it("refuses a block touching unallocated blank worksheet cells without partial writes", async () => {
+    const onPasteCells = vi.fn<NonNullable<SheetShellProps["onPasteCells"]>>(async () => ({ kind: "confirmed" }));
+    const ui = await mount(undefined, { onPasteCells });
+    await ui.focus("A1");
+    await ui.type("Keep");
+    await ui.key("Enter");
+    ui.onWrite.mockClear();
+    await ui.focus("A1");
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: { types: ["text/plain"], getData: () => "Orange\t4\nPear\t5" } });
+    await act(async () => { ui.cell("A1").dispatchEvent(event); });
+    expect(ui.container.textContent).toContain("Pasting into unused worksheet cells is not available yet. Type into these cells instead. Nothing was pasted.");
+    expect(onPasteCells).not.toHaveBeenCalled();
+    expect(ui.onWrite).not.toHaveBeenCalled();
+    expect(ui.onEditCells).not.toHaveBeenCalled();
+    expect(ui.cell("A1").textContent).toBe("Keep");
+  });
+
+  it.each(["typed", "clicked"])("keeps main's imported headerless formula geometry for %s references", async mode => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    const onTranslateA1Formula = vi.fn<NonNullable<SheetShellProps["onTranslateA1Formula"]>>(async () => ({
+      kind: "translated", revision: view.revision, source: "[beta.impact]", notes: [],
+    }));
+    const ui = await mount(view, { onTranslateA1Formula });
+    expect(ui.cell("B2").closest("tr")!.querySelector("th")!.textContent).toBe("2");
+    expect(ui.cell("B3").closest("tr")!.querySelector("th")!.textContent).toBe("3");
+    await ui.focus("B2");
+    await ui.type(mode === "typed" ? "=B3" : "=");
+    if (mode === "clicked") {
+      await act(async () => {
+        const input = ui.container.querySelector<HTMLInputElement>('[data-testid="cell-editor"]')!;
+        input.focus();
+        input.setSelectionRange(1, 1);
+        ui.cell("B3").dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, detail: 1 }));
+      });
+      expect(ui.container.querySelector<HTMLInputElement>('[data-testid="cell-editor"]')?.value).toBe("=B3");
+    }
+    expect(ui.cell("B3").classList.contains("ts-cell--formula-ref")).toBe(true);
+    expect(ui.cell("B2").classList.contains("ts-cell--formula-ref")).toBe(false);
+    await ui.key("Enter");
+    expect(onTranslateA1Formula).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      rowEntityId: entityA, targetFieldId: "c-impact", text: "B3",
+      geometry: { headerRow: 1, rows: [entityA, entityB], columns: ["c-title", "c-impact", "c-priority", "c-notes"] },
+    }));
+    expect(ui.onCommit).toHaveBeenCalledWith(expect.anything(), { entity: entityA, field: "c-impact" }, { kind: "formula", source: "[beta.impact]" });
+    expect(ui.onWrite).not.toHaveBeenCalled();
+  });
+
+  it("preserves imported headerless Number editing (5 → 6)", async () => {
+    const ui = await mount(makeView());
+    await ui.focus("B2");
+    await ui.type("6");
+    await ui.key("Enter");
+    expect(ui.onCommit).toHaveBeenCalledWith(expect.anything(), { entity: entityA, field: "c-impact" }, { kind: "number", input: "6" });
+    expect(ui.onWrite).not.toHaveBeenCalled();
+  });
+
+  it("commits a formula in an existing optional blank Number cell on import", async () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.columns[1] = { ...view.table.columns[1]!, required: false };
+    view.table.rows[0] = { ...view.table.rows[0]!,
+      fields: view.table.rows[0]!.fields.filter(field => field.target.field !== "c-impact"),
+      blank_fields: ["c-impact"],
+    };
+    const ui = await mount(view);
+    await ui.focus("B2");
+    await ui.type("=1+2");
+    await ui.key("Enter");
+    expect(ui.onCommit).toHaveBeenCalledWith(expect.anything(), { entity: entityA, field: "c-impact" }, { kind: "formula", source: "1+2" });
+    expect(ui.onWrite).not.toHaveBeenCalled();
+    expect(ui.container.querySelector('[data-testid="cell-editor"]')).toBeNull();
+  });
+
+  it.each([
+    ["row", "Delete", null], ["row", "Cut", null],
+    ["column", "Delete", null], ["column", "Cut", null],
+    ["row", "Delete", "headerless.csv"], ["row", "Cut", "headerless.csv"],
+    ["column", "Delete", "headerless.csv"], ["column", "Cut", "headerless.csv"],
+  ] as const)("clears stored cells on whole-%s %s (source %s)", async (axis, action, importedSourceName) => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.columns = view.table.columns.slice(0, 2).map(column => ({ ...column, required: false }));
+    view.table.rows = view.table.rows.map(row => ({ ...row, fields: row.fields.slice(0, 2) }));
+    const ui = await mount(view, { importedSourceName });
+    await act(async () => ui.container.querySelector<HTMLElement>(axis === "row" ? "tbody .ts-row-head" : "thead .ts-column-header")!.click());
+    if (action === "Delete") await ui.key("Delete");
+    else {
+      const event = new Event("cut", { bubbles: true, cancelable: true });
+      const setData = vi.fn();
+      Object.defineProperty(event, "clipboardData", { value: { setData } });
+      await act(async () => { document.activeElement!.dispatchEvent(event); });
+      expect(event.defaultPrevented).toBe(true);
+      expect(setData).toHaveBeenCalledWith("text/plain", expect.stringContaining("Alpha work"));
+    }
+    const targets = axis === "row" ? [{ entity: entityA, field: "c-title" }, { entity: entityA, field: "c-impact" }]
+      : [{ entity: entityA, field: "c-title" }, { entity: entityB, field: "c-title" }];
+    expect(ui.onEditCells).toHaveBeenCalledExactlyOnceWith(expect.anything(), targets.map(target => ({ target, input: { kind: "clear" } })));
+    expect(ui.onWrite).not.toHaveBeenCalled();
+  });
+
+  it.each([null, "headerless.csv"])("reveals the next windowed row after editing while scrolled away (source %s)", async importedSourceName => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.columns = view.table.columns.slice(0, 1);
+    view.table.rows = Array.from({ length: 1000 }, (_, index) => ({
+      id: `r-${index}`, key: `r-${index}`, fields: [projected(`r-${index}`, "c-title", { kind: "text", value: `Row ${index}` })],
+    }));
+    const ui = await mount(view, { importedSourceName });
+    const firstAddress = importedSourceName ? "A2" : "A1";
+    const nextCell = () => ui.container.querySelector<HTMLElement>('[data-work-entity="r-1"][data-work-field="c-title"]');
+    await ui.focus(firstAddress);
+    await ui.type("Changed");
+    const grid = ui.container.querySelector<HTMLElement>(".ts-grid-scroll")!;
+    await act(async () => {
+      grid.scrollTop = 20000;
+      grid.dispatchEvent(new Event("scroll"));
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    });
+    expect(nextCell()).toBeNull();
+    expect(ui.container.querySelector('[data-testid="cell-editor"]')).not.toBeNull();
+    await ui.key("Enter");
+    await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+    expect(ui.onCommit).toHaveBeenCalledWith(expect.anything(), { entity: "r-0", field: "c-title" }, { kind: "text", value: "Changed" });
+    expect(ui.container.querySelector('[data-testid="cell-editor"]')).toBeNull();
+    expect(nextCell()).not.toBeNull();
+    expect(document.activeElement).toBe(nextCell());
+  });
+
+  it.each(["F2", "double-click"])("keeps imported headerless formulas intact on %s", async gesture => {
+    const ui = await mount(makeView());
+    await ui.focus("C2");
+    if (gesture === "F2") await ui.key("F2");
+    else await act(async () => { ui.cell("C2").dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); });
+    await ui.key("Enter");
+    expect(ui.container.querySelector('[data-testid="cell-editor"]')).toBeNull();
+    expect(ui.onCommit).not.toHaveBeenCalled();
+    expect(ui.onWrite).not.toHaveBeenCalled();
+    expect(ui.container.textContent).toContain("Edit the formula in the formula bar.");
+    await ui.key("F2", { shiftKey: true });
+    expect(ui.container.querySelector<HTMLInputElement>('[data-testid="formula-bar-input"]')?.value).toBe("impact + friction");
+  });
+
+  it.each(["Enter", "Tab"])("unchanged %s navigates without a write or error", async key => {
+    const ui = await mount(makeView());
+    await ui.focus("B2");
+    await ui.key("F2");
+    await ui.key(key);
+    expect(ui.onCommit).not.toHaveBeenCalled();
+    expect(ui.onWrite).not.toHaveBeenCalled();
+    expect(ui.container.querySelector('[data-testid="cell-editor"]')).toBeNull();
+    expect(ui.container.querySelector('[role="alert"]')).toBeNull();
+    expect(document.activeElement).toBe(ui.cell(key === "Enter" ? "B3" : "C2"));
+  });
+
+  it("blocks Save and Save a copy and retains the draft across panel tabs", async () => {
+    const ui = await mount();
+    await ui.focus("B4");
+    await ui.type("Apple draft");
+    await ui.key("s", { ctrlKey: true });
+    const copy = Array.from(ui.container.querySelectorAll("button")).find(button => button.textContent === "Save a copy")!;
+    await act(async () => copy.click());
+    expect(ui.onSave).not.toHaveBeenCalled();
+    expect(ui.onCreateCopy).not.toHaveBeenCalled();
+    expect(ui.container.querySelector('[role="dialog"][aria-modal="true"]')).toBeNull();
+    for (const tab of ["brief", "report", "summary", "interop", "table"]) {
+      await act(async () => ui.container.querySelector<HTMLButtonElement>(`#ts-tab-${tab}`)!.click());
+    }
+    expect(ui.container.querySelector<HTMLInputElement>('[data-testid="cell-editor"]')?.value).toBe("Apple draft");
+    expect(ui.onWrite).not.toHaveBeenCalled();
+  });
+
+  it("restores clipboard, Find, Delete/Backspace and persisted styles on a headerless import", async () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.rows[0]!.styles = [{ bold: true, italic: true, fill: "ffcc00", border: true, number_format: null, wrap: false, alignment: null }];
+    const ui = await mount(view, { importedSourceName: "headerless.xlsx" });
+    await ui.focus("A2");
+    expect(ui.cell("A2").style.fontWeight).toBe("700");
+    expect(ui.cell("A2").style.fontStyle).toBe("italic");
+    expect(ui.cell("A2").style.backgroundColor).toBe("#ffcc00");
+    const clipboardData = { types: ["text/plain"], setData: vi.fn(), getData: () => "Pasted" };
+    for (const name of ["copy", "cut", "paste"]) {
+      const event = new Event(name, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", { value: clipboardData });
+      await act(async () => { ui.cell("A2").dispatchEvent(event); });
+      expect(event.defaultPrevented).toBe(true);
+    }
+    expect(clipboardData.setData).toHaveBeenCalledWith("text/plain", "Alpha work");
+    expect(ui.onEditCells).toHaveBeenCalledWith(expect.anything(), [{ target: { entity: entityA, field: "c-title" }, input: { kind: "text", value: "Pasted" } }]);
+    for (const key of ["Delete", "Backspace"]) { await ui.focus("A2"); await ui.key(key); }
+    expect(ui.onEditCells).toHaveBeenCalledTimes(4);
+    await ui.key("f", { ctrlKey: true });
+    expect(ui.container.querySelector('[role="search"]')).not.toBeNull();
+  });
+
+  it("windows large imported headerless worksheets", async () => {
+    const view = makeView();
+    view.table.rows = Array.from({ length: 1000 }, (_, index) => ({ id: `r-${index}`, key: `r-${index}`, fields: [projected(`r-${index}`, "c-title", { kind: "text", value: `Row ${index}` })] }));
+    const ui = await mount(view);
+    expect(ui.container.querySelector('[role="grid"]')?.getAttribute("aria-rowcount")).toBe("1001");
+    expect(ui.container.querySelectorAll("tbody tr.ts-row").length).toBeLessThan(100);
+    expect(ui.container.querySelector(".ts-grid-spacer")).not.toBeNull();
+  });
+});
+
 describe("keyboard history queue", () => {
   let dispose: (() => Promise<void>) | undefined;
   afterEach(async () => { await dispose?.(); dispose = undefined; });
