@@ -9,6 +9,7 @@ import type { FieldProjection } from "../../public/core-kit/experimental-client.
 import type { AppearancePreferenceController, AppearancePreferenceSnapshot } from "../application/appearance-preference.js";
 import type { KeyedGroupedSumResult, SheetShellProps, WorkbookView } from "../contracts.js";
 import { BriefFacts } from "./BriefFacts.js";
+import { BlankWorksheet } from "./BlankWorksheet.js";
 import { TACHIKO_COMPACT_PORCELAIN_PROFILE } from "./interface-profile/profile.js";
 import {
   cellEditorListAttributes,
@@ -192,6 +193,81 @@ function makeProps(overrides: Partial<SheetShellProps> = {}): SheetShellProps {
 function render(props: Partial<SheetShellProps>): string {
   return renderToStaticMarkup(createElement(SheetShell, makeProps(props)));
 }
+
+describe("blank worksheet commit navigation", () => {
+  let dispose: (() => Promise<void>) | undefined;
+  afterEach(async () => { await dispose?.(); dispose = undefined; });
+
+  async function mount() {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    let view = makeView();
+    view.table = { ...view.table, rows: [], columns: [] };
+    const onDraftChange = vi.fn();
+    const draw = () => root.render(createElement(BlankWorksheet, { view, locked: false, onWrite, onDraftChange }));
+    const onWrite = vi.fn<NonNullable<SheetShellProps["onWriteCellAt"]>>(async (_witness, _collection, row, column, input) => {
+      const columns = Array.from({ length: Math.max(view.table.columns.length, column + 1) }, (_, index) =>
+        view.table.columns[index] ?? { ...makeView().table.columns[0]!, id: `c-${index}`, key: `column-${index}` });
+      const rows = Array.from({ length: Math.max(view.table.rows.length, row + 1) }, (_, index) =>
+        view.table.rows[index] ?? { id: `row-${index}`, key: `row-${index}`, fields: [] });
+      const target = rows[row]!;
+      rows[row] = { ...target, fields: [...target.fields.filter(field => field.target.field !== columns[column]!.id), projected(target.id!, columns[column]!.id, { kind: "text", value: input })] };
+      view = { ...view, table: { ...view.table, columns, rows } };
+      draw();
+      return { kind: "confirmed" };
+    });
+    dispose = async () => { await act(async () => root.unmount()); container.remove(); };
+    await act(async () => draw());
+    const cell = (address: string) => container.querySelector<HTMLElement>(`[data-address="${address}"]`)!;
+    const click = async (address: string) => act(async () => cell(address).click());
+    const key = async (value: string) => act(async () => {
+      document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true }));
+    });
+    const type = async (value: string) => {
+      await key(value[0]!);
+      const editor = container.querySelector<HTMLInputElement>('[data-testid="cell-editor"]')!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(editor, value);
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    return { cell, click, key, type, onWrite };
+  }
+
+  it.each([
+    ["J1", "Tab", "K1", 0, 10],
+    ["A30", "Enter", "A31", 30, 0],
+  ] as const)("moves from %s with %s to the newly available %s", async (from, key, to, row, column) => {
+    const ui = await mount();
+    await ui.click(from);
+    await ui.type("Apple");
+    await ui.key(key);
+    expect(ui.cell(to).getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(ui.cell(to));
+    await ui.type("Orange");
+    await ui.key("Enter");
+    expect(ui.onWrite).toHaveBeenLastCalledWith(expect.anything(), "release_items", row, column, "Orange");
+    expect(ui.cell(from).textContent).toBe("Apple");
+    expect(ui.cell(to).textContent).toBe("Orange");
+  });
+
+  it("commits A1 when clicking B4 and keeps subsequent typing in B4", async () => {
+    const ui = await mount();
+    await ui.type("Apple");
+    await ui.click("B4");
+    expect(ui.onWrite).toHaveBeenNthCalledWith(1, expect.anything(), "release_items", 0, 0, "Apple");
+    expect(ui.cell("A1").textContent).toBe("Apple");
+    expect(ui.cell("B4").getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(ui.cell("B4"));
+    await ui.type("Orange");
+    await ui.key("Enter");
+    expect(ui.onWrite).toHaveBeenNthCalledWith(2, expect.anything(), "release_items", 3, 1, "Orange");
+    expect(ui.cell("A1").textContent).toBe("Apple");
+    expect(ui.cell("B4").textContent).toBe("Orange");
+  });
+});
 
 describe("keyboard history queue", () => {
   let dispose: (() => Promise<void>) | undefined;

@@ -34,7 +34,7 @@ export function BlankWorksheet({ view, locked, onWrite, onDraftChange }: {
     return field ? seedTextOf(field) : "";
   }
 
-  async function commit(rowDelta: number, columnDelta: number) {
+  async function commit(nextActive: { row: number; column: number }) {
     if (draft === null || pending || locked) return;
     setPending(true);
     setError(null);
@@ -42,7 +42,7 @@ export function BlankWorksheet({ view, locked, onWrite, onDraftChange }: {
       const result = await onWrite({ occurrence: view.occurrence, revision: view.revision }, table.collection.key, active.row, active.column, draft);
       if (result.kind === "confirmed") {
         setDraft(null);
-        setActive({ row: Math.max(0, Math.min(rows - 1, active.row + rowDelta)), column: Math.max(0, Math.min(columns - 1, active.column + columnDelta)) });
+        setActive(nextActive);
       } else setError("message" in result ? result.message : "The cell could not be confirmed. Refresh the work before continuing.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -55,7 +55,7 @@ export function BlankWorksheet({ view, locked, onWrite, onDraftChange }: {
       if (event.key === "Escape") { event.preventDefault(); setDraft(null); setError(null); }
       if (event.key === "Enter" || event.key === "Tab") {
         event.preventDefault();
-        void commit(event.key === "Enter" ? (event.shiftKey ? -1 : 1) : 0, event.key === "Tab" ? (event.shiftKey ? -1 : 1) : 0);
+        void commit({ row: Math.max(0, active.row + (event.key === "Enter" ? (event.shiftKey ? -1 : 1) : 0)), column: Math.max(0, active.column + (event.key === "Tab" ? (event.shiftKey ? -1 : 1) : 0)) });
       }
       return;
     }
@@ -81,7 +81,7 @@ export function BlankWorksheet({ view, locked, onWrite, onDraftChange }: {
             const selected = active.row === row && active.column === column;
             const projectedRow = table.rows[row], projectedColumn = table.columns[column];
             return <td key={column} role="gridcell" data-address={address(row, column)} data-testid={`worksheet:${address(row, column)}`} aria-label={address(row, column)} aria-selected={selected} tabIndex={selected ? 0 : -1}
-              onClick={() => { if (!locked && !pending && draft === null) setActive({ row, column }); }}
+              onClick={() => { if (!locked && !pending) { if (draft === null) setActive({ row, column }); else if (!selected) void commit({ row, column }); } }}
               onDoubleClick={() => { if (!locked && !pending && draft === null) { setActive({ row, column }); setDraft(seed(row, column)); } }}
               onKeyDown={event => keyDown(event, row, column)}>
               {selected && draft !== null ? <input autoFocus data-testid="cell-editor" value={draft} disabled={locked || pending} onChange={event => setDraft(event.currentTarget.value)} onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }} />
