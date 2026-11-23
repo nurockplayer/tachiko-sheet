@@ -238,7 +238,7 @@ describe("headerless worksheets use the existing grid", () => {
         editor.dispatchEvent(new Event("input", { bubbles: true }));
       });
     };
-    return { container, cell, focus, key, type, onWrite, onCommit, onEditCells, onSave, onCreateCopy };
+    return { container, cell, focus, key, type, onWrite, onCommit, onEditCells, onSave, onCreateCopy, currentView: () => view };
   }
 
   it.each([["A1", "Hello", 0, 0], ["B4", "Apple", 3, 1]] as const)("writes unused %s through positional allocation", async (address, text, row, column) => {
@@ -250,6 +250,54 @@ describe("headerless worksheets use the existing grid", () => {
     expect(ui.onCommit).not.toHaveBeenCalled();
     expect(ui.cell(address).textContent).toBe(text);
     expect(ui.container.querySelector(".ts-table-panel .ts-grid-scroll")).not.toBeNull();
+  });
+
+  it("allocates beyond hidden stored rows when typing into filtered synthetic space", async () => {
+    const view = makeView();
+    view.table.columns = [view.table.columns[0]!];
+    view.table.rows = ["Apple", "Banana", "Cherry"].map((value, index) => ({
+      id: `fruit-${index}`, key: `fruit-${index}`, fields: [projected(`fruit-${index}`, "c-title", { kind: "text", value })],
+    }));
+    const ui = await mount(view);
+    const filter = ui.container.querySelector<HTMLButtonElement>('[data-column-action="Filter…"]')!;
+    await act(async () => filter.click());
+    const input = ui.container.querySelector<HTMLInputElement>('[aria-label="Filter title"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Apple");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => ui.container.querySelector("form.ts-row-view-filter")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(ui.cell("A1").textContent).toBe("Apple");
+    expect(ui.cell("A2").textContent).toBe("");
+    await ui.focus("A2");
+    await ui.type("Orange");
+    await ui.key("Enter");
+    expect(ui.onWrite).toHaveBeenLastCalledWith(expect.anything(), "release_items", 3, 0, { kind: "text", value: "Orange" });
+    expect(ui.currentView().table.rows.map(row => row.fields[0]?.stored)).toEqual([
+      { kind: "text", value: "Apple" }, { kind: "text", value: "Banana" },
+      { kind: "text", value: "Cherry" }, { kind: "text", value: "Orange" },
+    ]);
+  });
+
+  it("pastes over the last stored headerless CSV row and appends the rest", async () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.columns = view.table.columns.slice(0, 2);
+    view.table.rows = ["Apple", "Banana", "Cherry"].map((value, index) => ({
+      id: `fruit-${index}`, key: `fruit-${index}`, fields: [
+        projected(`fruit-${index}`, "c-title", { kind: "text", value }),
+        projected(`fruit-${index}`, "c-impact", { kind: "number", value: index + 1 }),
+      ],
+    }));
+    const onPasteCells = vi.fn<NonNullable<SheetShellProps["onPasteCells"]>>(async () => ({ kind: "confirmed" }));
+    const ui = await mount(view, { onPasteCells });
+    await ui.focus("A3");
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: { types: ["text/plain"], getData: () => "Orange\t4\nPear\t5" } });
+    await act(async () => { ui.cell("A3").dispatchEvent(event); });
+    expect(onPasteCells).toHaveBeenCalledWith(expect.anything(), "release_items", "fruit-2", "c-title", [["Orange", "4"], ["Pear", "5"]]);
+    expect(ui.onEditCells).not.toHaveBeenCalled();
+    expect(ui.container.textContent).not.toContain("Nothing was pasted.");
   });
 
   it("preserves imported headerless Number editing (5 → 6)", async () => {

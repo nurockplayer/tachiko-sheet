@@ -1312,9 +1312,10 @@ export function SheetShell(props: SheetShellProps) {
   // entry is committed with the confirmation rather than by a later effect.
   const displayRows = useMemo(() => {
     if (!table) return [];
-    const stored = rowViewOrder(rowSource(table).allRowsForNow(), columns, gridSettings);
+    const source = rowSource(table).allRowsForNow();
+    const stored = rowViewOrder(source, columns, gridSettings);
     return worksheet ? [...stored, ...Array.from({ length: Math.max(30, stored.length + 1) - stored.length }, (_, offset) => ({
-      id: `worksheet-row:${stored.length + offset}`, key: "", fields: [],
+      id: `worksheet-row:${source.length + offset}`, key: "", fields: [],
     }))] : stored;
   }, [columns, gridSettings, table, worksheet]);
   const gridWindowed = displayRows.length > GRID_WINDOW_THRESHOLD;
@@ -1894,14 +1895,16 @@ export function SheetShell(props: SheetShellProps) {
         // The plan is pure; anything else falls back to the ordinary value paste.
       }
     }
-    const viewRefusal = draft ? null : rowViewPasteRefusal(gridSettings, start.row, decoded.length, displayRows.length);
+    const pasteRowCount = worksheet ? displayRows.filter(row => !row.id.startsWith("worksheet-row:")).length : displayRows.length;
+    const pasteColumns = worksheet ? tableColumns(table) : columns;
+    const viewRefusal = draft ? null : rowViewPasteRefusal(gridSettings, start.row, decoded.length, pasteRowCount);
     if (viewRefusal) { announceClipboard(viewRefusal, true); return; }
     const route = routePaste(decoded, { native: Boolean(table.native_table_profile), draft,
       blocked: pasteBlocked,
-      pendingDraft: rowDraftActive, start, rowCount: displayRows.length, storedRowCount: rowSource(table).allRowsForNow().length, columnTypes: columns.map(column => column.field_type), columnRequired: columns.map(column => column.required),
+      pendingDraft: rowDraftActive, start, rowCount: pasteRowCount, storedRowCount: rowSource(table).allRowsForNow().length, columnTypes: pasteColumns.map(column => column.field_type), columnRequired: pasteColumns.map(column => column.required),
       editable: (r, c) => {
         const row = displayRows[r], column = columns[c];
-        const slot = row && column ? cellEditSlot(row, column) : null;
+        const slot = row && column ? currentEditorSlot({ entity: rowEntity(row), field: column.id }) : null;
         return Boolean(slot && !slot.formula);
       },
       formula: (r, c) => {
@@ -3723,7 +3726,7 @@ export function SheetShell(props: SheetShellProps) {
       setCommitPending(true);
       try {
         // Positional allocation follows source order, even when existing rows are sorted.
-        const row = storedRow ? rowSource(table).indexOf(editor.entity) : at.row;
+        const row = storedRow ? rowSource(table).indexOf(editor.entity) : Number(editor.entity.slice("worksheet-row:".length));
         const column = storedColumn ? table.columns.indexOf(storedColumn) : at.column;
         const outcome = await onWriteCellAt(witness, table.collection.key, row, column, input);
         if (outcome.kind !== "confirmed") {
