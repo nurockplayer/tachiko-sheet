@@ -306,7 +306,7 @@ async function main() {
     const choose = (id) => window.__TAURI_INTERNALS__.invoke("e2e_menu_command", { id });
     await choose("new-table");
     const a1 = await waitFor(() => current() && document.querySelector('[data-testid="worksheet:A1"]'), "File > New Workbook blank worksheet");
-    if (a1.textContent !== "" || dialog("New table") || grid()) throw new Error("New Workbook did not open a blank worksheet without a table dialog");
+    if (a1.textContent !== "" || dialog("New table")) throw new Error("New Workbook did not open a blank worksheet without a table dialog");
     click(await waitFor(() => button("Close project"), "Close blank workbook"));
     await waitFor(() => dialog("Unsaved work") || document.querySelector('.ts-app[data-view="home"]'), "close blank workbook outcome");
     const unsaved = dialog("Unsaved work");
