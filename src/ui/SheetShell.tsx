@@ -822,6 +822,26 @@ export function SheetShell(props: SheetShellProps) {
   const [clipboardMessage, setClipboardMessage] = useState<{ text: string; refused: boolean; polite?: boolean } | null>(null);
   // Excel's Ctrl+`: a view choice like zoom, not saved with the work.
   const [showFormulas, setShowFormulas] = useState(false);
+  const [gridZoom, setGridZoom] = useState(100);
+  const gridScale = gridZoom / 100;
+  function stepGridZoom(delta: number): void {
+    setGridZoom(current => Math.max(50, Math.min(200, current + delta)));
+  }
+  // Native listener: React's passive wheel listener cannot cancel webview zoom.
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const wheel = (event: WheelEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || !gridScrollRef.current?.contains(event.target as Node) || event.deltaY === 0) return;
+      event.preventDefault();
+      stepGridZoom(event.deltaY < 0 ? 10 : -10);
+    };
+    shell.addEventListener("wheel", wheel, { passive: false });
+    return () => shell.removeEventListener("wheel", wheel);
+  }, []);
+  useLayoutEffect(() => {
+    if (gridWindowed) syncGridWindow();
+  }, [gridZoom]);
   const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition; fromFillHandle?: boolean } | null>(null);
   const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition; activeCell?: GridPosition; pasteSpecial?: boolean; column?: string; trigger?: HTMLElement } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
@@ -985,6 +1005,8 @@ export function SheetShell(props: SheetShellProps) {
   updateFillPreviewRef.current = updateFillPreviewAt;
   const suppressClickRef = useRef(false);
   const [dragSelecting, setDragSelecting] = useState(false);
+  const updateDragSelectionRef = useRef(updateDragSelectionAt);
+  updateDragSelectionRef.current = updateDragSelectionAt;
   // WebKit enables Edit > Cut, Copy and Paste on a cell only if these events are
   // cancelled, and the Mac app's Cmd+X, Cmd+C and Cmd+V go through that menu.
   useEffect(() => {
@@ -1005,13 +1027,41 @@ export function SheetShell(props: SheetShellProps) {
     };
     const scroll = () => {
       const grid = gridScrollRef.current;
-      if (!fillDragRef.current || !grid) { stopScroll(); return; }
-      const bottom = grid.getBoundingClientRect().top + grid.clientTop + grid.clientHeight;
+      if ((!fillDragRef.current && !dragSelectRef.current) || !grid) { stopScroll(); return; }
+      const bounds = grid.getBoundingClientRect();
+      const left = bounds.left + grid.clientLeft;
+      const top = bounds.top + grid.clientTop + (grid.querySelector("thead")?.getBoundingClientRect().height ?? 0);
+      const right = left + grid.clientWidth;
+      const bottom = bounds.top + grid.clientTop + grid.clientHeight;
+      if (dragSelectRef.current) {
+        if (pointerY <= top) grid.scrollTop -= Math.min(60, 6 + (top - pointerY) * 0.4);
+        if (pointerX <= left) grid.scrollLeft -= Math.min(60, 6 + (left - pointerX) * 0.4);
+        if (pointerY >= bottom) grid.scrollTop += Math.min(60, 6 + (pointerY - bottom) * 0.4);
+        if (pointerX >= right) grid.scrollLeft += Math.min(60, 6 + (pointerX - right) * 0.4);
+        updateDragSelectionRef.current(Math.max(left + 1, Math.min(pointerX, right - 1)), Math.max(top + 1, Math.min(pointerY, bottom - 1)));
+        return;
+      }
       if (pointerY < bottom) { stopScroll(); return; }
       grid.scrollTop += Math.min(60, 6 + (pointerY - bottom) * 0.4);
       updateFillPreviewRef.current(pointerX, pointerY);
     };
     const move = (event: MouseEvent) => {
+      if (dragSelectRef.current) {
+        if (event.buttons === 0) { stopScroll(); dragSelectRef.current = null; setDragSelecting(false); return; }
+        pointerX = event.clientX;
+        pointerY = event.clientY;
+        const grid = gridScrollRef.current!;
+        const bounds = grid.getBoundingClientRect();
+        const left = bounds.left + grid.clientLeft;
+        const top = bounds.top + grid.clientTop + (grid.querySelector("thead")?.getBoundingClientRect().height ?? 0);
+        const right = left + grid.clientWidth;
+        const bottom = bounds.top + grid.clientTop + grid.clientHeight;
+        updateDragSelectionRef.current(Math.max(left + 1, Math.min(pointerX, right - 1)), Math.max(top + 1, Math.min(pointerY, bottom - 1)));
+        if (pointerX <= left || pointerY <= top || pointerX >= right || pointerY >= bottom) {
+          if (scrollTimer === null) scrollTimer = window.setInterval(scroll, 50);
+        } else stopScroll();
+        return;
+      }
       if (!fillDragRef.current) return;
       if (event.buttons === 0) { dropFillDrag(); return; }
       pointerX = event.clientX;
@@ -1263,7 +1313,7 @@ export function SheetShell(props: SheetShellProps) {
       const gutterWidth = gutter.getBoundingClientRect().width;
       const columnWidth = firstColumn.getBoundingClientRect().width;
       const scrollportWidth = grid.clientWidth;
-      grid.style.setProperty("--ts-frozen-gutter-width", `${gutterWidth}px`);
+      grid.style.setProperty("--ts-frozen-gutter-width", `${gutterWidth / gridScale}px`);
       setFrozenColumnGeometry(current => current.gutterWidth === gutterWidth && current.columnWidth === columnWidth && current.scrollportWidth === scrollportWidth
         ? current : { gutterWidth, columnWidth, scrollportWidth });
     };
@@ -1273,7 +1323,7 @@ export function SheetShell(props: SheetShellProps) {
     observer?.observe(firstColumn);
     observer?.observe(grid);
     return () => observer?.disconnect();
-  }, [freezeRequested, table, tab, gridWindowed]);
+  }, [freezeRequested, table, tab, gridWindowed, gridZoom]);
   // The live row order for async continuations: a translation read against one
   // display order must not be applied after the rows moved under it.
   const displayRowsRef = useRef(displayRows);
@@ -1466,7 +1516,7 @@ export function SheetShell(props: SheetShellProps) {
     const stored = pendingColumnWidths[field] ?? (projected != null ? clampColumnWidth(columnWidthToPx(projected)) : settings.widths?.[field]);
     if (stored !== undefined) return stored;
     if (sizedGrid && drawnColumnWidths[field] !== undefined) return drawnColumnWidths[field];
-    return th ? Math.round(th.getBoundingClientRect().width) : SIZED_COLUMN_DEFAULT_WIDTH;
+    return th ? Math.round(th.getBoundingClientRect().width / gridScale) : SIZED_COLUMN_DEFAULT_WIDTH;
   }
 
   /** Every column's width as drawn now, in column order after the row gutter. */
@@ -1475,7 +1525,7 @@ export function SheetShell(props: SheetShellProps) {
     const widths: Record<string, number> = {};
     columns.forEach((column, index) => {
       const th = headers[index];
-      if (th) widths[column.id] = clampColumnWidth(th.getBoundingClientRect().width);
+      if (th) widths[column.id] = clampColumnWidth(th.getBoundingClientRect().width / gridScale);
     });
     return widths;
   }
@@ -1565,7 +1615,7 @@ export function SheetShell(props: SheetShellProps) {
     const session = columnResizeRef.current;
     if (!session) return;
     event.stopPropagation();
-    session.width = clampColumnWidth(session.startWidth + event.clientX - session.startX);
+    session.width = clampColumnWidth(session.startWidth + (event.clientX - session.startX) / gridScale);
     session.th.style.width = `${session.width}px`;
   }
 
@@ -1688,14 +1738,34 @@ export function SheetShell(props: SheetShellProps) {
     setClipboardMessage({ text, refused, polite });
   }
 
-  function extendSelection(anchor: GridPosition, end: GridPosition): void {
+  function extendSelection(anchor: GridPosition, end: GridPosition, reveal = true): void {
     if (!view || !collectionIdentity || anchor.entity === DRAFT_ROW || end.entity === DRAFT_ROW) return;
     setCellSelection({ identity: collectionIdentity, revision: view.revision, anchor, end });
+    if (!reveal) return;
     // Excel keeps focus and typing at the anchor; only the far end scrolls into view.
     const rowIndex = rowIndexByEntity.get(end.entity);
     if (gridWindowed && rowIndex !== undefined) revealGridRow(rowIndex);
     const cell = cellRefs.current.get(cellKey(end.entity, end.field));
     if (cell && gridScrollRef.current) scrollCellIntoGridNearest(cell, gridScrollRef.current);
+  }
+
+  function updateDragSelectionAt(x: number, y: number): void {
+    const drag = dragSelectRef.current;
+    if (!drag || !gridScrollRef.current) return;
+    for (const row of gridScrollRef.current.querySelectorAll<HTMLTableRowElement>("tbody tr.ts-row")) {
+      const bounds = row.getBoundingClientRect();
+      if (y < bounds.top || y >= bounds.bottom) continue;
+      const cells = [...row.querySelectorAll<HTMLTableCellElement>("td[data-work-field]")];
+      // Client coordinates and rendered bounds include CSS zoom, even when
+      // the pointer has crossed the scrollport's clipped right edge.
+      const cell = cells.find(cell => x < cell.getBoundingClientRect().right) ?? cells.at(-1)!;
+      const end = { entity: cell.dataset.workEntity!, field: cell.dataset.workField! };
+      if (!drag.moved && end.entity === drag.anchor.entity && end.field === drag.anchor.field) return;
+      drag.moved = true;
+      setDragSelecting(true);
+      extendSelection(drag.anchor, end);
+      return;
+    }
   }
 
   /** An extending key starts from the selection's end; focus itself stays on the anchor. */
@@ -2363,7 +2433,7 @@ export function SheetShell(props: SheetShellProps) {
     });
     observer.observe(scroller);
     return () => observer.disconnect();
-  }, [gridWindowed, tab, collectionIdentity]);
+  }, [gridWindowed, tab, collectionIdentity, gridZoom]);
 
   useLayoutEffect(() => {
     const strip = tableTabsRef.current;
@@ -3521,7 +3591,7 @@ export function SheetShell(props: SheetShellProps) {
   function syncGridWindow(): void {
     const scroller = gridScrollRef.current;
     if (!scroller || !table) return;
-    const next = gridWindowRange(scroller.scrollTop, scroller.clientHeight, gridRowHeightRef.current, displayRows.length);
+    const next = gridWindowRange(scroller.scrollTop / gridScale, scroller.clientHeight / gridScale, gridRowHeightRef.current, displayRows.length);
     setGridRange((current) => current.start === next.start && current.end === next.end ? current : next);
   }
 
@@ -3538,15 +3608,15 @@ export function SheetShell(props: SheetShellProps) {
     const scroller = gridScrollRef.current;
     const heights = [...(scroller?.querySelectorAll<HTMLElement>("tbody tr.ts-row") ?? [])].map((row) => row.offsetHeight);
     const pitch = measuredRowPitch(heights) ?? gridRowHeightRef.current;
-    const body = scroller ? Math.max(0, scroller.clientHeight - gridHeaderHeightRef.current) : 0;
+    const body = scroller ? Math.max(0, scroller.clientHeight / gridScale - gridHeaderHeightRef.current) : 0;
     return Math.max(1, Math.floor(body / Math.max(1, pitch)) - 1);
   }
 
   function revealGridRow(index: number): void {
     const scroller = gridScrollRef.current;
     if (scroller) {
-      const top = scrollTopToReveal(index, gridRowHeightRef.current, gridHeaderHeightRef.current, scroller.scrollTop, scroller.clientHeight);
-      if (top !== null) scroller.scrollTop = top;
+      const top = scrollTopToReveal(index, gridRowHeightRef.current, gridHeaderHeightRef.current, scroller.scrollTop / gridScale, scroller.clientHeight / gridScale);
+      if (top !== null) scroller.scrollTop = top * gridScale;
     }
     const rowCount = displayRows.length;
     setGridRange((current) => gridWindowAround(index, current, rowCount));
@@ -5024,11 +5094,12 @@ export function SheetShell(props: SheetShellProps) {
     // Wrap long names and clamp above/below the trigger to the actual viewport.
     // Place it horizontally first: wrapping, and therefore height, follows the
     // width the menu actually takes at its final position.
+    const scale = disclosure.closest("table.ts-grid") ? gridScale : 1;
     const width = menu.getBoundingClientRect().width;
     const left = disclosure.classList.contains("ts-column-toolbar") ? trigger.left : trigger.right - width;
-    menu.style.left = `${Math.max(16, Math.min(left, window.innerWidth - width - 16))}px`;
+    menu.style.left = `${Math.max(16, Math.min(left, window.innerWidth - width - 16)) / scale}px`;
     const height = menu.getBoundingClientRect().height;
-    menu.style.top = `${Math.max(16, Math.min(trigger.bottom + 4, window.innerHeight - height - 16))}px`;
+    menu.style.top = `${Math.max(16, Math.min(trigger.bottom + 4, window.innerHeight - height - 16)) / scale}px`;
   }
 
   /**
@@ -5499,7 +5570,7 @@ export function SheetShell(props: SheetShellProps) {
     // the dense header actions are.
     const resizable = !compactColumnActions && !salesCatalog;
     const gridTable = (
-      <table className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table" onCopy={event => copyGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onCut={event => cutGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
+      <table style={{ zoom: gridScale, width: sizedGrid ? undefined : `${gridZoom}%` }} className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table" onCopy={event => copyGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onCut={event => cutGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? displayRows.length + 1 + Number(hasDraftRow) + Number(hasColumnTotals) : undefined}>
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             {/* The gutter reads "Row" in the DOM (frozen seeds and accessible
@@ -5760,7 +5831,7 @@ export function SheetShell(props: SheetShellProps) {
                   scrollTop against a temporarily shorter table during that commit.
                   A table min-height would instead stretch the rendered row heights. */}
               {gridWindowed
-                ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(displayRows.length, gridRowHeight, gridHeaderHeight, gridFooterHeight) }}>{gridTable}</div>
+                ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(displayRows.length, gridRowHeight, gridHeaderHeight, gridFooterHeight) * gridScale }}>{gridTable}</div>
                 : gridTable}
             </div>
         {cellMenu ? <CellContextMenu x={cellMenu.x} y={cellMenu.y} items={cellMenu.column && cellMenu.trigger ? columnMenuItems(cellMenu.column, cellMenu.trigger) : cellMenu.pasteSpecial ? pasteSpecialItems(cellMenu.position) : cellMenuItems(cellMenu.position)} label={cellMenu.column ? "Column actions" : undefined} onClose={closeCellMenu} /> : null}
@@ -6181,6 +6252,8 @@ export function SheetShell(props: SheetShellProps) {
             return;
           }
           if (event.button === 0 && !event.shiftKey && !draft && !editor) {
+            event.preventDefault();
+            event.currentTarget.focus({ preventScroll: true });
             dragSelectRef.current = { anchor: { entity, field: column.id }, moved: false };
             suppressClickRef.current = false;
           }
@@ -6191,13 +6264,6 @@ export function SheetShell(props: SheetShellProps) {
             if (event.buttons === 0) { fillDragRef.current = null; fillPreviewRef.current = null; setFillPreview(null); return; }
             updateFillPreviewAt(event.clientX, event.clientY);
             return;
-          }
-          if (!dragSelectRef.current) return;
-          if (event.buttons === 0) { dragSelectRef.current = null; setDragSelecting(false); return; }
-          if (event.buttons === 1 && !draft) {
-            dragSelectRef.current.moved = true;
-            setDragSelecting(true);
-            extendSelection(dragSelectRef.current.anchor, { entity, field: column.id });
           }
         }}
         onContextMenu={(event) => {
@@ -6789,7 +6855,15 @@ export function SheetShell(props: SheetShellProps) {
               title={interop?.metadata && !importedXlsx ? "Adding sheets to imported work is not available yet." : "Add sheet (Shift+F11)"}
               onClick={() => void addSheet()}>+</button>
           </div>
-          <div className="ts-workbook-status">{renderStatusStrip()}</div>
+          <div className="ts-workbook-status">{renderStatusStrip()}
+            <div className="ts-grid-zoom" role="group" aria-label="Grid zoom">
+              <button type="button" aria-label="Zoom out grid" disabled={gridZoom === 50} onClick={() => stepGridZoom(-10)}>−</button>
+              <input type="range" aria-label="Grid zoom percentage" min="50" max="200" step="5" value={gridZoom} onChange={event => setGridZoom(Number(event.target.value))} />
+              <button type="button" aria-label="Zoom in grid" disabled={gridZoom === 200} onClick={() => stepGridZoom(10)}>+</button>
+              <output aria-live="polite">{gridZoom}%</output>
+              <button type="button" aria-label="Reset grid zoom" onClick={() => setGridZoom(100)}>Reset</button>
+            </div>
+          </div>
         </footer>
       </div>
     );

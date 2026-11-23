@@ -221,6 +221,78 @@ describe("keyboard history queue", () => {
     return { container, update, key, cell, view };
   }
 
+  it.each([100, 200])("reveals a partially clipped drag endpoint at %s%% zoom", async zoom => {
+    try {
+      const ui = await mount();
+      const grid = ui.container.querySelector<HTMLElement>(".ts-grid-scroll")!;
+      if (zoom === 200) await act(async () => {
+        for (let i = 0; i < 10; i++) ui.container.querySelector<HTMLButtonElement>('[aria-label="Zoom in grid"]')!.click();
+      });
+      expect(ui.container.querySelector<HTMLInputElement>('[aria-label="Grid zoom percentage"]')!.value).toBe(String(zoom));
+      const scale = zoom / 100;
+      Object.defineProperties(grid, { clientWidth: { value: 200 * scale, configurable: true }, clientHeight: { value: 80 * scale, configurable: true } });
+      vi.spyOn(grid, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 200 * scale, 80 * scale));
+      vi.spyOn(grid.querySelector<HTMLElement>("thead")!, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 200 * scale, 20 * scale));
+      grid.querySelectorAll<HTMLTableRowElement>("tbody tr.ts-row").forEach((row, r) => {
+        vi.spyOn(row, "getBoundingClientRect").mockImplementation(() => new DOMRect(0, (20 + r * 40) * scale - grid.scrollTop, 350 * scale, 40 * scale));
+        row.querySelectorAll<HTMLElement>("td[data-work-field]").forEach((cell, c) => {
+          vi.spyOn(cell, "getBoundingClientRect").mockImplementation(() => new DOMRect((30 + c * 80) * scale - grid.scrollLeft, (20 + r * 40) * scale - grid.scrollTop, 80 * scale, 40 * scale));
+        });
+      });
+      await act(async () => {
+        ui.cell().dispatchEvent(new MouseEvent("mousedown", { button: 0, buttons: 1, clientX: 60 * scale, clientY: 40 * scale, bubbles: true }));
+        window.dispatchEvent(new MouseEvent("mousemove", { buttons: 1, clientX: 195 * scale, clientY: 75 * scale }));
+      });
+      expect(grid.scrollTop).toBeGreaterThan(0);
+      expect(grid.scrollLeft).toBeGreaterThan(0);
+      expect(ui.container.querySelector('[data-testid="cell:entity-b:c-priority"]')!.getAttribute("aria-selected")).toBe("true");
+      await act(async () => window.dispatchEvent(new MouseEvent("mouseup")));
+    } finally { vi.restoreAllMocks(); }
+  });
+
+  it("uses the current zoom when ResizeObserver updates a windowed grid", async () => {
+    const observers = new Map<ResizeObserver, { callback: ResizeObserverCallback; elements: Set<Element> }>();
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: ResizeObserverCallback) { observers.set(this as unknown as ResizeObserver, { callback, elements: new Set() }); }
+      observe(element: Element) { observers.get(this as unknown as ResizeObserver)!.elements.add(element); }
+      disconnect() { observers.delete(this as unknown as ResizeObserver); }
+    });
+    const flush = async () => {
+      while (frames.length) {
+        const batch = frames.splice(0);
+        await act(async () => batch.forEach(callback => callback(0)));
+      }
+    };
+    try {
+      const view = makeView();
+      view.table.rows = Array.from({ length: 300 }, (_, i) => {
+        const entity = i === 0 ? entityA : `row-${i}`;
+        return { id: entity, key: entity, fields: [projected(entity, "c-title", { kind: "text", value: `Row ${i}` })] };
+      });
+      vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.matches("tr.ts-row") ? 28 : this.matches("thead") ? 31 : 0; });
+      const ui = await mount({ view });
+      await flush();
+      const grid = ui.container.querySelector<HTMLElement>(".ts-grid-scroll")!;
+      Object.defineProperty(grid, "clientHeight", { value: 400, configurable: true });
+      grid.scrollTop = 2800;
+      await act(async () => {
+        for (let i = 0; i < 10; i++) ui.container.querySelector<HTMLButtonElement>('[aria-label="Zoom in grid"]')!.click();
+      });
+      await flush();
+      expect(ui.container.querySelector<HTMLInputElement>('[aria-label="Grid zoom percentage"]')!.value).toBe("200");
+      expect(ui.container.querySelector('tr[aria-rowindex="52"]')).not.toBeNull();
+      Object.defineProperty(grid, "clientHeight", { value: 600, configurable: true });
+      await act(async () => {
+        for (const [observer, entry] of observers) if (entry.elements.has(grid)) entry.callback([], observer);
+      });
+      await flush();
+      expect(ui.container.querySelector('tr[aria-rowindex="52"]')).not.toBeNull();
+      expect(ui.container.querySelector('tr[aria-rowindex="60"]')).not.toBeNull();
+    } finally { vi.restoreAllMocks(); vi.unstubAllGlobals(); }
+  });
+
   it("refuses an oversized formatting selection before sending a command or adding history", async () => {
     const view = makeView();
     view.table.native_table_profile = true;
