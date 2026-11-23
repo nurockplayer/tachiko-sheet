@@ -431,19 +431,19 @@ describe("headerless worksheets use the existing grid", () => {
     }));
     const ui = await mount(view, { importedSourceName });
     const firstAddress = importedSourceName ? "A2" : "A1";
-    const nextAddress = importedSourceName ? "A3" : "A2";
+    const nextCell = () => ui.container.querySelector<HTMLElement>('[data-work-entity="r-1"][data-work-field="c-title"]');
     await ui.focus(firstAddress);
     await ui.type("Changed");
     const grid = ui.container.querySelector<HTMLElement>(".ts-grid-scroll")!;
     await act(async () => { grid.scrollTop = 20000; grid.dispatchEvent(new Event("scroll")); });
-    expect(ui.cell(nextAddress)).toBeUndefined();
+    expect(nextCell()).toBeNull();
     expect(ui.container.querySelector('[data-testid="cell-editor"]')).not.toBeNull();
     await ui.key("Enter");
     await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
     expect(ui.onCommit).toHaveBeenCalledWith(expect.anything(), { entity: "r-0", field: "c-title" }, { kind: "text", value: "Changed" });
     expect(ui.container.querySelector('[data-testid="cell-editor"]')).toBeNull();
-    expect(ui.cell(nextAddress)).toBeDefined();
-    expect(document.activeElement).toBe(ui.cell(nextAddress));
+    expect(nextCell()).not.toBeNull();
+    expect(document.activeElement).toBe(nextCell());
   });
 
   it.each(["F2", "double-click"])("keeps imported headerless formulas intact on %s", async gesture => {
