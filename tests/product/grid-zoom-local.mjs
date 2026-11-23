@@ -110,9 +110,36 @@ try {
     });
     await page.mouse.up();
     assert.ok(await grid.locator('tbody tr[aria-rowindex="20"] td[aria-selected="true"]').count() > 0, `selection extends while scrolling at ${zoom}%`);
-    console.log(`PASS: drag selection scrolls down and right at ${zoom}%`);
+    const reverse = await scrollport.evaluate(node => {
+      const port = node.getBoundingClientRect();
+      const target = document.elementFromPoint(port.x + 200, port.y + 150).closest("td[data-work-field]");
+      const box = target.getBoundingClientRect();
+      return { x: box.x + box.width / 2, y: box.y + box.height / 2, row: Number(target.closest("tr").getAttribute("aria-rowindex")), top: node.scrollTop, left: node.scrollLeft };
+    });
+    await page.mouse.move(reverse.x, reverse.y); await page.mouse.down();
+    await page.mouse.move(port.x - 30, port.y - 30, { steps: 10 });
+    await page.waitForFunction(({ top, left, row }) => {
+      const port = document.querySelector(".ts-grid-scroll");
+      return port.scrollTop < top - 150 && port.scrollLeft < left - 50
+        && [...port.querySelectorAll('tbody tr.ts-row:has(td[aria-selected="true"])')].some(item => Number(item.getAttribute("aria-rowindex")) < row);
+    }, reverse);
+    await page.mouse.up();
+    console.log(`PASS: drag selection scrolls and extends in all four directions at ${zoom}%`);
   }
   await scrollport.evaluate(node => { node.style.width = ""; });
+  await setZoom(200);
+  await scrollport.evaluate(node => { node.scrollTop = node.scrollHeight / 2; });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.setViewportSize({ width: 1500, height: 1100 });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.ok(await scrollport.evaluate(node => {
+    const port = node.getBoundingClientRect();
+    return [...node.querySelectorAll("tbody tr.ts-row")].some(row => {
+      const box = row.getBoundingClientRect();
+      return box.top <= port.top + 150 && box.bottom > port.top + 150;
+    });
+  }), "200% zoom then resize renders rows at the viewport instead of blank spacer");
+  console.log("PASS: windowed rows remain visible after zoom 200% then window resize");
   await page.getByRole("button", { name: "Reset grid zoom", exact: true }).click();
   assert.equal(await slider.inputValue(), "100");
   await page.getByRole("button", { name: "Zoom in grid", exact: true }).click();

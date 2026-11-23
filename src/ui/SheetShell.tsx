@@ -1028,12 +1028,17 @@ export function SheetShell(props: SheetShellProps) {
     const scroll = () => {
       const grid = gridScrollRef.current;
       if ((!fillDragRef.current && !dragSelectRef.current) || !grid) { stopScroll(); return; }
-      const right = grid.getBoundingClientRect().left + grid.clientLeft + grid.clientWidth;
-      const bottom = grid.getBoundingClientRect().top + grid.clientTop + grid.clientHeight;
+      const bounds = grid.getBoundingClientRect();
+      const left = bounds.left + grid.clientLeft;
+      const top = bounds.top + grid.clientTop + (grid.querySelector("thead")?.getBoundingClientRect().height ?? 0);
+      const right = left + grid.clientWidth;
+      const bottom = bounds.top + grid.clientTop + grid.clientHeight;
       if (dragSelectRef.current) {
+        if (pointerY <= top) grid.scrollTop -= Math.min(60, 6 + (top - pointerY) * 0.4);
+        if (pointerX <= left) grid.scrollLeft -= Math.min(60, 6 + (left - pointerX) * 0.4);
         if (pointerY >= bottom) grid.scrollTop += Math.min(60, 6 + (pointerY - bottom) * 0.4);
         if (pointerX >= right) grid.scrollLeft += Math.min(60, 6 + (pointerX - right) * 0.4);
-        updateDragSelectionRef.current(Math.min(pointerX, right - 1), Math.min(pointerY, bottom - 1));
+        updateDragSelectionRef.current(Math.max(left + 1, Math.min(pointerX, right - 1)), Math.max(top + 1, Math.min(pointerY, bottom - 1)));
         return;
       }
       if (pointerY < bottom) { stopScroll(); return; }
@@ -1045,12 +1050,14 @@ export function SheetShell(props: SheetShellProps) {
         if (event.buttons === 0) { stopScroll(); dragSelectRef.current = null; setDragSelecting(false); return; }
         pointerX = event.clientX;
         pointerY = event.clientY;
-        updateDragSelectionRef.current(event.clientX, event.clientY);
         const grid = gridScrollRef.current!;
         const bounds = grid.getBoundingClientRect();
-        const right = bounds.left + grid.clientLeft + grid.clientWidth;
+        const left = bounds.left + grid.clientLeft;
+        const top = bounds.top + grid.clientTop + (grid.querySelector("thead")?.getBoundingClientRect().height ?? 0);
+        const right = left + grid.clientWidth;
         const bottom = bounds.top + grid.clientTop + grid.clientHeight;
-        if (pointerX >= right || pointerY >= bottom) {
+        updateDragSelectionRef.current(Math.max(left + 1, Math.min(pointerX, right - 1)), Math.max(top + 1, Math.min(pointerY, bottom - 1)));
+        if (pointerX <= left || pointerY <= top || pointerX >= right || pointerY >= bottom) {
           if (scrollTimer === null) scrollTimer = window.setInterval(scroll, 50);
         } else stopScroll();
         return;
@@ -1306,7 +1313,7 @@ export function SheetShell(props: SheetShellProps) {
       const gutterWidth = gutter.getBoundingClientRect().width;
       const columnWidth = firstColumn.getBoundingClientRect().width;
       const scrollportWidth = grid.clientWidth;
-      grid.style.setProperty("--ts-frozen-gutter-width", `${gutterWidth}px`);
+      grid.style.setProperty("--ts-frozen-gutter-width", `${gutterWidth / gridScale}px`);
       setFrozenColumnGeometry(current => current.gutterWidth === gutterWidth && current.columnWidth === columnWidth && current.scrollportWidth === scrollportWidth
         ? current : { gutterWidth, columnWidth, scrollportWidth });
     };
@@ -1316,7 +1323,7 @@ export function SheetShell(props: SheetShellProps) {
     observer?.observe(firstColumn);
     observer?.observe(grid);
     return () => observer?.disconnect();
-  }, [freezeRequested, table, tab, gridWindowed]);
+  }, [freezeRequested, table, tab, gridWindowed, gridZoom]);
   // The live row order for async continuations: a translation read against one
   // display order must not be applied after the rows moved under it.
   const displayRowsRef = useRef(displayRows);
@@ -1756,8 +1763,7 @@ export function SheetShell(props: SheetShellProps) {
       if (!drag.moved && end.entity === drag.anchor.entity && end.field === drag.anchor.field) return;
       drag.moved = true;
       setDragSelecting(true);
-      // Moving the grid under the pointer changes which cell it addresses.
-      extendSelection(drag.anchor, end, false);
+      extendSelection(drag.anchor, end);
       return;
     }
   }
@@ -2427,7 +2433,7 @@ export function SheetShell(props: SheetShellProps) {
     });
     observer.observe(scroller);
     return () => observer.disconnect();
-  }, [gridWindowed, tab, collectionIdentity]);
+  }, [gridWindowed, tab, collectionIdentity, gridZoom]);
 
   useLayoutEffect(() => {
     const strip = tableTabsRef.current;
@@ -5088,11 +5094,12 @@ export function SheetShell(props: SheetShellProps) {
     // Wrap long names and clamp above/below the trigger to the actual viewport.
     // Place it horizontally first: wrapping, and therefore height, follows the
     // width the menu actually takes at its final position.
+    const scale = disclosure.closest("table.ts-grid") ? gridScale : 1;
     const width = menu.getBoundingClientRect().width;
     const left = disclosure.classList.contains("ts-column-toolbar") ? trigger.left : trigger.right - width;
-    menu.style.left = `${Math.max(16, Math.min(left, window.innerWidth - width - 16))}px`;
+    menu.style.left = `${Math.max(16, Math.min(left, window.innerWidth - width - 16)) / scale}px`;
     const height = menu.getBoundingClientRect().height;
-    menu.style.top = `${Math.max(16, Math.min(trigger.bottom + 4, window.innerHeight - height - 16))}px`;
+    menu.style.top = `${Math.max(16, Math.min(trigger.bottom + 4, window.innerHeight - height - 16)) / scale}px`;
   }
 
   /**
