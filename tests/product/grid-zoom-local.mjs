@@ -127,6 +127,25 @@ try {
     console.log(`PASS: drag selection scrolls and extends in all four directions at ${zoom}%`);
   }
   await scrollport.evaluate(node => { node.style.width = ""; });
+  for (const zoom of [50, 200]) {
+    await setZoom(zoom);
+    const trigger = grid.getByRole("button", { name: "Column actions for Column 1", exact: true });
+    await trigger.click();
+    const menu = grid.locator("details[open] .ts-command-menu");
+    const triggerBox = await trigger.boundingBox();
+    const menuBox = await menu.boundingBox();
+    const viewport = page.viewportSize();
+    assert.ok(menuBox.x >= 15 && menuBox.x + menuBox.width <= viewport.width - 15, `menu within viewport at ${zoom}%`);
+    assert.ok(Math.abs(menuBox.y - Math.max(16, Math.min(triggerBox.y + triggerBox.height + 4, viewport.height - menuBox.height - 16))) < 2, `menu aligned vertically at ${zoom}%`);
+    await menu.getByRole("button", { name: "Freeze first column", exact: true }).click();
+    await scrollport.evaluate(node => { node.scrollLeft = 100; });
+    const frozen = await grid.locator("thead .ts-frozen-first-column").boundingBox();
+    const gutter = await grid.locator(".ts-gutter-head").boundingBox();
+    assert.ok(Math.abs(frozen.x - gutter.x - gutter.width) < 2, `frozen column follows gutter at ${zoom}%`);
+    await trigger.click();
+    await menu.getByRole("button", { name: "Freeze first column", exact: true }).click();
+    console.log(`PASS: frozen offset and column menu placement at ${zoom}%`);
+  }
   await setZoom(200);
   await scrollport.evaluate(node => { node.scrollTop = node.scrollHeight / 2; });
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
