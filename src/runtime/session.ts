@@ -684,9 +684,10 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         noResident = true;
       }
       if (!noResident) throw new Error("A table is still open. Reload before creating a new table.");
-      return openSession(kit, client, requestedAt, () => name === undefined
-        ? capability(client.newBlankWorkbook, "blank workbook").call(client)
-        : capability(client.newTableWorkingSize, "new table").call(client, name, inputs), false, true);
+      const create = name === undefined
+        ? capability(client.newBlankWorkbook, "blank workbook").bind(client)
+        : capability(client.newTableWorkingSize, "new table").bind(client, name, inputs);
+      return openSession(kit, client, requestedAt, create, false, true);
     });
   }
 
