@@ -1,6 +1,6 @@
 import type { CellEdit } from "../contracts.js";
 import { cellEditSlot, pastedCellEdit } from "./cell-edit-slot.js";
-import { EDIT_CELLS_MAX, type CellRectangle } from "./clipboard.js";
+import { clipboardBoolean, EDIT_CELLS_MAX, type CellRectangle } from "./clipboard.js";
 import { fieldForColumn, type TableColumn, type TableRow } from "./projection-access.js";
 import type { FormulaCopy } from "../../public/core-kit/runtime/protocol.js";
 
@@ -69,7 +69,11 @@ export function fillDownPlan(rows: readonly TableRow[], columns: readonly TableC
       } else {
         const sourceSlot = cellEditSlot(sourceRow, sourceColumn);
         if (!sourceSlot || !slot || slot.formula) throw new FillDownRefusal(NON_EDITABLE);
-        const edit = pastedCellEdit(slot, sourceSlot.original, native);
+        const raw = sourceSlot.original;
+        if (slot.kind === "boolean" && raw !== "" && !/^(true|false)$/i.test(raw)) {
+          throw new FillDownRefusal("A filled Yes/No value must be true or false. Nothing was filled.");
+        }
+        const edit = pastedCellEdit(slot, clipboardBoolean(raw, slot.kind), native);
         if (edit) edits.push(edit);
       }
     }
