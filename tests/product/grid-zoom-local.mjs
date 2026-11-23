@@ -109,7 +109,8 @@ try {
       return port.scrollTop > 300 && port.scrollLeft > 100 && selected.some(row => Number(row.getAttribute("aria-rowindex")) > 20);
     });
     await page.mouse.up();
-    assert.ok(await grid.locator('tbody tr[aria-rowindex="20"] td[aria-selected="true"]').count() > 0, `selection extends while scrolling at ${zoom}%`);
+    assert.equal(await cell(0, 0).getAttribute("aria-selected"), "true", `drag keeps its anchor selected at ${zoom}%`);
+    assert.ok(await grid.locator('tbody tr.ts-row:has(td[aria-selected="true"])').evaluateAll(rows => rows.some(row => Number(row.getAttribute("aria-rowindex")) > 20)), `selection extends beyond row 20 while scrolling at ${zoom}%`);
     const reverse = await scrollport.evaluate(node => {
       const port = node.getBoundingClientRect();
       const target = document.elementFromPoint(port.x + 200, port.y + 150).closest("td[data-work-field]");
