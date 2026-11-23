@@ -435,7 +435,11 @@ describe("headerless worksheets use the existing grid", () => {
     await ui.focus(firstAddress);
     await ui.type("Changed");
     const grid = ui.container.querySelector<HTMLElement>(".ts-grid-scroll")!;
-    await act(async () => { grid.scrollTop = 20000; grid.dispatchEvent(new Event("scroll")); });
+    await act(async () => {
+      grid.scrollTop = 20000;
+      grid.dispatchEvent(new Event("scroll"));
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    });
     expect(nextCell()).toBeNull();
     expect(ui.container.querySelector('[data-testid="cell-editor"]')).not.toBeNull();
     await ui.key("Enter");
