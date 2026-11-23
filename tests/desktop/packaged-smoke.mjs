@@ -305,7 +305,15 @@ async function main() {
     await waitFor(() => button("New table"), "New table enabled");
     const choose = (id) => window.__TAURI_INTERNALS__.invoke("e2e_menu_command", { id });
     await choose("new-table");
-    const form = await waitFor(() => dialog("New table"), "File > New Table dialog");
+    const a1 = await waitFor(() => current() && document.querySelector('[data-testid="worksheet:A1"]'), "File > New Workbook blank worksheet");
+    if (a1.textContent !== "" || dialog("New table") || grid()) throw new Error("New Workbook did not open a blank worksheet without a table dialog");
+    click(await waitFor(() => button("Close project"), "Close blank workbook"));
+    await waitFor(() => dialog("Unsaved work") || document.querySelector('.ts-app[data-view="home"]'), "close blank workbook outcome");
+    const unsaved = dialog("Unsaved work");
+    if (unsaved) click(button("Close without saving", unsaved));
+    await waitFor(() => document.querySelector('.ts-app[data-view="home"]'), "Home after blank workbook");
+    click(await waitFor(() => button("New table"), "New table enabled"));
+    const form = await waitFor(() => dialog("New table"), "New table button dialog");
     click(button("Cancel", form));
     await waitFor(() => !dialog("New table"), "New table dialog closed");
     await choose("open");
@@ -316,7 +324,7 @@ async function main() {
     for (const id of ["save", "save-copy", "print", "undo", "redo"]) await choose(id);
     return true;
   `);
-  pass("the menu has every File and Edit command, and File > New Table opens its dialog");
+  pass("the menu has every File and Edit command; New Workbook opens a blank worksheet and New table opens its dialog");
 
   // 1b. The notices the footer links to ship with the page.
   const notices = await evaluate(`
