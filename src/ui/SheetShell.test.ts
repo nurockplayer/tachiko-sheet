@@ -226,8 +226,9 @@ describe("keyboard history queue", () => {
       const ui = await mount();
       const grid = ui.container.querySelector<HTMLElement>(".ts-grid-scroll")!;
       if (zoom === 200) await act(async () => {
-        for (let i = 0; i < 10; i++) grid.dispatchEvent(new WheelEvent("wheel", { ctrlKey: true, deltaY: -100, bubbles: true, cancelable: true }));
+        for (let i = 0; i < 10; i++) ui.container.querySelector<HTMLButtonElement>('[aria-label="Zoom in grid"]')!.click();
       });
+      expect(ui.container.querySelector<HTMLInputElement>('[aria-label="Grid zoom percentage"]')!.value).toBe(String(zoom));
       const scale = zoom / 100;
       Object.defineProperties(grid, { clientWidth: { value: 200 * scale, configurable: true }, clientHeight: { value: 80 * scale, configurable: true } });
       vi.spyOn(grid, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 200 * scale, 80 * scale));
@@ -272,13 +273,15 @@ describe("keyboard history queue", () => {
       });
       vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.matches("tr.ts-row") ? 28 : this.matches("thead") ? 31 : 0; });
       const ui = await mount({ view });
+      await flush();
       const grid = ui.container.querySelector<HTMLElement>(".ts-grid-scroll")!;
       Object.defineProperty(grid, "clientHeight", { value: 400, configurable: true });
       grid.scrollTop = 2800;
       await act(async () => {
-        for (let i = 0; i < 10; i++) grid.dispatchEvent(new WheelEvent("wheel", { ctrlKey: true, deltaY: -100, bubbles: true, cancelable: true }));
+        for (let i = 0; i < 10; i++) ui.container.querySelector<HTMLButtonElement>('[aria-label="Zoom in grid"]')!.click();
       });
       await flush();
+      expect(ui.container.querySelector<HTMLInputElement>('[aria-label="Grid zoom percentage"]')!.value).toBe("200");
       expect(ui.container.querySelector('tr[aria-rowindex="52"]')).not.toBeNull();
       Object.defineProperty(grid, "clientHeight", { value: 600, configurable: true });
       await act(async () => {
