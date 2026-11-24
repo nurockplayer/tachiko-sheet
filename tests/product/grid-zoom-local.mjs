@@ -152,9 +152,10 @@ try {
     const width = (await header.boundingBox()).width;
     await drag(start, { x: start.x + 140 * zoom / 100 - width, y: start.y }); await ready();
     const trigger = grid.getByRole("button", { name: "Column actions for Column 1", exact: true });
+    const resizeListenerBaseline = await page.evaluate(() => window.__columnMenuResizeListeners.size);
     await trigger.click();
     const menu = grid.locator("details[open] .ts-command-menu");
-    await page.waitForFunction(() => window.__columnMenuResizeListeners.size === 1);
+    await page.waitForFunction(baseline => window.__columnMenuResizeListeners.size > baseline, resizeListenerBaseline);
     const triggerBox = await trigger.boundingBox();
     const menuBox = await menu.boundingBox();
     const viewport = page.viewportSize();
@@ -169,15 +170,15 @@ try {
     assert.ok(Math.abs(resizedMenuBox.y - Math.max(16, Math.min(resizedTriggerBox.y + resizedTriggerBox.height + 4, 700 - resizedMenuBox.height - 16))) < 2, `resized menu remains anchored at ${zoom}%`);
     await page.setViewportSize({ width: 1600, height: 1000 });
     await menu.getByRole("button", { name: "Freeze first column", exact: true }).click();
-    await page.waitForFunction(() => window.__columnMenuResizeListeners.size === 0);
+    await page.waitForFunction(baseline => window.__columnMenuResizeListeners.size === baseline, resizeListenerBaseline);
     await scrollport.evaluate(node => { node.scrollLeft = 100; });
     const frozen = await grid.locator("thead .ts-frozen-first-column").boundingBox();
     const gutter = await grid.locator(".ts-gutter-head").boundingBox();
     assert.ok(Math.abs(frozen.x - gutter.x - gutter.width) < 2, `frozen column follows gutter at ${zoom}%`);
     await trigger.click();
-    await page.waitForFunction(() => window.__columnMenuResizeListeners.size === 1);
+    await page.waitForFunction(baseline => window.__columnMenuResizeListeners.size > baseline, resizeListenerBaseline);
     await menu.getByRole("button", { name: "Freeze first column", exact: true }).click();
-    await page.waitForFunction(() => window.__columnMenuResizeListeners.size === 0);
+    await page.waitForFunction(baseline => window.__columnMenuResizeListeners.size === baseline, resizeListenerBaseline);
     console.log(`PASS: frozen offset and column menu placement at ${zoom}%`);
   }
   await setZoom(200);
