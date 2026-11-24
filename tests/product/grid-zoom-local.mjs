@@ -128,7 +128,21 @@ try {
     console.log(`PASS: drag selection scrolls and extends in all four directions at ${zoom}%`);
   }
   await scrollport.evaluate(node => { node.style.width = ""; });
-  for (const zoom of [50, 200]) {
+  await page.evaluate(() => {
+    const listeners = new Set();
+    const add = window.addEventListener.bind(window);
+    const remove = window.removeEventListener.bind(window);
+    window.__columnMenuResizeListeners = listeners;
+    window.addEventListener = function(type, listener, ...options) {
+      if (type === "resize") listeners.add(listener);
+      return add(type, listener, ...options);
+    };
+    window.removeEventListener = function(type, listener, ...options) {
+      if (type === "resize") listeners.delete(listener);
+      return remove(type, listener, ...options);
+    };
+  });
+  for (const zoom of [50, 100, 200]) {
     await setZoom(zoom);
     // Earlier resize cases widened A; keep freeze eligible at both scales.
     const header = grid.getByRole("columnheader", { name: "Column 1", exact: true });
@@ -140,17 +154,27 @@ try {
     const trigger = grid.getByRole("button", { name: "Column actions for Column 1", exact: true });
     await trigger.click();
     const menu = grid.locator("details[open] .ts-command-menu");
+    await page.waitForFunction(() => window.__columnMenuResizeListeners.size === 1);
     const triggerBox = await trigger.boundingBox();
     const menuBox = await menu.boundingBox();
     const viewport = page.viewportSize();
     assert.ok(menuBox.x >= 15 && menuBox.x + menuBox.width <= viewport.width - 15, `menu within viewport at ${zoom}%`);
     assert.ok(Math.abs(menuBox.y - Math.max(16, Math.min(triggerBox.y + triggerBox.height + 4, viewport.height - menuBox.height - 16))) < 2, `menu aligned vertically at ${zoom}%`);
+    assert.ok(menuBox.y >= 0 && menuBox.y + menuBox.height <= viewport.height, `menu height fits viewport at ${zoom}%`);
+    await page.setViewportSize({ width: 1300, height: 700 });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const resizedTriggerBox = await trigger.boundingBox();
+    const resizedMenuBox = await menu.boundingBox();
+    assert.ok(resizedMenuBox.y >= 0 && resizedMenuBox.y + resizedMenuBox.height <= 700, `resized menu stays inside viewport at ${zoom}%`);
+    assert.ok(Math.abs(resizedMenuBox.y - Math.max(16, Math.min(resizedTriggerBox.y + resizedTriggerBox.height + 4, 700 - resizedMenuBox.height - 16))) < 2, `resized menu remains anchored at ${zoom}%`);
+    await page.setViewportSize({ width: 1600, height: 1000 });
     await menu.getByRole("button", { name: "Freeze first column", exact: true }).click();
     await scrollport.evaluate(node => { node.scrollLeft = 100; });
     const frozen = await grid.locator("thead .ts-frozen-first-column").boundingBox();
     const gutter = await grid.locator(".ts-gutter-head").boundingBox();
     assert.ok(Math.abs(frozen.x - gutter.x - gutter.width) < 2, `frozen column follows gutter at ${zoom}%`);
     await trigger.click();
+    await page.waitForFunction(() => window.__columnMenuResizeListeners.size === 0);
     await menu.getByRole("button", { name: "Freeze first column", exact: true }).click();
     console.log(`PASS: frozen offset and column menu placement at ${zoom}%`);
   }
