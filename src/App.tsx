@@ -1639,7 +1639,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         throw new Error("Finish or cancel unfinished edits and wait for the values before preparing a download.");
       }
       const exported = format === "ro"
-        ? await runtime.exportWorkFile(witnessOf(live))
+        ? await runtime.exportWorkFile(witnessOf(live), importMappingUntrusted ? undefined : metadata ?? undefined)
         : metadata
           ? await runtime.exportSpreadsheet(witnessOf(live), metadata, format)
           : await runtime.exportNativeTables(witnessOf(live), live.table.collection.key, format);
@@ -1933,9 +1933,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       // work-file origin or authored schema, the explicit v3 project export
       // otherwise. There is no legacy writer or writer-selection branch.
       const portableSave = !importedSourceRef.current && (live.openedFromWorkFile || live.requiresPortableSave);
+      const metadata = interop?.metadata ?? undefined;
       const snapshot = portableSave
-        ? await runtime.exportWorkFile(witnessOf(live))
-        : await runtime.exportOpaque(witnessOf(live));
+        ? await runtime.exportWorkFile(witnessOf(live), metadata)
+        : await runtime.exportOpaque(witnessOf(live), metadata);
       const snapshotRevision = snapshot.revision;
       if (portableSave) validateWorkFileCopy({
         ...snapshot, importedSource: importedSourceRef.current ?? undefined,

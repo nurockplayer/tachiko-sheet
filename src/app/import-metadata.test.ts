@@ -70,6 +70,7 @@ it.each([
     await act(async () => current().onRefresh());
     await assertRefused();
     await downloadRo();
+    expect(runtime.exportWorkFile).toHaveBeenLastCalledWith({ occurrence: "o1", revision: "r1" }, undefined);
     // An acknowledged publication without a mapping cannot restore trust either.
     runtime.renameTable.mockImplementation(async () => ({ view, publication }));
     await act(async () => { await current().onRenameTable!({ occurrence: "o1", revision: "r1" }, "s1", "New"); });
@@ -89,9 +90,11 @@ it.each([
       expect(runtime.exportSpreadsheet).toHaveBeenCalledWith({ occurrence: "o1", revision: "r1" }, metadata, format);
     }
     await downloadRo();
+    expect(runtime.exportWorkFile).toHaveBeenLastCalledWith({ occurrence: "o1", revision: "r1" }, metadata);
     runtime.exportWorkFile.mockClear();
     await act(async () => { expect(await current().onCreateCopy("Saved")).toMatchObject({ saved: true }); });
     expect(runtime.exportWorkFile).not.toHaveBeenCalled();
+    expect(runtime.exportOpaque).toHaveBeenLastCalledWith({ occurrence: "o1", revision: "r1" }, metadata);
     expect(copies.createOpaque).toHaveBeenCalledWith("Saved", expect.objectContaining({ importedSource: source }));
   } finally {
     await act(async () => root.unmount());

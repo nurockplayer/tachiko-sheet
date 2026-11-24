@@ -1472,28 +1472,42 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
-  function exportOpaque(witness: ViewWitness): Promise<OpaqueProjectExport> {
+  function exportSnapshot(
+    witness: ViewWitness,
+    metadata: InteropMetadata | undefined,
+    format: "opaque project export" | "work file export",
+  ): Promise<OpaqueProjectExport> {
     return enqueue(async () => {
       const live = requireWitness(witness);
       const expected = epoch;
       const { kit, client } = await loadKitOnce();
       assertUsable(expected);
-      const project = await afterUsable(expected, dispatch(kit, () => client.exportProjectV3(live.revision)));
-      requireCurrentProjectionRevision(live.revision, project.revision, "opaque project export");
-      return { revision: project.revision, bytes: project.bytes.slice(0), ...((project.import_metadata ?? importedMapping) ? { importMetadata: project.import_metadata ?? importedMapping } : {}) };
+      const exportProject = format === "work file export" ? client.exportPortableRo : client.exportProjectV3;
+      const request = (hostMetadata?: InteropMetadata) => afterUsable(expected, dispatch(kit, () =>
+        hostMetadata === undefined ? exportProject.call(client, live.revision) : exportProject.call(client, live.revision, hostMetadata)));
+      const project = await request(metadata).catch((error: unknown) => {
+        if (metadata === undefined || !(error instanceof kit.DesignerRuntimeError) ||
+          error.failure.code !== "imported_spreadsheet_export_refused" ||
+          !error.failure.diagnostics.some(diagnostic => diagnostic.message ===
+            "Import metadata is stale; use the mapping published by the current worksheet lifecycle.")) throw error;
+        // With no host mapping, Work exports its own current lifecycle mapping.
+        assertUsable(expected);
+        return request();
+      });
+      requireCurrentProjectionRevision(live.revision, project.revision, format);
+      return {
+        revision: project.revision, bytes: project.bytes.slice(0),
+        ...(project.import_metadata ? { importMetadata: project.import_metadata } : {}),
+      };
     });
   }
 
-  function exportWorkFile(witness: ViewWitness): Promise<OpaqueProjectExport> {
-    return enqueue(async () => {
-      const live = requireWitness(witness);
-      const expected = epoch;
-      const { kit, client } = await loadKitOnce();
-      assertUsable(expected);
-      const project = await afterUsable(expected, dispatch(kit, () => client.exportPortableRo(live.revision)));
-      requireCurrentProjectionRevision(live.revision, project.revision, "work file export");
-      return { revision: project.revision, bytes: project.bytes.slice(0), ...((project.import_metadata ?? importedMapping) ? { importMetadata: project.import_metadata ?? importedMapping } : {}) };
-    });
+  function exportOpaque(witness: ViewWitness, metadata?: InteropMetadata): Promise<OpaqueProjectExport> {
+    return exportSnapshot(witness, metadata, "opaque project export");
+  }
+
+  function exportWorkFile(witness: ViewWitness, metadata?: InteropMetadata): Promise<OpaqueProjectExport> {
+    return exportSnapshot(witness, metadata, "work file export");
   }
 
   function listKeyedGroupedSumBindings(witness: ViewWitness): Promise<KeyedGroupedSumBindingCatalog> {

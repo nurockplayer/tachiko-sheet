@@ -129,6 +129,32 @@ describe("native runtime channel", () => {
     expect(messages[1]).toMatchObject({ id: 2, status: "error", error: { code: "worker_failure", message: "Designer project export length did not match its receipt." } });
   });
 
+  it.each([
+    ["export_project_v3", "project_exported"],
+    ["export_portable_ro", "portable_ro_exported"],
+  ])("encodes %s host metadata and preserves Work's companion", async (kind, type) => {
+    const revision = "resident/1";
+    const metadata = { version: 1, sheets: [{ schema_id: "s1", name: "Host name", has_header: true,
+      columns: [{ field_id: "f1", name: "Item", width: 24 }], rows: [] }] };
+    const companion = { ...metadata, sheets: [{ ...metadata.sheets[0], name: "Work name" }] };
+    const frames: ReturnType<typeof parseRequest>[] = [];
+    const channel = new NativeRuntimeChannel({
+      attach: async () => 1,
+      dispatch: async frame => {
+        frames.push(parseRequest(frame));
+        return replyFrame({ status: "ok", response: { type, payload: { revision, byte_length: 0, import_metadata: companion } } });
+      },
+    }, () => []);
+    const { messages } = collect(channel);
+    channel.postMessage({ id: 1, kind, expected_revision: revision, metadata });
+    channel.postMessage({ id: 2, kind, expected_revision: revision });
+    await vi.waitFor(() => expect(messages).toHaveLength(2));
+    expect(frames.map(frame => frame.header.kind)).toEqual([kind, kind]);
+    expect(JSON.parse(frames[0]!.request)).toEqual({ expected_revision: revision, metadata });
+    expect(frames[1]!.request).toBe(revision);
+    expect(messages[0]).toMatchObject({ id: 1, status: type, export: { revision, import_metadata: companion } });
+  });
+
   it("detaches transferred buffers like a Worker and stops after terminate", async () => {
     let dispatched = 0;
     const channel = new NativeRuntimeChannel({ attach: async () => 1, dispatch: async () => { dispatched++; return replyFrame(ok); } }, () => []);

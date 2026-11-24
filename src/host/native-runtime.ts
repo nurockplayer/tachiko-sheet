@@ -180,13 +180,19 @@ export function prepareMessage(message: ClientMessage, toEntries: ProjectTransfe
     case "export_project_v3":
     case "export_canonical_tree":
     case "export_portable_ro": {
-      const revision = encoder.encode(String(message.expected_revision));
-      if (revision.byteLength > MAX_WIRE_REQUEST_BYTES) {
-        return { local: tooLargeReply("The expected revision exceeds the bridge limit.") };
-      }
       const kind = message.kind;
+      const metadata = kind === "export_canonical_tree" ? undefined : message.metadata;
+      const request = encoder.encode(metadata === undefined
+        ? String(message.expected_revision)
+        : JSON.stringify({ expected_revision: message.expected_revision, metadata }));
+      const maximum = metadata === undefined ? MAX_WIRE_REQUEST_BYTES : MAX_METADATA_REQUEST_BYTES;
+      if (request.byteLength > maximum) {
+        return { local: tooLargeReply(metadata === undefined
+          ? "The expected revision exceeds the bridge limit."
+          : "The project export request exceeds the bridge limit.") };
+      }
       return {
-        request: revision,
+        request,
         payload: new Uint8Array(0),
         finish: (reply, payload) => {
           if (reply.status === "error") return passThrough(reply);
