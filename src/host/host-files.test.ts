@@ -5,7 +5,7 @@ import { BROWSER_HOST_FILES } from "./host-files.js";
 it("downloads the file when IndexedDB rejects the companion write", async () => {
   const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
-  const open = vi.spyOn(indexedDB, "open").mockImplementation(() => {
+  vi.stubGlobal("indexedDB", { open: () => {
     const request = {} as IDBOpenDBRequest;
     queueMicrotask(() => {
       Object.assign(request, { result: {
@@ -15,11 +15,11 @@ it("downloads the file when IndexedDB rejects the companion write", async () => 
       request.onsuccess?.(new Event("success") as Event & { target: IDBOpenDBRequest });
     });
     return request;
-  });
+  } });
   try {
     const blob = new Blob(["work"]);
     expect(await BROWSER_HOST_FILES.saveFile("work.ro", blob, { snapshotDigest: "digest", metadata: { version: 1, sheets: [] } })).toBe("requested-without-companion");
     expect(create).toHaveBeenCalledWith(blob);
     expect(click).toHaveBeenCalledOnce();
-  } finally { vi.restoreAllMocks(); }
+  } finally { vi.restoreAllMocks(); vi.unstubAllGlobals(); }
 });
