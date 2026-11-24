@@ -90,9 +90,9 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
   const { row, column } = context.start, width = rows[0].length;
   if (row < 0 || column < 0) return refuse("Select a current cell before pasting.");
   if (context.positional) {
-    return { kind: "publish", rows: rows.map((values, r) => values.map((value, c): PasteCellInput => {
+    return { kind: "publish", rows: rows.map(values => values.map((value, c): PasteCellInput => {
       const type = context.columnTypes[column + c] ?? "auto";
-      return row + r >= context.rowCount && value === "" && context.columnRequired[column + c] === false && supportsOptional(type)
+      return value === "" && context.columnRequired[column + c] === false && supportsOptional(type)
         ? { kind: "clear" } : clipboardBoolean(value, type);
     })) };
   }
