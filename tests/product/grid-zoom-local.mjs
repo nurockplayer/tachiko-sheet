@@ -155,7 +155,7 @@ try {
     const resizeListenerBaseline = await page.evaluate(() => window.__columnMenuResizeListeners.size);
     await trigger.click();
     const menu = grid.locator("details[open] .ts-command-menu");
-    await page.waitForFunction(baseline => window.__columnMenuResizeListeners.size > baseline, resizeListenerBaseline);
+    await menu.waitFor();
     const triggerBox = await trigger.boundingBox();
     const menuBox = await menu.boundingBox();
     const viewport = page.viewportSize();
@@ -176,7 +176,7 @@ try {
     const gutter = await grid.locator(".ts-gutter-head").boundingBox();
     assert.ok(Math.abs(frozen.x - gutter.x - gutter.width) < 2, `frozen column follows gutter at ${zoom}%`);
     await trigger.click();
-    await page.waitForFunction(baseline => window.__columnMenuResizeListeners.size > baseline, resizeListenerBaseline);
+    await menu.waitFor();
     await menu.getByRole("button", { name: "Freeze first column", exact: true }).click();
     await page.waitForFunction(baseline => window.__columnMenuResizeListeners.size === baseline, resizeListenerBaseline);
     console.log(`PASS: frozen offset and column menu placement at ${zoom}%`);
