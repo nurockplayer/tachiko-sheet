@@ -960,7 +960,7 @@ describe("keyboard history queue", () => {
 
   it("keeps CSV addition disabled and refuses Shift+F11 with the exact hint", async () => {
     const onAddTable = vi.fn<NonNullable<SheetShellProps["onAddTable"]>>(async () => ({ kind: "confirmed" }));
-    const ui = await mount({ onAddTable, interop: { importInspection: null, cleanupPreview: null, ledger: [], downloadStatus: "idle", downloadError: null, metadata: { version: 1, sheets: [] } } });
+    const ui = await mount({ onAddTable, importedSourceName: "book.csv", interop: { importInspection: null, cleanupPreview: null, ledger: [], downloadStatus: "idle", downloadError: null, metadata: { version: 1, sheets: [] } } });
     const add = ui.container.querySelector<HTMLButtonElement>('[aria-label="Add sheet"]')!;
     expect(add.disabled).toBe(true);
     expect(add.title).toBe("Adding sheets to imported work is not available yet.");

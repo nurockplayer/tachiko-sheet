@@ -8,7 +8,10 @@ it("downloads the file when IndexedDB rejects the companion write", async () => 
   const open = vi.spyOn(indexedDB, "open").mockImplementation(() => {
     const request = {} as IDBOpenDBRequest;
     queueMicrotask(() => {
-      Object.assign(request, { result: { transaction: () => ({ objectStore: () => ({ put: () => { throw new DOMException("Quota exceeded", "QuotaExceededError"); } }) }), close: () => {} }) });
+      Object.assign(request, { result: {
+        transaction: () => ({ objectStore: () => ({ put: () => { throw new DOMException("Quota exceeded", "QuotaExceededError"); } }) }),
+        close: () => {},
+      } });
       request.onsuccess?.(new Event("success") as Event & { target: IDBOpenDBRequest });
     });
     return request;
