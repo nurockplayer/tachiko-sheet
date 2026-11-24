@@ -7,7 +7,7 @@ import type { ConfirmedPublication, SheetShellProps, WorkbookView } from "../con
 import { UnknownOperationOutcomeError } from "../contracts.js";
 import { App } from "../App.js";
 
-const shell = vi.hoisted(() => ({ props: null as SheetShellProps | null, saveFile: vi.fn(async () => {}) }));
+const shell = vi.hoisted(() => ({ props: null as SheetShellProps | null, saveFile: vi.fn(async (): Promise<string | undefined> => undefined) }));
 vi.mock("../host/host-files.js", () => ({ useHostFiles: () => ({ saveFile: shell.saveFile }) }));
 vi.mock("../ui/SheetShell.js", () => ({ SheetShell: (props: SheetShellProps) => {
   shell.props = props;
@@ -69,7 +69,9 @@ it.each([
     await assertRefused();
     await act(async () => current().onRefresh());
     await assertRefused();
+    shell.saveFile.mockResolvedValueOnce("requested-without-companion");
     await downloadRo();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("imported sheet information could not be stored");
     expect(runtime.exportWorkFile).toHaveBeenLastCalledWith({ occurrence: "o1", revision: "r1" }, undefined);
     // An acknowledged publication without a mapping cannot restore trust either.
     runtime.renameTable.mockImplementation(async () => ({ view, publication }));

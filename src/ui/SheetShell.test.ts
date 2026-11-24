@@ -980,6 +980,15 @@ describe("keyboard history queue", () => {
     expect(ui.container.querySelector<HTMLButtonElement>('[aria-label="Add sheet"]')!.disabled).toBe(true);
   });
 
+  it("offers sheet addition after reopening companion-backed work", async () => {
+    const onAddTable = vi.fn<NonNullable<SheetShellProps["onAddTable"]>>(async () => ({ kind: "confirmed" }));
+    const ui = await mount({ onAddTable, importedSourceName: null, interop: { importInspection: null, cleanupPreview: null, ledger: [], downloadStatus: "idle", downloadError: null, metadata: { version: 1, sheets: [] } } });
+    const add = ui.container.querySelector<HTMLButtonElement>('[aria-label="Add sheet"]')!;
+    expect(add.disabled).toBe(false);
+    await act(async () => add.click());
+    expect(onAddTable).toHaveBeenCalledOnce();
+  });
+
   it.each(["double-click", "F2", "menu"])("offers imported XLSX rename through %s and retains last-sheet/pending/draft guards", async method => {
     const onRenameTable = vi.fn<NonNullable<SheetShellProps["onRenameTable"]>>(async () => ({ kind: "confirmed" }));
     const view = makeView();
