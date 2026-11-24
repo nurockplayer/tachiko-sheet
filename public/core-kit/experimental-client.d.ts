@@ -1,9 +1,9 @@
-import type { A1Translation, TranslateA1FormulaInput } from "./runtime/protocol.ts";
+import type { A1Translation, RenderA1FormulaInput, TranslateA1FormulaInput } from "./runtime/protocol.ts";
 import { projectTransferFromEntries, projectTransferFromFiles, type CanonicalProjectTransferEntry } from "./host/project-transfer.ts";
 import type { ImportOptions, ImportSelection, ImportedWindowProjection, InteropMetadata, SpreadsheetExport, SpreadsheetFormat } from "./runtime/interop-protocol.ts";
 import { DesignerRuntimeError, type DesignerClient } from "./runtime/client.ts";
 import { isCapacityFailure, isFormulaFailure } from "./runtime/protocol.ts";
-import type { CanonicalProjectFile, CanonicalTreeExport, OccurrenceProjection, OpenedProjection, OpenedWindowProjection, NewTableColumnInput, ProjectExport, FieldConstraintInput, NumberFormat, DateFormat, CellStyleChange, FieldTarget, PublicationProjection, CapacityProjection, ProjectInspectionProjection } from "./runtime/protocol.ts";
+import type { CanonicalProjectFile, CanonicalTreeExport, OccurrenceProjection, OpenedProjection, OpenedWindowProjection, NewTableColumnInput, ProjectExport, FieldConstraintInput, NumberFormat, DateFormat, CellStyleChange, FieldTarget, PublicationProjection, PasteCellInput, CapacityProjection, ProjectInspectionProjection } from "./runtime/protocol.ts";
 export declare const EXPERIMENTAL_CLIENT_KIT_ID = "tachiko-designer-client-kit/v0-experimental";
 /**
  * Public client surface exposed by the experimental kit.
@@ -16,6 +16,8 @@ export declare const EXPERIMENTAL_CLIENT_KIT_ID = "tachiko-designer-client-kit/v
 export interface ExperimentalDesignerClient extends DesignerClient {
     inspectCurrentProject(): Promise<ProjectInspectionProjection>;
     translateA1Formula(input: TranslateA1FormulaInput): Promise<A1Translation>;
+    renderA1Formula(input: RenderA1FormulaInput): Promise<A1Translation>;
+    pasteCellsAt(expectedRevision: string, collection: string, row: number, column: number, rows: PasteCellInput[][]): Promise<PublicationProjection>;
     queryCapacity(expectedRevision?: string): Promise<CapacityProjection>;
     /** Classify raw input in one Auto scalar cell. */
     editAuto(expectedRevision: string, target: FieldTarget, input: string, dateOrder?: "month_first" | "day_first"): Promise<PublicationProjection>;
@@ -75,4 +77,4 @@ export type { CellStyleChange, DesignerClient };
 export type { CanonicalProjectTransferEntry } from "./host/project-transfer.ts";
 export type { ImportedWindowProjection } from "./runtime/interop-protocol.ts";
 export type { BootstrapProjection, ProjectInspectionProjection, CapacityFailureProjection, CapacityLimitName, CapacityLimits, CapacityProjection, CapacityUsage, CanonicalProjectFile, CanonicalTreeExport, CalculationProjection, CollectionSummary, ColumnProjection, CellAlignment, ConstraintFailureProjection, ConstraintFailureReason, DiagnosticProjection, FailureCode, FailureProjection, FieldConstraint, FieldConstraintInput, NumberFormat, DateFormat, FieldBatchProjection, FormulaFailureCode, FormulaFailureProjection, FieldDependencyProjection, FieldExplanationProjection, FieldProjection, FieldTarget, NewTableColumnInput, PasteCellInput, AutoDateOrder, ScalarEditInput, TrackerCommand, OpenedProjection, OpenedWindowProjection, OccurrenceProjection, ProjectExport, PublicationProjection, StoredValueProjection, TableProjection, } from "./runtime/protocol.ts";
-export type { A1Geometry, A1SheetGeometry, A1Translation, A1TranslationNote, A1RefusalCode, TranslateA1FormulaInput } from "./runtime/protocol.ts";
+export type { A1Geometry, A1SheetGeometry, A1Translation, A1TranslationNote, A1RefusalCode, RenderA1FormulaInput, TranslateA1FormulaInput } from "./runtime/protocol.ts";

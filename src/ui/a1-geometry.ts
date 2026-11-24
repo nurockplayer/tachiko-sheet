@@ -15,9 +15,9 @@ export function a1ColumnLetter(index: number): string {
   return name;
 }
 
-/** The A1 row number of a 0-based displayed data row: the first displayed row is row 2. */
-export function a1RowNumber(displayIndex: number): number {
-  return displayIndex + A1_HEADER_ROW + 1;
+/** The A1 row number of a 0-based displayed data row. */
+export function a1RowNumber(displayIndex: number, headerRow = A1_HEADER_ROW): number {
+  return displayIndex + headerRow + 1;
 }
 
 /** The displayed grid's A1 addresses: its header row, row entities and column ids in order. */

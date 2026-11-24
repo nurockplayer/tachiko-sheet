@@ -149,6 +149,10 @@ describe("bounded clipboard decoding", () => {
 
 describe("append-paste presence encoding", () => {
   const optional = context({ rowCount: 1, columnTypes: ["text", "number"], columnRequired: [false, false] });
+  it.each(["text", "number", "date", "boolean"])("clears an existing optional %s cell in a positional paste extending into an unallocated column", type => {
+    const ctx = context({ positional: true, rowCount: 1, start: { row: 0, column: 1 }, columnTypes: ["text", type], columnRequired: [false, false] });
+    expect(routePaste([["", "X"]], ctx)).toEqual({ kind: "publish", rows: [[{ kind: "clear" }, "X"]] });
+  });
   it("clears only empty newly appended optional slots, preserving existing-row raw inputs", () => {
     const rows = [["", ""], ["", ""]];
     const original = structuredClone(rows);

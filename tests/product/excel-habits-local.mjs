@@ -223,6 +223,19 @@ const cases = [
     assert.equal((await projection(page)).rows.length, 0, "the new workbook is not blank");
     assert.notEqual((await projection(page)).collection.id, before.collection.id, "New kept the old worksheet");
     assert.equal(await activeId(page), "worksheet:A1", "the blank worksheet has no active cell");
+    const nameBox = page.getByRole("textbox", { name: "Name Box", exact: true });
+    await page.getByTestId("worksheet:D5").click();
+    assert.equal(await nameBox.inputValue(), "D5", "the blank worksheet Name Box added a header row");
+    await page.evaluate(() => navigator.clipboard.writeText("Orange\t4\nPear\t5"));
+    await page.keyboard.press("Control+v");
+    const pasted = [["D5", "Orange"], ["E5", "4"], ["D6", "Pear"], ["E6", "5"]];
+    for (const [address, value] of pasted) await waitForCellText(page, `worksheet:${address}`, value);
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    for (const [address] of pasted) await waitForCellText(page, `worksheet:${address}`, "");
+    assert.equal((await projection(page)).rows.length, 0, "one Undo did not remove the paste's allocations");
+    await nameBox.fill("A1");
+    await nameBox.press("Enter");
+    assert.equal(await activeId(page), "worksheet:A1", "the Name Box could not navigate to the first data row");
     await page.keyboard.type("Hello");
     await page.keyboard.press("Enter");
     await waitForCellText(page, "worksheet:A1", "Hello");
@@ -249,6 +262,7 @@ const cases = [
       await home(page);
       await page.keyboard.press("Control+n");
       await page.getByTestId("worksheet:B4").click();
+      assert.equal(await page.getByRole("textbox", { name: "Name Box", exact: true }).inputValue(), "B4");
       await page.keyboard.type("Apple");
       await page.keyboard.press("Enter");
       await settle(page);
@@ -265,6 +279,24 @@ const cases = [
       await waitForCellText(reopened, "worksheet:B4", "Apple");
       assert.equal(fieldAt(await projection(reopened), 3, 1)?.stored?.value, "Apple", "B4 did not survive save, browser restart and reopen");
       assert.equal(await reopened.getByTestId("worksheet:A1").textContent(), "", "writing B4 populated A1");
+
+      for (const [format, file, types] of [
+        ["csv", { name: "geometry.csv", mimeType: "text/csv", buffer: Buffer.from("Name,Value\nAlpha,1\nBeta,2\n") }, ["text", "number"]],
+        ["xlsx", invoice, ["text", "number", "number", "number"]],
+      ]) {
+        await reopened.getByRole("button", { name: "Close project", exact: true }).click();
+        await home(reopened);
+        await (await homeImportInput(reopened)).setInputFiles(file);
+        const dialog = reopened.getByRole("dialog", { name: "Review import preview", exact: true });
+        await dialog.waitFor();
+        for (const [index, type] of types.entries()) await dialog.locator(".ts-import-column select").nth(index).selectOption(type);
+        await dialog.getByRole("button", { name: "Import file", exact: true }).click();
+        await ready(reopened);
+        const cell = reopened.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr.ts-row").first().locator("td").nth(1);
+        await cell.click();
+        assert.equal(await reopened.getByRole("textbox", { name: "Name Box", exact: true }).inputValue(), "B2",
+          `${format} imports lost their header-inclusive addresses`);
+      }
     } finally {
       await context?.close().catch(() => {});
       await rm(profile, { recursive: true, force: true });
