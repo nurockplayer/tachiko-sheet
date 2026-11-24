@@ -285,6 +285,7 @@ const cases = [
         ["xlsx", invoice, ["text", "number", "number", "number"]],
       ]) {
         await reopened.getByRole("button", { name: "Close project", exact: true }).click();
+        await home(reopened);
         await (await homeImportInput(reopened)).setInputFiles(file);
         const dialog = reopened.getByRole("dialog", { name: "Review import preview", exact: true });
         await dialog.waitFor();
