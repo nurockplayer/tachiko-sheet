@@ -37,6 +37,44 @@ const options = { delimiter: ",", header: true };
 const selection = { column_types: [["text", "number", "number"]] as ("text" | "number")[][], extra_columns: [[]] };
 
 describe("working-size imported sessions with the vendored kit", () => {
+  it.each([
+    [".ro", "exportWorkFile", "openWorkFile"],
+    ["v3", "exportOpaque", "openOpaque"],
+  ] as const)("round-trips %s host metadata and uses Work's mapping after a worksheet rename", async (_format, exportFile, openFile) => {
+    const client = await realClient();
+    const runtime = createSheetRuntime(async () => ({ ...kit, createExperimentalDesignerClient: () => client }));
+    try {
+      const bytes = new TextEncoder().encode("Name,Qty,Total\nCoffee,2,20\n").buffer;
+      const imported = await runtime.importSpreadsheet(bytes, "csv", options, selection);
+      const added = await runtime.addTable(imported.view, "Second", [{ name: "Note", field_type: "text" }]);
+      const seed = await runtime[exportFile](added.view);
+      await runtime.close();
+      const view = await runtime[openFile](seed.bytes, seed.importMetadata);
+
+      const hostMetadata = structuredClone(view.importMetadata);
+      if (hostMetadata?.version !== 1) throw new Error("Expected full-fidelity metadata");
+      hostMetadata.sheets[0]!.name = "Host name";
+      hostMetadata.sheets[0]!.columns[0]!.width = 24;
+      hostMetadata.sheets.reverse();
+      const snapshot = await runtime[exportFile](view, hostMetadata);
+      await runtime.close();
+      const reopened = await runtime[openFile](snapshot.bytes, snapshot.importMetadata);
+      expect(reopened.importMetadata).toEqual(hostMetadata);
+
+      const { key, id } = reopened.table.collection;
+      const field = reopened.table.columns[0]!.id;
+      const renamed = await runtime.renameTable(reopened, key, "Work name");
+      const resized = await runtime.setColumnWidth(renamed.view, key, field, 4096);
+      const updated = await runtime[exportFile](resized.view, hostMetadata);
+      expect(updated.importMetadata).toEqual(renamed.publication.import_metadata);
+      await runtime.close();
+      const after = await runtime[openFile](updated.bytes, updated.importMetadata);
+      expect(after.collections.find(collection => collection.id === id)?.display_name).toBe("Work name");
+      const selected = await runtime.selectCollection(after, key);
+      expect(selected.table.columns.find(column => column.id === field)?.width).toBe(4096);
+    } finally { client.close(); }
+  }, 30_000);
+
   it("exports the published worksheet mapping after rename, undo and redo", async () => {
     const client = await realClient();
     const runtime = createSheetRuntime(async () => ({ ...kit, createExperimentalDesignerClient: () => client }));

@@ -155,7 +155,7 @@ export interface SheetRuntime {
    */
   openOpaque(bytes: ArrayBuffer, importedMetadata?: InteropMetadata): Promise<WorkbookView>;
   openWorkFile(bytes: ArrayBuffer, importedMetadata?: InteropMetadata): Promise<WorkbookView>;
-  exportWorkFile(witness: ViewWitness): Promise<OpaqueProjectExport>;
+  exportWorkFile(witness: ViewWitness, metadata?: InteropMetadata): Promise<OpaqueProjectExport>;
   read(): Promise<WorkbookView>;
   selectCollection(witness: ViewWitness, collection: string): Promise<WorkbookView>;
   readFields(witness: ViewWitness, targets: FieldTarget[]): Promise<FieldBatchProjection>;
@@ -163,7 +163,7 @@ export interface SheetRuntime {
   editConfirmed(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<ConfirmedPublication>;
   trackerHistory(witness: ViewWitness, direction: "undo" | "redo"): Promise<ConfirmedPublication>;
   exportCanonical(witness: ViewWitness): Promise<CanonicalTreeExport>;
-  exportOpaque(witness: ViewWitness): Promise<OpaqueProjectExport>;
+  exportOpaque(witness: ViewWitness, metadata?: InteropMetadata): Promise<OpaqueProjectExport>;
   listKeyedGroupedSumBindings(witness: ViewWitness): Promise<KeyedGroupedSumBindingCatalog>;
   createKeyedGroupedSum(witness: ViewWitness, binding: KeyedGroupedSumBindingChoice): Promise<KeyedGroupedSumResult & { publication: PublicationProjection }>;
   queryKeyedGroupedSum(witness: ViewWitness, definitionId: string): Promise<KeyedGroupedSumResult>;
