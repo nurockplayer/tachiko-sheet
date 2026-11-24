@@ -1885,7 +1885,7 @@ export function SheetShell(props: SheetShellProps) {
     const pasteBlocked = controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen;
     const pasteRowCount = worksheet ? displayRows.filter(row => !row.id.startsWith("worksheet-row:")).length : displayRows.length;
     const pasteColumns = worksheet ? tableColumns(table) : columns;
-    const positional = worksheet && (start.row + decoded.length > pasteRowCount ||
+    const positional = worksheet && !draft && (start.row + decoded.length > pasteRowCount ||
       start.column + (decoded[0]?.length ?? 0) > pasteColumns.length);
     if (worksheet && decoded.some(row => row.some(value => value.trimStart().startsWith("=")))) {
       announceClipboard(`${worksheetFormulaLimitation} Nothing was pasted.`, true);

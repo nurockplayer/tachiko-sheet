@@ -337,6 +337,20 @@ describe("headerless worksheets use the existing grid", () => {
     expect(ui.container.querySelector(".ts-cell--formula-ref")).toBeNull();
   });
 
+  it("pastes into the new-row draft without allocating padded worksheet rows", async () => {
+    const onPasteCellsAt = vi.fn<NonNullable<SheetShellProps["onPasteCellsAt"]>>(async () => ({ kind: "confirmed" }));
+    const ui = await mount(undefined, { onPasteCellsAt });
+    await ui.focus("A1");
+    await ui.type("Existing");
+    await ui.key("Enter");
+    const draft = ui.container.querySelector<HTMLElement>(`[data-work-entity="${DRAFT_ROW}"]`)!;
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: { types: ["text/plain"], getData: () => "New" } });
+    await act(async () => { draft.dispatchEvent(event); });
+    expect(onPasteCellsAt).not.toHaveBeenCalled();
+    expect(ui.container.textContent).toContain("Pasted into the new row.");
+  });
+
   it("routes a block crossing the worksheet extents as one positional publication", async () => {
     const onPasteCells = vi.fn<NonNullable<SheetShellProps["onPasteCells"]>>(async () => ({ kind: "confirmed" }));
     const onPasteCellsAt = vi.fn<NonNullable<SheetShellProps["onPasteCellsAt"]>>(async () => ({ kind: "confirmed" }));

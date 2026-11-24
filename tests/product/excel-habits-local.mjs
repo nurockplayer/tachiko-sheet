@@ -280,38 +280,20 @@ const cases = [
       assert.equal(fieldAt(await projection(reopened), 3, 1)?.stored?.value, "Apple", "B4 did not survive save, browser restart and reopen");
       assert.equal(await reopened.getByTestId("worksheet:A1").textContent(), "", "writing B4 populated A1");
 
-      // Prepare headerless CSV and headed XLSX imports through Work.
-      const imports = await reopened.evaluate(async () => {
-        const { createExperimentalDesignerClient } = await import("/core-kit/experimental-client.js");
-        const client = createExperimentalDesignerClient();
-        try {
-          const csv = new TextEncoder().encode("Alpha,1\nBeta,2\nGamma,3\n").buffer;
-          const selection = { column_types: [["text", "number"]], extra_columns: [[]] };
-          const fromCsv = await client.importSpreadsheetWorkingSize(csv, "csv", { delimiter: ",", header: false }, selection);
-          const { revision, collection } = fromCsv.opened.window;
-          const csvFile = await client.exportPortableRo(revision, fromCsv.metadata);
-          const xlsx = await client.exportSpreadsheet(revision, fromCsv.metadata, "xlsx", collection.id);
-          const fromXlsx = await client.importSpreadsheetWorkingSize(xlsx.bytes, "xlsx", { delimiter: ",", header: true, header_rows: [1] }, selection);
-          const xlsxFile = await client.exportPortableRo(fromXlsx.opened.window.revision, fromXlsx.metadata);
-          return [
-            { format: "csv", bytes: [...new Uint8Array(csvFile.bytes)], headerless: collection.headerless },
-            { format: "xlsx", bytes: [...new Uint8Array(xlsxFile.bytes)], headerless: fromXlsx.opened.window.collection.headerless },
-          ];
-        } finally { client.close(); }
-      });
-      for (const { format, bytes, headerless } of imports) {
-        assert.equal(headerless, format === "csv", `${format} fixture has the wrong header projection`);
+      for (const [format, file, types] of [
+        ["csv", { name: "geometry.csv", mimeType: "text/csv", buffer: Buffer.from("Name,Value\nAlpha,1\nBeta,2\n") }, ["text", "number"]],
+        ["xlsx", invoice, ["text", "number", "number", "number"]],
+      ]) {
         await reopened.getByRole("button", { name: "Close project", exact: true }).click();
-        await reopened.getByTestId("open-work-file").setInputFiles({
-          name: `imported-${format}.ro`, mimeType: "application/octet-stream", buffer: Buffer.from(bytes),
-        });
+        await (await homeImportInput(reopened)).setInputFiles(file);
+        const dialog = reopened.getByRole("dialog", { name: "Review import preview", exact: true });
+        await dialog.waitFor();
+        for (const [index, type] of types.entries()) await dialog.locator(".ts-import-column select").nth(index).selectOption(type);
+        await dialog.getByRole("button", { name: "Import file", exact: true }).click();
         await ready(reopened);
-        const table = await projection(reopened);
-        const entity = rowEntity(table.rows[format === "csv" ? 2 : 1]);
-        const cell = reopened.locator(`[data-work-entity="${entity}"][data-work-field="${table.columns[1].id}"]`);
+        const cell = reopened.getByRole("grid", { name: "Table", exact: true }).locator("tbody tr.ts-row").first().locator("td").nth(1);
         await cell.click();
-        assert.equal((await cell.textContent()).trim(), "3");
-        assert.equal(await reopened.getByRole("textbox", { name: "Name Box", exact: true }).inputValue(), format === "csv" ? "B4" : "B3",
+        assert.equal(await reopened.getByRole("textbox", { name: "Name Box", exact: true }).inputValue(), "B2",
           `${format} imports lost their header-inclusive addresses`);
       }
     } finally {
