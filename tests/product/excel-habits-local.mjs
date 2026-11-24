@@ -279,6 +279,39 @@ const cases = [
       await waitForCellText(reopened, "worksheet:B4", "Apple");
       assert.equal(fieldAt(await projection(reopened), 3, 1)?.stored?.value, "Apple", "B4 did not survive save, browser restart and reopen");
       assert.equal(await reopened.getByTestId("worksheet:A1").textContent(), "", "writing B4 populated A1");
+
+      // Prepare real headerless imports through Work, then open the portable files in Sheet.
+      const imports = await reopened.evaluate(async () => {
+        const { createExperimentalDesignerClient } = await import("/core-kit/experimental-client.js");
+        const client = createExperimentalDesignerClient();
+        try {
+          const csv = new TextEncoder().encode("Alpha,1\nBeta,2\nGamma,3\n").buffer;
+          const selection = { column_types: [["text", "number"]], extra_columns: [[]] };
+          const fromCsv = await client.importSpreadsheetWorkingSize(csv, "csv", { delimiter: ",", header: false }, selection);
+          const { revision, collection } = fromCsv.opened.window;
+          const csvFile = await client.exportPortableRo(revision, fromCsv.metadata);
+          const xlsx = await client.exportSpreadsheet(revision, fromCsv.metadata, "xlsx", collection.id);
+          const fromXlsx = await client.importSpreadsheetWorkingSize(xlsx.bytes, "xlsx", { delimiter: ",", header: false, header_rows: [0] }, selection);
+          const xlsxFile = await client.exportPortableRo(fromXlsx.opened.window.revision, fromXlsx.metadata);
+          return [
+            { format: "csv", bytes: [...new Uint8Array(csvFile.bytes)], headerless: collection.headerless },
+            { format: "xlsx", bytes: [...new Uint8Array(xlsxFile.bytes)], headerless: fromXlsx.opened.window.collection.headerless },
+          ];
+        } finally { client.close(); }
+      });
+      for (const { format, bytes, headerless } of imports) {
+        assert.equal(headerless, true, `${format} fixture lost its headerless projection`);
+        await reopened.getByRole("button", { name: "Close project", exact: true }).click();
+        await reopened.getByTestId("open-work-file").setInputFiles({
+          name: `headerless-${format}.ro`, mimeType: "application/octet-stream", buffer: Buffer.from(bytes),
+        });
+        await ready(reopened);
+        const cell = reopened.getByTestId(cellIdFor(await projection(reopened), 2, 1));
+        await cell.click();
+        assert.equal((await cell.textContent()).trim(), "3");
+        assert.equal(await reopened.getByRole("textbox", { name: "Name Box", exact: true }).inputValue(), "B4",
+          `${format} imports lost their header-inclusive addresses`);
+      }
     } finally {
       await context?.close().catch(() => {});
       await rm(profile, { recursive: true, force: true });

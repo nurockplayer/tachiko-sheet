@@ -17,14 +17,14 @@ Regenerate with `node scripts/generate-third-party-licenses.mjs`.
 
 | Package | Version | Declared license | Source |
 | --- | --- | --- | --- |
-| `tachiko-designer-runtime` | `0.1.0` | Apache-2.0 OR MIT | Git https://github.com/nurockplayer/tachiko-work at 51eab693a6cde0955e7f3bd1eea3dcbe45a3a5f7 |
-| `tachiko-diff-engine` | `0.1.0` | Apache-2.0 OR MIT | Git https://github.com/nurockplayer/tachiko-work at 51eab693a6cde0955e7f3bd1eea3dcbe45a3a5f7 |
-| `tachiko-formula-engine` | `0.1.0` | Apache-2.0 OR MIT | Git https://github.com/nurockplayer/tachiko-work at 51eab693a6cde0955e7f3bd1eea3dcbe45a3a5f7 |
-| `tachiko-merge-engine` | `0.1.0` | Apache-2.0 OR MIT | Git https://github.com/nurockplayer/tachiko-work at 51eab693a6cde0955e7f3bd1eea3dcbe45a3a5f7 |
-| `tachiko-semantic-core` | `0.1.0` | Apache-2.0 OR MIT | Git https://github.com/nurockplayer/tachiko-work at 51eab693a6cde0955e7f3bd1eea3dcbe45a3a5f7 |
+| `tachiko-designer-runtime` | `0.1.0` | Apache-2.0 OR MIT | Git https://github.com/nurockplayer/tachiko-work at 23c5e03e55562917de1eb74c492a72edf04dea35 |
+| `tachiko-diff-engine` | `0.1.0` | Apache-2.0 OR MIT | Git https://github.com/nurockplayer/tachiko-work at 23c5e03e55562917de1eb74c492a72edf04dea35 |
+| `tachiko-formula-engine` | `0.1.0` | Apache-2.0 OR MIT | Git https://github.com/nurockplayer/tachiko-work at 23c5e03e55562917de1eb74c492a72edf04dea35 |
+| `tachiko-merge-engine` | `0.1.0` | Apache-2.0 OR MIT | Git https://github.com/nurockplayer/tachiko-work at 23c5e03e55562917de1eb74c492a72edf04dea35 |
+| `tachiko-semantic-core` | `0.1.0` | Apache-2.0 OR MIT | Git https://github.com/nurockplayer/tachiko-work at 23c5e03e55562917de1eb74c492a72edf04dea35 |
 | `tachiko-sheet-desktop` | `0.1.0` | MIT OR Apache-2.0 | This repository (src-tauri) |
-| `tachiko-storage` | `0.1.0` | Apache-2.0 OR MIT | Git https://github.com/nurockplayer/tachiko-work at 51eab693a6cde0955e7f3bd1eea3dcbe45a3a5f7 |
-| `tachiko-workspace-engine` | `0.1.0` | Apache-2.0 OR MIT | Git https://github.com/nurockplayer/tachiko-work at 51eab693a6cde0955e7f3bd1eea3dcbe45a3a5f7 |
+| `tachiko-storage` | `0.1.0` | Apache-2.0 OR MIT | Git https://github.com/nurockplayer/tachiko-work at 23c5e03e55562917de1eb74c492a72edf04dea35 |
+| `tachiko-workspace-engine` | `0.1.0` | Apache-2.0 OR MIT | Git https://github.com/nurockplayer/tachiko-work at 23c5e03e55562917de1eb74c492a72edf04dea35 |
 
 Their license texts are the MIT and Apache-2.0 files carried with the kit notices.
 

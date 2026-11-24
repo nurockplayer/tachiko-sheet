@@ -130,6 +130,15 @@ export class WorkerDesignerClient {
                 ...(input.geometry.sheets === undefined ? {} : { sheets: Object.fromEntries(Object.entries(input.geometry.sheets).map(([name, sheet]) => [name, { collection_id: sheet.collectionId, header_row: sheet.headerRow, rows: sheet.rows, columns: sheet.columns }])) }),
             } }));
     }
+    async renderA1Formula(input) {
+        return expectResponse("a1_translation", await this.#command({ type: "render_a1_formula",
+            expected_revision: input.expectedRevision, collection_id: input.collectionId,
+            row_entity_id: input.rowEntityId, target_field_id: input.targetFieldId,
+            geometry: {
+                header_row: input.geometry.headerRow, rows: input.geometry.rows, columns: input.geometry.columns,
+                ...(input.geometry.sheets === undefined ? {} : { sheets: Object.fromEntries(Object.entries(input.geometry.sheets).map(([name, sheet]) => [name, { collection_id: sheet.collectionId, header_row: sheet.headerRow, rows: sheet.rows, columns: sheet.columns }])) }),
+            } }));
+    }
     async previewCleanup(expectedRevision, operation) {
         return expectResponse("cleanup_preview", await this.#command({ type: "preview_cleanup", expected_revision: expectedRevision, operation }));
     }
@@ -146,8 +155,14 @@ export class WorkerDesignerClient {
     async newBlankWorkbook() {
         return expectResponse("opened_window", await this.#command({ type: "new_blank_workbook", occurrence_id: freshOccurrenceId(), profile: "working_size" }));
     }
+    async promoteFirstRowToHeaders(expectedRevision, collection) {
+        return this.trackerCommand({ type: "promote_first_row_to_headers", expected_revision: expectedRevision, collection });
+    }
     async writeCellAt(expectedRevision, collection, row, column, input) {
         return this.trackerCommand({ type: "write_cell_at", expected_revision: expectedRevision, collection, row, column, input });
+    }
+    async pasteCellsAt(expectedRevision, collection, row, column, rows) {
+        return this.trackerCommand({ type: "paste_cells_at", expected_revision: expectedRevision, collection, row, column, rows });
     }
     async newTable(name, columns) {
         return expectResponse("opened", await this.#command({ type: "new_table", occurrence_id: freshOccurrenceId(), name, columns }));
