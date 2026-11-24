@@ -137,15 +137,14 @@ const A1_GOTO = /^\$?([A-Za-z]{1,3})\$?(\d+)(?::\$?([A-Za-z]{1,3})\$?(\d+))?$/u;
  * The displayed cells a Name Box entry names: one address (`C3`, `$C$3`, `c3`)
  * or one `address:address` range, in 0-based display positions. The range keeps
  * its first address as the anchor even when it is reversed. Null when the text
- * is not exactly an address or range, or names a cell outside the grid; the
- * header row (A1) is not a cell.
+ * is not exactly an address or range, or names a cell outside the grid.
  */
-export function a1GoToTarget(text: string, rowCount: number, columnCount: number): A1GoToTarget | null {
+export function a1GoToTarget(text: string, rowCount: number, columnCount: number, headerRow = A1_HEADER_ROW): A1GoToTarget | null {
   const match = A1_GOTO.exec(text.trim());
   if (!match) return null;
-  const first = { column: a1ColumnIndex(match[1]!), row: Number(match[2]) - A1_HEADER_ROW - 1 };
+  const first = { column: a1ColumnIndex(match[1]!), row: Number(match[2]) - headerRow - 1 };
   const last = match[3] !== undefined
-    ? { column: a1ColumnIndex(match[3]), row: Number(match[4]!) - A1_HEADER_ROW - 1 }
+    ? { column: a1ColumnIndex(match[3]), row: Number(match[4]!) - headerRow - 1 }
     : first;
   const inBounds = (cell: { row: number; column: number }): boolean =>
     cell.row >= 0 && cell.row < rowCount && cell.column >= 0 && cell.column < columnCount;

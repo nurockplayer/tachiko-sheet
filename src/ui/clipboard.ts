@@ -71,6 +71,7 @@ export function clipboardBoolean(value: string, type: string): string {
 }
 export interface PasteContext {
   native: boolean; draft: boolean; blocked: boolean; pendingDraft: boolean;
+  positional?: boolean;
   start: CellAddress; rowCount: number; columnTypes: readonly string[]; columnRequired: readonly boolean[];
   /** Every stored row, when a filter shows fewer than `rowCount` counts. */
   storedRowCount?: number;
@@ -88,6 +89,13 @@ export function routePaste(rows: string[][], context: PasteContext): PasteRoute 
   if (!rows.length || !rows[0]?.length || rows.some(row => row.length !== rows[0]!.length)) return refuse("The pasted rows have different widths. Copy a rectangular block; nothing was pasted.");
   const { row, column } = context.start, width = rows[0].length;
   if (row < 0 || column < 0) return refuse("Select a current cell before pasting.");
+  if (context.positional) {
+    return { kind: "publish", rows: rows.map((values, r) => values.map((value, c): PasteCellInput => {
+      const type = context.columnTypes[column + c] ?? "auto";
+      return row + r >= context.rowCount && value === "" && context.columnRequired[column + c] === false && supportsOptional(type)
+        ? { kind: "clear" } : clipboardBoolean(value, type);
+    })) };
+  }
   if (column + width > context.columnTypes.length) return refuse("The pasted block is too wide for this table. Nothing was pasted.");
   if (!context.native && (context.draft || row + rows.length > context.rowCount)) return refuse("Imported tables can't gain rows by paste. Nothing was pasted.");
   const insideExistingRows = !context.draft && row + rows.length <= context.rowCount;

@@ -332,14 +332,15 @@ describe("headerless worksheets use the existing grid", () => {
     expect(ui.onCommit).not.toHaveBeenCalled();
     expect(onTranslateA1Formula).not.toHaveBeenCalled();
     expect(ui.container.querySelector<HTMLInputElement>('[data-testid="cell-editor"]')?.value).toBe("=A2");
-    expect(ui.container.textContent).toContain("Formulas and cell references are not available in blank worksheets yet because their displayed addresses cannot be matched safely.");
+    expect(ui.container.textContent).toContain("Formulas and cell references are unavailable in blank worksheets because automatically created columns cannot store formulas.");
     expect(ui.container.querySelector<HTMLInputElement>('[data-testid="formula-bar-input"]')?.readOnly).toBe(true);
     expect(ui.container.querySelector(".ts-cell--formula-ref")).toBeNull();
   });
 
-  it("refuses a block touching unallocated blank worksheet cells without partial writes", async () => {
+  it("routes a block crossing the worksheet extents as one positional publication", async () => {
     const onPasteCells = vi.fn<NonNullable<SheetShellProps["onPasteCells"]>>(async () => ({ kind: "confirmed" }));
-    const ui = await mount(undefined, { onPasteCells });
+    const onPasteCellsAt = vi.fn<NonNullable<SheetShellProps["onPasteCellsAt"]>>(async () => ({ kind: "confirmed" }));
+    const ui = await mount(undefined, { onPasteCells, onPasteCellsAt });
     await ui.focus("A1");
     await ui.type("Keep");
     await ui.key("Enter");
@@ -348,23 +349,24 @@ describe("headerless worksheets use the existing grid", () => {
     const event = new Event("paste", { bubbles: true, cancelable: true });
     Object.defineProperty(event, "clipboardData", { value: { types: ["text/plain"], getData: () => "Orange\t4\nPear\t5" } });
     await act(async () => { ui.cell("A1").dispatchEvent(event); });
-    expect(ui.container.textContent).toContain("Pasting into unused worksheet cells is not available yet. Type into these cells instead. Nothing was pasted.");
+    expect(onPasteCellsAt).toHaveBeenCalledExactlyOnceWith(expect.anything(), "release_items", 0, 0, [["Orange", "4"], ["Pear", "5"]]);
     expect(onPasteCells).not.toHaveBeenCalled();
     expect(ui.onWrite).not.toHaveBeenCalled();
     expect(ui.onEditCells).not.toHaveBeenCalled();
     expect(ui.cell("A1").textContent).toBe("Keep");
   });
 
-  it.each(["typed", "clicked"])("keeps main's imported headerless formula geometry for %s references", async mode => {
+  it.each([["typed", "headerless.csv"], ["clicked", "headerless.xlsx"]] as const)("keeps header-inclusive geometry for %s references in %s", async (mode, importedSourceName) => {
     const view = makeView();
     view.table.native_table_profile = true;
     const onTranslateA1Formula = vi.fn<NonNullable<SheetShellProps["onTranslateA1Formula"]>>(async () => ({
       kind: "translated", revision: view.revision, source: "[beta.impact]", notes: [],
     }));
-    const ui = await mount(view, { onTranslateA1Formula });
+    const ui = await mount(view, { onTranslateA1Formula, importedSourceName });
     expect(ui.cell("B2").closest("tr")!.querySelector("th")!.textContent).toBe("2");
     expect(ui.cell("B3").closest("tr")!.querySelector("th")!.textContent).toBe("3");
     await ui.focus("B2");
+    expect(ui.container.querySelector<HTMLInputElement>('[aria-label="Name Box"]')?.value).toBe("B2");
     await ui.type(mode === "typed" ? "=B3" : "=");
     if (mode === "clicked") {
       await act(async () => {

@@ -571,6 +571,7 @@ export function SheetShell(props: SheetShellProps) {
     onRemoveColumn,
     onMoveColumn,
     onPasteCells,
+    onPasteCellsAt,
     onEditCells,
     onCopyFormula,
     onRemoveRows,
@@ -1264,6 +1265,7 @@ export function SheetShell(props: SheetShellProps) {
   // remain untouched; this array is presentation only.
   // Imported sheets retain main's header-inclusive labels and canonical geometry.
   const worksheet = Boolean(table?.collection.headerless && onWriteCellAt && !importedSourceName && !interop?.metadata);
+  const headerRow = worksheet ? 0 : A1_HEADER_ROW;
   // These addresses describe unallocated grid space, never canonical entities.
   const columns = useMemo<TableColumn[]>(() => {
     if (!table) return [];
@@ -1374,12 +1376,13 @@ export function SheetShell(props: SheetShellProps) {
   }, [focusedKey]);
   // Reads only the focused instance's own projected formula (#129): never a
   // column-level rule, a computed-column claim or a neighbour's value.
-  const worksheetFormulaLimitation = "Formulas and cell references are not available in blank worksheets yet because their displayed addresses cannot be matched safely.";
+  const worksheetFormulaLimitation = "Formulas and cell references are unavailable in blank worksheets because automatically created columns cannot store formulas.";
   const formulaState = { ...formulaBarState({
     viewIdentity: viewKey ?? "",
     table,
     columns,
     displayRows,
+    headerRow,
     focus: focusedPosition,
     currentness,
     // Another operation's publication replaces the projection; this bar's own
@@ -1882,10 +1885,8 @@ export function SheetShell(props: SheetShellProps) {
     const pasteBlocked = controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen;
     const pasteRowCount = worksheet ? displayRows.filter(row => !row.id.startsWith("worksheet-row:")).length : displayRows.length;
     const pasteColumns = worksheet ? tableColumns(table) : columns;
-    if (worksheet && (start.row + decoded.length > pasteRowCount || start.column + (decoded[0]?.length ?? 0) > pasteColumns.length)) {
-      announceClipboard("Pasting into unused worksheet cells is not available yet. Type into these cells instead. Nothing was pasted.", true);
-      return;
-    }
+    const positional = worksheet && (start.row + decoded.length > pasteRowCount ||
+      start.column + (decoded[0]?.length ?? 0) > pasteColumns.length);
     if (worksheet && decoded.some(row => row.some(value => value.trimStart().startsWith("=")))) {
       announceClipboard(`${worksheetFormulaLimitation} Nothing was pasted.`, true);
       return;
@@ -1915,7 +1916,12 @@ export function SheetShell(props: SheetShellProps) {
     }
     const viewRefusal = draft ? null : rowViewPasteRefusal(gridSettings, start.row, decoded.length, pasteRowCount);
     if (viewRefusal) { announceClipboard(viewRefusal, true); return; }
+    if (positional && (gridSettings.sort || gridSettings.filters?.length)) {
+      announceClipboard("Clear the sort and filter to paste into unused worksheet cells.", true);
+      return;
+    }
     const route = routePaste(decoded, { native: Boolean(table.native_table_profile), draft,
+      positional,
       blocked: pasteBlocked,
       pendingDraft: rowDraftActive, start, rowCount: pasteRowCount, storedRowCount: rowSource(table).allRowsForNow().length, columnTypes: pasteColumns.map(column => column.field_type), columnRequired: pasteColumns.map(column => column.required),
       editable: (r, c) => {
@@ -1937,7 +1943,9 @@ export function SheetShell(props: SheetShellProps) {
       announceClipboard("Pasted into the new row. Press Enter or choose Add row to add it.");
       return;
     }
-    if (route.kind === "edit" ? !onEditCells : !onPasteCells) { announceClipboard("Pasting is not available in this view.", true); return; }
+    if (route.kind === "edit" ? !onEditCells : positional ? !onPasteCellsAt : !onPasteCells) {
+      announceClipboard("Pasting is not available in this view.", true); return;
+    }
     // Rows pasted into the new row append at the end: Work takes no start row.
     const anchor = draft ? null : displayRows[start.row];
     if ((!draft && !anchor) || !columns[start.column]) { announceClipboard("Select a current cell before pasting.", true); return; }
@@ -1969,14 +1977,20 @@ export function SheetShell(props: SheetShellProps) {
     setCommitPending(true); setLocalError(null); setClipboardMessage(null);
     const publish = route.kind === "edit"
       ? () => onEditCells!(witness, edits)
-      : () => onPasteCells!(witness, table.collection.key, anchor ? rowEntity(anchor) : null, columns[start.column]!.id, route.rows);
+      : positional
+        ? () => onPasteCellsAt!(witness, table.collection.key, start.row, start.column, route.rows)
+        : () => onPasteCells!(witness, table.collection.key, anchor ? rowEntity(anchor) : null, columns[start.column]!.id, route.rows);
     void publish().then(result => {
       if (liveOccurrenceRef.current !== intent.occurrence || clipboardIdentityRef.current !== collectionIdentity) return;
       if (result.kind === "confirmed" && pasteSource) setPasteRebind(pasteSource);
       // Appended rows stay visible under the active filter, as Add row does.
       if (result.kind === "confirmed") {
         keepGridRows(result.addedEntities ?? []);
-        revealPastedCell(pastedPosition, intent);
+        if (positional) {
+          requestAnimationFrame(() => {
+            if (completionMayUpdateUi(intent)) withAppFocus(() => focusWorksheetCellRef.current(start.row, start.column));
+          });
+        } else revealPastedCell(pastedPosition, intent);
       }
       announceClipboard(result.kind === "confirmed" ? `${draft ? "Added" : "Updated"} ${route.rows.length} row${route.rows.length === 1 ? "" : "s"}. Save to keep these changes.`
         : result.kind === "refused" ? pasteRefusal(result.message, result.fieldType, result.refusalCode)
@@ -3578,7 +3592,7 @@ export function SheetShell(props: SheetShellProps) {
    */
   function goToAddress(text: string): boolean {
     tabRunStartRef.current = null;
-    const target = a1GoToTarget(text, displayRows.length, columns.length);
+    const target = a1GoToTarget(text, displayRows.length, columns.length, headerRow);
     if (!target) {
       announceClipboard(`“${text.trim()}” isn't a cell in this table.`, true, true);
       return false;
@@ -6138,7 +6152,7 @@ export function SheetShell(props: SheetShellProps) {
     const entity = rowEntity(row);
     const isSelectedRow = entity === selectedEntity;
     return <tr key={row.id || entity} className={isSelectedRow ? "ts-row ts-row--selected" : "ts-row"} aria-rowindex={gridWindowed ? index + 2 : undefined}>
-      <th scope="row" className="ts-row-head" onMouseDown={event => event.preventDefault()} onClick={event => selectHeader("row", index, event.shiftKey)}>{worksheet ? index + 1 : a1RowNumber(index)}</th>
+      <th scope="row" className="ts-row-head" onMouseDown={event => event.preventDefault()} onClick={event => selectHeader("row", index, event.shiftKey)}>{a1RowNumber(index, headerRow)}</th>
       {columns.map((column) => renderCell(row, entity, column))}
     </tr>;
   }
@@ -6351,8 +6365,8 @@ export function SheetShell(props: SheetShellProps) {
         }}
         className={classes.join(" ")}
         style={{ textAlign: column.style?.alignment ?? (column.field_type === "number" || column.field_type === "date" ? "right" : column.field_type === "boolean" ? "center" : "left"), fontWeight: cellStyle?.bold ? 700 : undefined, fontStyle: cellStyle?.italic ? "italic" : undefined, backgroundColor: cellStyle?.fill ? `#${cellStyle.fill}` : undefined, borderTop: borderSides.includes("top") ? "1px solid black" : undefined, borderRight: borderSides.includes("right") ? "1px solid black" : undefined, borderBottom: borderSides.includes("bottom") ? "1px solid black" : undefined, borderLeft: borderSides.includes("left") ? "1px solid black" : undefined }}
-        data-testid={worksheet ? `worksheet:${a1ColumnLetter(coordinate.column)}${coordinate.row + 1}` : `cell:${entity}:${column.id}`}
-        data-address={worksheet ? `${a1ColumnLetter(coordinate.column)}${coordinate.row + 1}` : undefined}
+        data-testid={worksheet ? `worksheet:${a1ColumnLetter(coordinate.column)}${a1RowNumber(coordinate.row, headerRow)}` : `cell:${entity}:${column.id}`}
+        data-address={worksheet ? `${a1ColumnLetter(coordinate.column)}${a1RowNumber(coordinate.row, headerRow)}` : undefined}
         data-entry-field={draft ? column.id : undefined}
         aria-label={draft ? `New row ${column.display_name} (${column.field_type === "boolean" ? "Yes/No" : column.field_type === "number" ? "Number" : column.field_type === "date" ? "Date" : "Text"})` : undefined}
         aria-description={draft ? undefined : display.description}

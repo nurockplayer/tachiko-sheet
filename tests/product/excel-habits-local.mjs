@@ -223,6 +223,19 @@ const cases = [
     assert.equal((await projection(page)).rows.length, 0, "the new workbook is not blank");
     assert.notEqual((await projection(page)).collection.id, before.collection.id, "New kept the old worksheet");
     assert.equal(await activeId(page), "worksheet:A1", "the blank worksheet has no active cell");
+    const nameBox = page.getByRole("textbox", { name: "Name Box", exact: true });
+    await page.getByTestId("worksheet:D5").click();
+    assert.equal(await nameBox.inputValue(), "D5", "the blank worksheet Name Box added a header row");
+    await page.evaluate(() => navigator.clipboard.writeText("Orange\t4\nPear\t5"));
+    await page.keyboard.press("Control+v");
+    const pasted = [["D5", "Orange"], ["E5", "4"], ["D6", "Pear"], ["E6", "5"]];
+    for (const [address, value] of pasted) await waitForCellText(page, `worksheet:${address}`, value);
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    for (const [address] of pasted) await waitForCellText(page, `worksheet:${address}`, "");
+    assert.equal((await projection(page)).rows.length, 0, "one Undo did not remove the paste's allocations");
+    await nameBox.fill("A1");
+    await nameBox.press("Enter");
+    assert.equal(await activeId(page), "worksheet:A1", "the Name Box could not navigate to the first data row");
     await page.keyboard.type("Hello");
     await page.keyboard.press("Enter");
     await waitForCellText(page, "worksheet:A1", "Hello");
@@ -249,6 +262,7 @@ const cases = [
       await home(page);
       await page.keyboard.press("Control+n");
       await page.getByTestId("worksheet:B4").click();
+      assert.equal(await page.getByRole("textbox", { name: "Name Box", exact: true }).inputValue(), "B4");
       await page.keyboard.type("Apple");
       await page.keyboard.press("Enter");
       await settle(page);

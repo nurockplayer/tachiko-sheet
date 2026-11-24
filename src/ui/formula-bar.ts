@@ -38,6 +38,7 @@ export function formulaBarState(input: {
   table: WorkbookView["table"] | null;
   columns: readonly TableColumn[];
   displayRows: readonly TableRow[];
+  headerRow?: number;
   focus: { entity: string; field: string } | null;
   currentness: Currentness;
   /** Another Work operation is in flight; its publication would drop a draft. */
@@ -67,7 +68,8 @@ export function formulaBarState(input: {
   if (!row) return empty;
   const field = fieldForColumn(row, column.id);
   const target = field?.target ?? { entity: input.focus.entity, field: column.id };
-  const rowName = rowLabel(row, input.columns) || (displayed ? `Row ${a1RowNumber(index)}` : "Hidden row");
+  const displayedRowNumber = a1RowNumber(index, input.headerRow);
+  const rowName = rowLabel(row, input.columns) || (displayed ? `Row ${displayedRowNumber}` : "Hidden row");
   const reason = !tableAdmitsFormulas(input.table) ? FORMULA_BAR_NON_NATIVE
     : !columnCanHoldFormula(field, column) ? FORMULA_BAR_COLUMN
     : input.currentness === "unknown" ? FORMULA_BAR_UNKNOWN
@@ -77,7 +79,7 @@ export function formulaBarState(input: {
     identity: empty.identity,
     label: `${column.display_name} · ${rowName}`,
     address: displayed
-      ? `${a1ColumnLetter(input.columns.findIndex((candidate) => candidate.id === column.id))}${a1RowNumber(index)}`
+      ? `${a1ColumnLetter(input.columns.findIndex((candidate) => candidate.id === column.id))}${displayedRowNumber}`
       : "",
     target,
     source: field?.formula?.source ?? "",

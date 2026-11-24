@@ -1799,6 +1799,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.pasteCells(witness, collection, startEntity, startField, rows));
   }
 
+  function pasteCellsAt(witness: ViewWitness, collection: string, row: number, column: number, rows: PasteCellInput[][]) {
+    return changeRows(witness, () => runtime.pasteCellsAt(witness, collection, row, column, rows));
+  }
+
   function addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[] | undefined, required = true) {
     return changeRows(witness, () => runtime.addColumn(witness, collection, name, fieldType, initializers, required), "column");
   }
@@ -2406,6 +2410,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onEditCells={editCells}
           onCopyFormula={copyFormula}
           onPasteCells={pasteCells}
+          onPasteCellsAt={pasteCellsAt}
           onInsertRow={insertRow}
           // Column authoring needs the portable writer to save its result;
           // reader-only/rollback hosts do not offer it.
