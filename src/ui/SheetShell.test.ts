@@ -339,10 +339,9 @@ describe("headerless worksheets use the existing grid", () => {
 
   it("pastes into the new-row draft without allocating padded worksheet rows", async () => {
     const onPasteCellsAt = vi.fn<NonNullable<SheetShellProps["onPasteCellsAt"]>>(async () => ({ kind: "confirmed" }));
-    const ui = await mount(undefined, { onPasteCellsAt });
-    await ui.focus("A1");
-    await ui.type("Existing");
-    await ui.key("Enter");
+    const view = makeView();
+    view.table.native_table_profile = true;
+    const ui = await mount(view, { onPasteCellsAt, importedSourceName: null, onInsertRow: async () => ({ kind: "confirmed", view }) });
     const draft = ui.container.querySelector<HTMLElement>(`[data-work-entity="${DRAFT_ROW}"]`)!;
     const event = new Event("paste", { bubbles: true, cancelable: true });
     Object.defineProperty(event, "clipboardData", { value: { types: ["text/plain"], getData: () => "New" } });
