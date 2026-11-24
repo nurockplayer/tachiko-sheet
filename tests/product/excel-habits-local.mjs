@@ -280,7 +280,7 @@ const cases = [
       assert.equal(fieldAt(await projection(reopened), 3, 1)?.stored?.value, "Apple", "B4 did not survive save, browser restart and reopen");
       assert.equal(await reopened.getByTestId("worksheet:A1").textContent(), "", "writing B4 populated A1");
 
-      // Prepare real headerless imports through Work, then open the portable files in Sheet.
+      // Prepare headerless CSV and headed XLSX imports through Work.
       const imports = await reopened.evaluate(async () => {
         const { createExperimentalDesignerClient } = await import("/core-kit/experimental-client.js");
         const client = createExperimentalDesignerClient();
@@ -291,7 +291,7 @@ const cases = [
           const { revision, collection } = fromCsv.opened.window;
           const csvFile = await client.exportPortableRo(revision, fromCsv.metadata);
           const xlsx = await client.exportSpreadsheet(revision, fromCsv.metadata, "xlsx", collection.id);
-          const fromXlsx = await client.importSpreadsheetWorkingSize(xlsx.bytes, "xlsx", { delimiter: ",", header: false, header_rows: [0] }, selection);
+          const fromXlsx = await client.importSpreadsheetWorkingSize(xlsx.bytes, "xlsx", { delimiter: ",", header: true, header_rows: [1] }, selection);
           const xlsxFile = await client.exportPortableRo(fromXlsx.opened.window.revision, fromXlsx.metadata);
           return [
             { format: "csv", bytes: [...new Uint8Array(csvFile.bytes)], headerless: collection.headerless },
@@ -300,16 +300,16 @@ const cases = [
         } finally { client.close(); }
       });
       for (const { format, bytes, headerless } of imports) {
-        assert.equal(headerless, true, `${format} fixture lost its headerless projection`);
+        assert.equal(headerless, format === "csv", `${format} fixture has the wrong header projection`);
         await reopened.getByRole("button", { name: "Close project", exact: true }).click();
         await reopened.getByTestId("open-work-file").setInputFiles({
-          name: `headerless-${format}.ro`, mimeType: "application/octet-stream", buffer: Buffer.from(bytes),
+          name: `imported-${format}.ro`, mimeType: "application/octet-stream", buffer: Buffer.from(bytes),
         });
         await ready(reopened);
-        const cell = reopened.getByTestId(cellIdFor(await projection(reopened), 2, 1));
+        const cell = reopened.getByTestId(cellIdFor(await projection(reopened), format === "csv" ? 2 : 1, 1));
         await cell.click();
         assert.equal((await cell.textContent()).trim(), "3");
-        assert.equal(await reopened.getByRole("textbox", { name: "Name Box", exact: true }).inputValue(), "B4",
+        assert.equal(await reopened.getByRole("textbox", { name: "Name Box", exact: true }).inputValue(), format === "csv" ? "B4" : "B3",
           `${format} imports lost their header-inclusive addresses`);
       }
     } finally {
