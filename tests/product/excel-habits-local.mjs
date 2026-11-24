@@ -306,7 +306,9 @@ const cases = [
           name: `imported-${format}.ro`, mimeType: "application/octet-stream", buffer: Buffer.from(bytes),
         });
         await ready(reopened);
-        const cell = reopened.getByTestId(cellIdFor(await projection(reopened), format === "csv" ? 2 : 1, 1));
+        const table = await projection(reopened);
+        const entity = rowEntity(table.rows[format === "csv" ? 2 : 1]);
+        const cell = reopened.locator(`[data-work-entity="${entity}"][data-work-field="${table.columns[1].id}"]`);
         await cell.click();
         assert.equal((await cell.textContent()).trim(), "3");
         assert.equal(await reopened.getByRole("textbox", { name: "Name Box", exact: true }).inputValue(), format === "csv" ? "B4" : "B3",
