@@ -17,7 +17,7 @@ const witness = { occurrence: "sales", revision: "r0" };
 const confirmedPublication = () => ({ base_revision: "r0", resulting_revision: "r1", entities: [], fields: [], affected_calculations: [], schemas: [], schema_fields: [] });
 /** `snapshot` reports state like App does, where each call is a fresh object. */
 function harness(snapshot = false) {
-  const state: ReturnType<MutationCompletionPort["state"]> = { view: view(), history: { ...emptyLocalHistory(view()), undoCount: 1 }, currentness: "current", savedRevision: "r0", definitionIds: ["d1"], results: [] };
+  const state: ReturnType<MutationCompletionPort["state"]> = { view: view(), history: { ...emptyLocalHistory(view()), undo: ["work"] }, currentness: "current", savedRevision: "r0", definitionIds: ["d1"], results: [] };
   let recovery: MutationRecovery | null = null, dirty = false, reads = 0;
   const effects: string[] = [];
   const markers = { initial: "sales" as string | null, changed: null as string | null };
@@ -33,7 +33,7 @@ function harness(snapshot = false) {
       closeFailed(): never { effects.push("close-failed"); throw new Error("close failed"); },
     },
     installView(next) { port.installHistory(next ? observeLocalHistory(state.history, next) : emptyLocalHistory()); state.view = next; effects.push(`value:${next?.revision ?? "none"}`); },
-    installHistory(next) { state.history = next; effects.push(`history:${next.undoCount}/${next.redoCount}`); }, clearResults() { state.results = []; effects.push("clear-results"); },
+    installHistory(next) { state.history = next; effects.push(`history:${next.undo.length}/${next.redo.length}`); }, clearResults() { state.results = []; effects.push("clear-results"); },
     async readResults() { reads++; effects.push("read-results"); return observed; }, async readView() { effects.push("read-view"); return view("r1"); },
     installResults(results) { state.results = results; state.definitionIds = results.map(r => r.definitionId); effects.push("results"); },
     restoreResults(prior) { Object.assign(state, prior); effects.push("restore-results"); }, upsertResult() { effects.push("upsert-result"); }, dropResult() { effects.push("drop-result"); }, clearPreview() { effects.push("preview"); },
@@ -60,7 +60,7 @@ describe("mutation completion boundaries", () => {
     const result = await h.completion.run({ kind: "scalar", witness, edit: { kind: "number", input: "250" }, dispatch: async () => ({ view: view("r1"), publication: { base_revision: "r0", resulting_revision: "r1", entities: [], fields: [], affected_calculations: [], schemas: [], schema_fields: [] } }) });
     expect(result.kind).toBe("known-publication-recovery");
     expect(h.state.view).toBeNull(); expect(h.state.savedRevision).toBeNull(); expect(h.dirty).toBe(true);
-    expect(h.state.history.undoCount).toBe(0); expect(h.reads).toBe(1);
+    expect(h.state.history.undo).toEqual([]); expect(h.reads).toBe(1);
     expect(h.recovery?.resetPreview).toBe(true);
   });
   it("accepts the authoritative post-Undo inventory when summary creation is undone", async () => {
@@ -69,7 +69,7 @@ describe("mutation completion boundaries", () => {
       dispatch: async () => ({ view: view("r1"), publication: { base_revision: "r0", resulting_revision: "r1", entities: [], fields: [], schemas: [], schema_fields: [], affected_calculations: [] } }) });
     expect(result.kind).toBe("published");
     expect(h.state.definitionIds).toEqual([]); expect(h.state.currentness).toBe("current");
-    expect(h.state.history).toMatchObject({ undoCount: 0, redoCount: 1, revision: "r1" });
+    expect(h.state.history).toMatchObject({ undo: [], redo: ["work"], revision: "r1" });
     expect(h.recovery).toBeNull();
   });
   it("reports the entities a confirmed row publication added, in the grid's identity", async () => {
@@ -124,13 +124,13 @@ describe("mutation completion boundaries", () => {
   it("keeps the existing history refusal recovery policy", async () => {
     const h = harness();
     await h.completion.run({ kind: "history", direction: "undo", witness, dispatch: async () => { throw new Error("refused"); } });
-    expect(h.recovery).toMatchObject({ kind: "unknown-outcome" }); expect(h.state.history.undoCount).toBe(0);
+    expect(h.recovery).toMatchObject({ kind: "unknown-outcome" }); expect(h.state.history.undo).toEqual([]);
   });
   it("admits a confirmed replace publication to local history", async () => {
     const h = harness();
     const result = await h.completion.run({ kind: "cleanup", witness, recordHistory: true, dispatch: async () => ({ view: view("r1"), publication: confirmedPublication() }) });
     expect(result.kind).toBe("published");
-    expect(h.state.history).toMatchObject({ undoCount: 2, redoCount: 0, revision: "r1" });
+    expect(h.state.history).toMatchObject({ undo: ["work", "work"], redo: [], revision: "r1" });
   });
   it("leaves cleanup summaries to explicit Refresh rather than re-querying on publication", async () => {
     const h = harness();
@@ -174,7 +174,7 @@ describe("52aef66 completion effect order", () => {
   for (const path of ["scalar", "insert", "delete", "undo", "redo", "cleanup", "summary"] as const) {
     it(`completes ${path} publication, history, markers, save truth and completion/focus order`, async () => {
       const h = harness(); h.observed([result]);
-      if (path === "redo") h.state.history = { ...h.state.history, undoCount: 0, redoCount: 1 };
+      if (path === "redo") h.state.history = { ...h.state.history, undo: [], redo: ["work"] };
       const dispatch = async () => { h.effects.push("dispatch"); return { view: view("r1"), publication }; };
       const command: MutationCommand = path === "scalar" ? { kind: "scalar", witness, edit: { kind: "number", input: "250" }, dispatch }
         : path === "insert" || path === "delete" ? { kind: "rows", witness, dispatch }

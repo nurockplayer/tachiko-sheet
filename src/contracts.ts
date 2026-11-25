@@ -23,7 +23,7 @@ import type {
   SpreadsheetFormat,
 } from "../public/core-kit/runtime/interop-protocol.js";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
-import type { LocalHistorySnapshot } from "./application/local-history.js";
+import type { LocalHistorySnapshot, ViewHistoryChange } from "./application/local-history.js";
 import type { CsvDelimiter, CsvEncoding } from "./ui/csv-text.js";
 import type { TemplateId } from "./ui/templates.js";
 export type {
@@ -445,6 +445,7 @@ export interface SheetShellProps {
   onSelectCollection?(witness: ViewWitness, collection: string): Promise<void>;
   onCommit(witness: ViewWitness, target: FieldTarget, edit: ScalarEdit): Promise<CommitOutcome>;
   localHistory: LocalHistorySnapshot;
+  onRecordViewHistory(witness: ViewWitness, change: ViewHistoryChange): boolean;
   onHistory(direction: "undo" | "redo"): Promise<FieldTarget | null>;
   onCreateCopy(name: string): Promise<CreateCopyOutcome>;
   boundCopyName?: string | null;

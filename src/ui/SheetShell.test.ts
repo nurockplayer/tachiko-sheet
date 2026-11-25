@@ -178,7 +178,8 @@ function makeProps(overrides: Partial<SheetShellProps> = {}): SheetShellProps {
     onOpenExample: async () => {},
     onOpenSaved: async () => {},
     onCommit: async () => ({ accepted: true }),
-    localHistory: { occurrence: null, revision: null, undoCount: 0, redoCount: 0 },
+    localHistory: { occurrence: null, revision: null, undo: [], redo: [] },
+    onRecordViewHistory: () => true,
     onHistory: async () => null,
     onCreateCopy: async () => ({ saved: true }),
     onClose: async () => {},
@@ -570,7 +571,7 @@ describe("keyboard history queue", () => {
     const root = createRoot(container);
     const view = makeView();
     view.table.native_table_profile = true;
-    let props = makeProps({ view, localHistory: { occurrence: view.occurrence, revision: view.revision, undoCount: 3, redoCount: 0 }, ...overrides });
+    let props = makeProps({ view, localHistory: { occurrence: view.occurrence, revision: view.revision, undo: ["work", "work", "work"], redo: [] }, ...overrides });
     const update = async (next: Partial<SheetShellProps> = {}) => {
       props = { ...props, ...next };
       await act(async () => root.render(createElement(SheetShell, props)));
@@ -668,7 +669,7 @@ describe("keyboard history queue", () => {
     });
     const onSetCellStyle = vi.fn(async () => ({ kind: "confirmed" as const }));
     const onHistory = vi.fn(async () => null);
-    const ui = await mount({ view, onSetCellStyle, onHistory, localHistory: { occurrence: view.occurrence, revision: view.revision, undoCount: 0, redoCount: 0 } });
+    const ui = await mount({ view, onSetCellStyle, onHistory, localHistory: { occurrence: view.occurrence, revision: view.revision, undo: [], redo: [] } });
     const entities = view.table.rows.map(row => row.key);
     const request = { type: "set_cell_style", expected_revision: view.revision, collection: view.table.collection.key, entities, fields: view.table.columns.map(column => column.id), changes: [{ kind: "toggle_bold" }] };
     expect(new TextEncoder().encode(JSON.stringify(request)).byteLength).toBeGreaterThan(65_536);
@@ -1161,7 +1162,7 @@ describe("keyboard history queue", () => {
       await ui.update({ view: ui.view });
       return null;
     });
-    const ui = await mount({ onInsertRow: async () => ({ kind: "confirmed" }), onRemoveRows, onHistory, localHistory: { occurrence: "occ-1", revision: "rev-1", undoCount: 0, redoCount: 0 } });
+    const ui = await mount({ onInsertRow: async () => ({ kind: "confirmed" }), onRemoveRows, onHistory, localHistory: { occurrence: "occ-1", revision: "rev-1", undo: [], redo: [] } });
     const button = [...ui.container.querySelectorAll("button")].find(button => button.textContent === "Delete row")!;
     await act(async () => button.click());
     expect(onRemoveRows).toHaveBeenCalledOnce();
@@ -1169,7 +1170,7 @@ describe("keyboard history queue", () => {
     expect(onHistory).not.toHaveBeenCalled();
     const deleted = { ...ui.view, revision: "rev-2", table: { ...ui.view.table, revision: "rev-2", rows: ui.view.table.rows.slice(1) } };
     // App keeps its runtime busy while publication precedes the command's settlement.
-    await ui.update({ busy: true, view: deleted, localHistory: { occurrence: "occ-1", revision: "rev-2", undoCount: 1, redoCount: 0 } });
+    await ui.update({ busy: true, view: deleted, localHistory: { occurrence: "occ-1", revision: "rev-2", undo: ["work"], redo: [] } });
     expect(onHistory).not.toHaveBeenCalled();
     await act(async () => { deletion.resolve({ kind: "confirmed" }); });
     expect(onHistory).not.toHaveBeenCalled();
@@ -1259,7 +1260,7 @@ describe("keyboard history queue", () => {
 
   it("preserves mixed Undo/Redo order and ignores entries beyond 20", async () => {
     const onHistory = vi.fn<SheetShellProps["onHistory"]>(async () => null);
-    const ui = await mount({ onHistory, busy: true, localHistory: { occurrence: "occ-1", revision: "rev-1", undoCount: 20, redoCount: 20 } });
+    const ui = await mount({ onHistory, busy: true, localHistory: { occurrence: "occ-1", revision: "rev-1", undo: Array<"work">(20).fill("work"), redo: Array<"work">(20).fill("work") } });
     for (let i = 0; i < 22; i++) await ui.key(i % 2 ? "y" : "z");
     expect(onHistory).not.toHaveBeenCalled();
     await ui.update({ busy: false });

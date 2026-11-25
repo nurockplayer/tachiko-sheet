@@ -495,10 +495,48 @@ const cases = [
     const order = () => page.locator("tbody tr.ts-row").evaluateAll((rows) => rows.map((row) => row.querySelector("td")?.textContent?.trim() ?? ""));
     const before = await order();
     await columnAction(page, "title", "Sort Z → A");
-    assert.notDeepEqual(await order(), before, "sorting did not change the visible order");
+    const sorted = await order();
+    assert.notDeepEqual(sorted, before, "sorting did not change the visible order");
+    await replaceCell(page, id, "Zebra");
+    await waitForCellText(page, id, "Zebra");
+    await page.keyboard.press("Control+z");
+    await waitForCellText(page, id, "Zed");
+    assert.deepEqual(await order(), sorted, "Undo of the later edit changed the sort");
     await page.keyboard.press("Control+z");
     await settle(page);
-    assert.deepEqual(await order(), before, "Undo did not restore the pre-sort order; sorting is view state with no history entry");
+    assert.deepEqual(await order(), before, "Undo did not restore the pre-sort order");
+    await page.keyboard.press("Control+z");
+    await waitForCellText(page, id, original);
+    await page.keyboard.press("Control+y");
+    await waitForCellText(page, id, "Zed");
+    await page.keyboard.press("Control+y");
+    await settle(page);
+    assert.deepEqual(await order(), sorted, "Redo did not reapply the sort");
+    await page.keyboard.press("Control+y");
+    await waitForCellText(page, id, "Zebra");
+
+    const sortedAfterEdit = await order();
+    await page.getByRole("button", { name: "Clear sort", exact: true }).click();
+    await settle(page);
+    const unsortedAfterEdit = await order();
+    assert.notDeepEqual(unsortedAfterEdit, sortedAfterEdit, "Clear sort did not restore storage order");
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.deepEqual(await order(), sortedAfterEdit, "Undo did not restore the cleared sort");
+
+    await filterValues(page, "area", ["發版"]);
+    const filtered = await order();
+    assert.equal(filtered.length, 1);
+    await page.getByRole("button", { name: "Clear filter", exact: true }).click();
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.deepEqual(await order(), filtered, "Undo did not restore the cleared filter");
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.deepEqual(await order(), sortedAfterEdit, "Undo did not remove the applied filter");
+    await page.keyboard.press("Control+y");
+    await settle(page);
+    assert.deepEqual(await order(), filtered, "Redo did not reapply the filter");
   } },
   { id: "16", name: "Mouse selection", tier: "A", note: "The fixture table has three records, so the drag is B2:D4 instead of B2:D8.", run: async (page) => {
     await example(page);
