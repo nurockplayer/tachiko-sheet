@@ -7,7 +7,7 @@ import type { ConfirmedPublication, SheetShellProps, WorkbookView } from "../con
 import { UnknownOperationOutcomeError } from "../contracts.js";
 import { App } from "../App.js";
 
-const shell = vi.hoisted(() => ({ props: null as SheetShellProps | null, saveFile: vi.fn(async (): Promise<string | undefined> => undefined), readImportCompanion: vi.fn() }));
+const shell = vi.hoisted(() => ({ props: null as SheetShellProps | null, saveFile: vi.fn(async (..._args: [string, Blob | Promise<Blob>, import("../contracts.js").ImportCompanion?]): Promise<string | undefined> => undefined), readImportCompanion: vi.fn() }));
 vi.mock("../host/host-files.js", () => ({ useHostFiles: () => ({ saveFile: shell.saveFile, readImportCompanion: shell.readImportCompanion }) }));
 vi.mock("../ui/SheetShell.js", () => ({ SheetShell: (props: SheetShellProps) => {
   shell.props = props;

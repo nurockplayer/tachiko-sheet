@@ -1398,7 +1398,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       if ((await replaceWork(
         () => copy.kind === "work-file" ? (savedMetadata ? runtime.openWorkFile(copy.bytes, savedMetadata) : runtime.openWorkFile(copy.bytes))
           : copy.kind === "opaque" ? runtime.openOpaque(copy.bytes, savedMetadata ?? copy.importedSource?.metadata) : runtime.openCanonical(copy.files, copy.importedSource?.metadata),
-        { importedSource: copy.importedSource ?? null, importOrigin: savedMetadata ? copy.importCompanion?.origin ?? "imported" : null, interop: candidateInterop, savedRevision: copy.revision, presentation, boundCopy: copy },
+        { importedSource: copy.importedSource ?? null, importOrigin: savedMetadata && "importCompanion" in copy ? copy.importCompanion?.origin ?? "imported" : null, interop: candidateInterop, savedRevision: copy.revision, presentation, boundCopy: copy },
       )).kind !== "confirmed") return;
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
     } catch (error) {
