@@ -218,6 +218,9 @@ export class WorkerDesignerClient {
     async setCellStyle(expectedRevision, collection, entities, fields, changes) {
         return this.trackerCommand({ type: "set_cell_style", expected_revision: expectedRevision, collection, entities, fields, changes });
     }
+    async setCellStyleRange(expectedRevision, collection, row, rowCount, fields, changes) {
+        return this.trackerCommand({ type: "set_cell_style_range", expected_revision: expectedRevision, collection, row, row_count: rowCount, fields, changes });
+    }
     async setColumnWidth(expectedRevision, collection, field, width) {
         return this.trackerCommand({ type: "set_column_width", expected_revision: expectedRevision, collection, field, width });
     }
