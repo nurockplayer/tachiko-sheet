@@ -300,6 +300,7 @@ function updateGridViewRecord(
 
 function rowViewHistoryChange(
   setGridViews: (update: (current: RowViewRecord) => RowViewRecord) => void,
+  keptRowsByFilter: WeakMap<readonly RowViewFilter[], RowViewSettings["kept"]>,
   occurrence: string,
   collection: string,
   previous: RowViewSettings,
@@ -309,11 +310,12 @@ function rowViewHistoryChange(
   const filtersChanged = previous.filters !== next.filters;
   return (direction: "undo" | "redo") => {
     const settings = direction === "undo" ? previous : next;
+    const kept = settings.filters && keptRowsByFilter.get(settings.filters);
     setGridViews(record => updateGridViewRecord(record, occurrence, collection, current => ({
       ...current,
       sort: sortChanged ? settings.sort : current.sort,
       filters: filtersChanged ? settings.filters : current.filters,
-      kept: filtersChanged ? settings.kept : current.kept,
+      kept: filtersChanged ? kept : current.kept,
     })));
   };
 }
@@ -791,6 +793,8 @@ export function SheetShell(props: SheetShellProps) {
   const [stripPending, setStripPending] = useState(false);
   const stripPendingRef = useRef(false);
   const [gridViews, setGridViews] = useState<RowViewRecord>({ occurrence: null, byCollection: {} });
+  // Each application of a filter has its own kept rows, including when history revisits it.
+  const [keptRowsByFilter] = useState(() => new WeakMap<readonly RowViewFilter[], RowViewSettings["kept"]>());
   const [filterDraft, setFilterDraft] = useState<{ field: string; mode: "contains" | "values" | "condition"; text: string; op: RowViewComparison; checked: string[]; attempted?: boolean } | null>(null);
   const columnTriggerRef = useRef<HTMLElement | null>(null);
   const columnFocusIntentRef = useRef<ReturnType<typeof completionIntent> | null>(null);
@@ -1529,7 +1533,7 @@ export function SheetShell(props: SheetShellProps) {
     const next = update(previous);
     if (rowViewDisplaySignature(previous) === rowViewDisplaySignature(next)) return false;
 
-    const change = rowViewHistoryChange(setGridViews, witness.occurrence, table.collection.key, previous, next);
+    const change = rowViewHistoryChange(setGridViews, keptRowsByFilter, witness.occurrence, table.collection.key, previous, next);
     if (!onRecordViewHistory(witness, change)) return false;
     change("redo");
     return true;
@@ -1711,10 +1715,13 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function keepGridRows(entities: readonly string[]): void {
-    if (!gridSettings.filters?.length) return;
-    const extra = entities.filter((entity) => entity !== DRAFT_ROW);
-    if (extra.length === 0) return;
-    updateGridSettings((current) => rowViewKeepingRows(current, extra));
+    const filters = rawGridSettings?.filters;
+    if (!filters || !gridSettings.filters?.length) return;
+    const settings = { filters, kept: keptRowsByFilter.get(filters) };
+    const next = rowViewKeepingRows(settings, entities.filter(entity => entity !== DRAFT_ROW));
+    if (next === settings) return;
+    keptRowsByFilter.set(filters, next.kept);
+    updateGridSettings(current => current.filters === filters ? { ...current, kept: next.kept } : current);
   }
 
   function setGridSort(field: string, direction: "asc" | "desc"): void {

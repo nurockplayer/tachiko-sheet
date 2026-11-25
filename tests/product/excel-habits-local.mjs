@@ -1473,6 +1473,28 @@ const cases = [
     assert.equal((await projection(page)).rows.length, 3, "filtering deleted nonmatching records");
     await page.getByRole("button", { name: "Clear filter", exact: true }).click();
     await settle(page);
+
+    const title = cellIdFor(table, 0, 0);
+    const rows = page.locator("tbody tr.ts-row");
+    await replaceCell(page, title, "Apple");
+    await waitForCellText(page, title, "Apple");
+    await filterValues(page, "title", ["Apple"]);
+    await replaceCell(page, title, "Banana");
+    await waitForCellText(page, title, "Banana");
+    assert.equal(await rows.count(), 1);
+    for (let replay = 0; replay < 2; replay++) {
+      await page.keyboard.press("Control+z");
+      await waitForCellText(page, title, "Apple");
+      await page.keyboard.press("Control+z");
+      await settle(page);
+      assert.equal(await rows.count(), 3, "Undo did not remove the Apple filter");
+      await page.keyboard.press("Control+y");
+      await settle(page);
+      assert.equal(await rows.count(), 1, "Redo did not reapply the Apple filter");
+      await page.keyboard.press("Control+y");
+      await waitForCellText(page, title, "Banana");
+      assert.equal(await rows.count(), 1, "Redo changed the visible rows after editing under the filter");
+    }
   } },
   { id: "31", name: "Find/replace", tier: "A", run: async (page) => {
     await newTable(page, "Replace", [{ name: "Item" }, { name: "Amount", type: "number" }]);
