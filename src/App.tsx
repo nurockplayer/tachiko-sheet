@@ -41,6 +41,7 @@ import {
   type NewTableColumn,
   type RowInitializer,
   type CellEdit,
+  type CellStyleRows,
   type CommitOutcome,
   type CreateCopyOutcome,
   type PasteCellInput,
@@ -1820,8 +1821,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.setColumnWidth(witness, collection, field, width), "column");
   }
 
-  function setCellStyle(witness: ViewWitness, collection: string, entities: string[], fields: string[], changes: CellStyleChange[]) {
-    return changeRows(witness, () => runtime.setCellStyle(witness, collection, entities, fields, changes));
+  function setCellStyle(witness: ViewWitness, collection: string, rows: CellStyleRows, fields: string[], changes: CellStyleChange[]) {
+    return changeRows(witness, () => runtime.setCellStyle(witness, collection, rows, fields, changes));
   }
 
   function setColumnAlignment(witness: ViewWitness, collection: string, field: string, alignment: CellAlignment | null) {

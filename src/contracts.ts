@@ -68,6 +68,7 @@ export interface WorkbookView {
   table: TableProjection;
 }
 export interface ViewWitness { occurrence: string; revision: string }
+export type CellStyleRows = { row: number; rowCount: number } | { entities: string[] };
 
 /** Entity identity of one projected row: the FieldTarget identity the grid and test markers use. */
 export function rowEntity(row: WorkbookView["table"]["rows"][number]): string {
@@ -124,7 +125,7 @@ export interface SheetRuntime {
   /** Read Work's capacity accounting for a revision; null when the kit lacks the capability. */
   queryCapacity(expectedRevision?: string): Promise<CapacityProjection | null>;
   setColumnWidth(witness: ViewWitness, collection: string, field: string, width: number | null): Promise<ConfirmedPublication>;
-  setCellStyle(witness: ViewWitness, collection: string, entities: string[], fields: string[], changes: CellStyleChange[]): Promise<ConfirmedPublication>;
+  setCellStyle(witness: ViewWitness, collection: string, rows: CellStyleRows, fields: string[], changes: CellStyleChange[]): Promise<ConfirmedPublication>;
   setColumnAlignment(witness: ViewWitness, collection: string, field: string, alignment: CellAlignment | null): Promise<ConfirmedPublication>;
   setColumnDateFormat(witness: ViewWitness, collection: string, field: string, format: DateFormat | null): Promise<ConfirmedPublication>;
   setColumnNumberFormat(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null): Promise<ConfirmedPublication>;
@@ -418,7 +419,7 @@ export interface SheetShellProps {
   onSetColumnRequiredness?(witness: ViewWitness, collection: string, field: string, required: boolean): Promise<RowCommandOutcome>;
   onSetColumnConstraint?(witness: ViewWitness, collection: string, field: string, constraint: FieldConstraintInput): Promise<RowCommandOutcome>;
   onSetColumnWidth?(witness: ViewWitness, collection: string, field: string, width: number | null): Promise<RowCommandOutcome>;
-  onSetCellStyle?(witness: ViewWitness, collection: string, entities: string[], fields: string[], changes: CellStyleChange[]): Promise<RowCommandOutcome>;
+  onSetCellStyle?(witness: ViewWitness, collection: string, rows: CellStyleRows, fields: string[], changes: CellStyleChange[]): Promise<RowCommandOutcome>;
   onSetColumnAlignment?(witness: ViewWitness, collection: string, field: string, alignment: CellAlignment | null): Promise<RowCommandOutcome>;
   onSetColumnDateFormat?(witness: ViewWitness, collection: string, field: string, format: DateFormat | null): Promise<RowCommandOutcome>;
   onSetColumnNumberFormat?(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null): Promise<RowCommandOutcome>;
