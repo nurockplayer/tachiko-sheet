@@ -1833,8 +1833,23 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.setColumnDateFormat(witness, collection, field, format), "column");
   }
 
-  function setColumnNumberFormat(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null) {
-    return changeRows(witness, () => runtime.setColumnNumberFormat(witness, collection, field, format), "column");
+  async function setColumnNumberFormat(witness: ViewWitness, collection: string, field: string | readonly string[], format: NumberFormat | null): Promise<RowCommandOutcome> {
+    if (typeof field === "string") {
+      return changeRows(witness, () => runtime.setColumnNumberFormat(witness, collection, field, format), "column");
+    }
+    let target = witness;
+    let changed = 0;
+    for (const column of field) {
+      const result = await changeRows(target, () => runtime.setColumnNumberFormat(target, collection, column, format), "column");
+      if (result.kind === "recovery") return result;
+      if (result.kind === "refused") {
+        if (result.refusalCode === "no_change") continue;
+        return changed === 0 ? result : { ...result, message: `Updated ${changed} of ${field.length} columns before Work refused a change. ${result.message}` };
+      }
+      changed += 1;
+      target = witnessOf(viewRef.current!);
+    }
+    return changed ? { kind: "confirmed" } : { kind: "refused", refusalCode: "no_change", message: "The selected columns already have this format." };
   }
 
   function copyFormula(witness: ViewWitness, request: FormulaCopy) {

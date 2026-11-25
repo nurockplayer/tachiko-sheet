@@ -2177,6 +2177,20 @@ g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
 
 .ts-modal--save { min-height: min(360px, calc(100dvh - 48px)); }
 
+.ts-modal--format-cells { width: min(430px, 100%); gap: 10px; padding: 16px; }
+.ts-modal--format-cells fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--ts-line);
+}
+.ts-modal--format-cells label { display: inline-flex; align-items: center; gap: 4px; }
+.ts-modal--format-cells input[type="number"] { width: 4em; }
+.ts-modal--format-cells .ts-dialog-actions { padding-top: 0; }
+
 .ts-modal--review {
   height: auto;
   min-height: min(360px, calc(100dvh - 48px));

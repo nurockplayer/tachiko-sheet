@@ -2196,10 +2196,74 @@ const cases = [
   { id: "47", name: "Format Cells", tier: "B", run: async (page) => {
     await example(page);
     const table = await projection(page);
-    await page.getByTestId(cellIdFor(table, 0, 0)).click();
+    const cell = (row, col) => page.getByTestId(cellIdFor(table, row, col));
+    const dialog = page.getByRole("dialog", { name: "Format Cells", exact: true });
+    const gridFocused = () => cell(0, 0).evaluate(node => node === document.activeElement);
+    const isBold = locator => locator.evaluate(node => Number(getComputedStyle(node).fontWeight) >= 600);
+    await cell(0, 0).click();
     await page.keyboard.press("Control+1");
     await settle(page);
-    assert.ok(await page.getByRole("dialog").count() > 0, "Ctrl+1 opened no Format Cells dialog");
+    assert.equal(await dialog.count(), 1, "Ctrl+1 opened no Format Cells dialog");
+    assert.ok(await dialog.getByRole("button", { name: "Apply number format" }).isDisabled(), "A cell selection enabled column number formatting");
+    assert.ok(await dialog.getByRole("combobox", { name: "Bold", exact: true }).evaluate(node => node === document.activeElement), "The dialog did not focus its first control");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Escape");
+    await settle(page);
+    assert.equal(await dialog.count(), 0, "Escape did not dismiss the dialog");
+    assert.ok(await gridFocused(), "Escape did not restore grid focus");
+    assert.equal(await isBold(cell(0, 0)), false, "Escape applied a draft style");
+
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Meta+1");
+    await dialog.waitFor();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Enter");
+    await dialog.waitFor({ state: "detached" });
+    await settle(page);
+    assert.ok(await gridFocused(), "Apply did not restore grid focus");
+    const assertStyles = async applied => {
+      for (const row of [0, 1]) {
+        assert.equal(await isBold(cell(row, 0)), applied, `Unexpected bold state in row ${row + 1}`);
+        assert.equal(await cell(row, 0).evaluate(node => getComputedStyle(node).fontStyle), applied ? "italic" : "normal");
+      }
+      assert.equal(await isBold(cell(2, 0)), false, "Formatting changed a cell outside the selection");
+    };
+    await assertStyles(true);
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    await assertStyles(false);
+    await page.keyboard.press("Control+y");
+    await settle(page);
+    await assertStyles(true);
+
+    const numberColumn = table.columns.findIndex(column => column.field_type === "number");
+    assert.ok(numberColumn >= 0, "The example has no number column");
+    await cell(0, numberColumn).click();
+    await page.keyboard.press("Control+Space");
+    await page.keyboard.press("Control+1");
+    await dialog.getByRole("combobox", { name: "Format", exact: true }).selectOption("percent");
+    await dialog.getByRole("button", { name: "Apply number format" }).press("Enter");
+    await dialog.waitFor({ state: "detached" });
+    await settle(page);
+    assert.equal((await projection(page)).columns[numberColumn].number_format?.kind.type, "percent");
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.deepEqual((await projection(page)).columns[numberColumn].number_format, table.columns[numberColumn].number_format);
+    await page.keyboard.press("Control+y");
+    await settle(page);
+
+    await saveCopy(page, "habits-47");
+    await page.reload();
+    await waitForColdHome(page);
+    await page.getByRole("button", { name: "Open saved habits-47", exact: true }).click();
+    await ready(page);
+    await assertStyles(true);
+    assert.equal((await projection(page)).columns[numberColumn].number_format?.kind.type, "percent", "Number format did not survive reopen");
   } },
   { id: "48", name: "Table creation", tier: "B", run: async (page) => {
     await example(page);

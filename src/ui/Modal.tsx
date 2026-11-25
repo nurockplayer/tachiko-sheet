@@ -1,7 +1,7 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { isComposingEvent } from "./composition-event.js";
 
-export function Modal({ label, onCancel, children, variant = "review", dismissDisabled = false }: { label: string; onCancel: () => void; children: ReactNode; variant?: "save" | "close" | "import" | "review"; dismissDisabled?: boolean }) {
+export function Modal({ label, onCancel, children, variant = "review", dismissDisabled = false }: { label: string; onCancel: () => void; children: ReactNode; variant?: "save" | "close" | "import" | "review" | "format-cells"; dismissDisabled?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

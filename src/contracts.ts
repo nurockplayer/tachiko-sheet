@@ -422,7 +422,7 @@ export interface SheetShellProps {
   onSetCellStyle?(witness: ViewWitness, collection: string, rows: CellStyleRows, fields: string[], changes: CellStyleChange[]): Promise<RowCommandOutcome>;
   onSetColumnAlignment?(witness: ViewWitness, collection: string, field: string, alignment: CellAlignment | null): Promise<RowCommandOutcome>;
   onSetColumnDateFormat?(witness: ViewWitness, collection: string, field: string, format: DateFormat | null): Promise<RowCommandOutcome>;
-  onSetColumnNumberFormat?(witness: ViewWitness, collection: string, field: string, format: NumberFormat | null): Promise<RowCommandOutcome>;
+  onSetColumnNumberFormat?(witness: ViewWitness, collection: string, field: string | readonly string[], format: NumberFormat | null): Promise<RowCommandOutcome>;
   onRenameTable?(witness: ViewWitness, collection: string, name: string): Promise<RowCommandOutcome>;
   onAddTable?(witness: ViewWitness, name: string, columns: NewTableColumn[]): Promise<RowCommandOutcome>;
   onDeleteTable?(witness: ViewWitness, collection: string): Promise<RowCommandOutcome>;

@@ -27,6 +27,7 @@ import type {
 import type {
   Currentness,
   CellEdit,
+  CellStyleRows,
   CommitOutcome,
   FieldTarget,
   ImportSelection,
@@ -74,8 +75,9 @@ import { DuplicateTableDialog } from "./DuplicateTableDialog.js";
 import { ColumnRuleDialog } from "./ColumnRuleDialog.js";
 import { ColumnAlignmentDialog } from "./ColumnAlignmentDialog.js";
 import { ColumnFormatDialog } from "./ColumnFormatDialog.js";
+import { FormatCellsDialog } from "./FormatCellsDialog.js";
 import { columnFormatSettlement, nextStripAlignment, nextStripNumberFormat, type StripNumberAction } from "./column-format.js";
-import type { CellStyleChange, DateFormat } from "../../public/core-kit/runtime/protocol.js";
+import type { CellStyleChange, DateFormat, NumberFormat } from "../../public/core-kit/runtime/protocol.js";
 import { columnRuleKind } from "./column-rule.js";
 import { duplicateLanding, supportsDuplicateTable } from "./duplicate-table.js";
 import { DRAFT_ROW, draftInitializers, draftKeyAction, draftReadiness, draftRefusal, firstMissingDraftColumn, hasDraftInput, type RowDraft } from "./row-entry-model.js";
@@ -775,6 +777,10 @@ export function SheetShell(props: SheetShellProps) {
   const [ruleDialog, setRuleDialog] = useState<{ field: string; trigger: HTMLElement; collection: string; occurrence: string } | null>(null);
   const [alignmentDialog, setAlignmentDialog] = useState<{ field: string; trigger: HTMLElement; collection: string; occurrence: string } | null>(null);
   const [formatDialog, setFormatDialog] = useState<{ field: string; trigger: HTMLElement; collection: string; occurrence: string } | null>(null);
+  const [formatCellsDialog, setFormatCellsDialog] = useState<{
+    trigger: HTMLElement; position: GridPosition; identity: string | null; collection: string; witness: ViewWitness;
+    rows: CellStyleRows; fields: string[]; numberFields: string[]; numberFormat?: NumberFormat; numberUnavailable: string | null;
+  } | null>(null);
   const [rowDraft, setRowDraft] = useState<RowDraft | null>(null);
   const [rowError, setRowError] = useState<{ message: string; fields?: string[]; missing?: boolean } | null>(null);
   const rowDraftActive = rowDraft !== null && (rowDraft.needsReview === true || hasDraftInput(rowDraft.values));
@@ -846,7 +852,7 @@ export function SheetShell(props: SheetShellProps) {
   useLayoutEffect(() => {
     if (gridWindowed) syncGridWindow();
   }, [gridZoom]);
-  const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition; fromFillHandle?: boolean } | null>(null);
+  const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition; fromFillHandle?: boolean; wholeColumns?: boolean } | null>(null);
   const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition; activeCell?: GridPosition; pasteSpecial?: boolean; column?: string; trigger?: HTMLElement } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   // The live grid focus for async continuations: a translation that returns
@@ -2567,7 +2573,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, false);
-  const modalInteractionOpen = shortcutHelp || deleteTable !== null || renameTable !== null || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
+  const modalInteractionOpen = shortcutHelp || deleteTable !== null || renameTable !== null || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null || formatCellsDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
   const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive || formulaDraftActive;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
   useLayoutEffect(() => {
@@ -3583,7 +3589,7 @@ export function SheetShell(props: SheetShellProps) {
     tabRunStartRef.current = null;
     const visibleCell = kind === "column" ? visibleColumnCell(anchor.field) : undefined;
     (visibleCell ?? cellRefs.current.get(cellKey(anchor.entity, anchor.field)))?.focus({ preventScroll: true });
-    setCellSelection({ identity: collectionIdentity, revision: view.revision, anchor, end });
+    setCellSelection({ identity: collectionIdentity, revision: view.revision, anchor, end, wholeColumns: kind === "column" });
   }
 
   /**
@@ -3994,25 +4000,44 @@ export function SheetShell(props: SheetShellProps) {
     });
   }, [view, commitPending, tab, addSheetFocus]);
 
-  function formatSelection(change: CellStyleChange): void {
-    const [entity, field] = focusedKey?.split("\u0000") ?? [];
-    const position = entity && field ? { entity, field } : null;
-    if (!position || position.entity === DRAFT_ROW || !table || !witness || !onSetCellStyle || controlsLocked || cellDraftActive || formulaDraftActive) return;
+  function formatSelectionTargets(position: GridPosition, source: NonNullable<typeof table>) {
     const at = address(position);
     const area = selectionRectangle ?? rectangle(at, at);
     const selectedRows = displayRows.slice(area.top, area.bottom + 1);
-    const stored = rowSource(table);
+    const stored = rowSource(source);
     const start = stored.indexOf(rowEntity(selectedRows[0]!));
     // The positional command uses stored order, including for outline edges.
     const rows = start >= 0 && selectedRows.every((row, offset) => row === stored.rowAt(start + offset))
       ? { row: start + 1, rowCount: selectedRows.length }
       : { entities: selectedRows.map(rowEntity) };
-    const fields = columns.slice(area.left, area.right + 1).map(column => column.id);
+    const selectedColumns = columns.slice(area.left, area.right + 1);
+    return { rows, selectedColumns };
+  }
+
+  function formatSelection(change: CellStyleChange): void {
+    const position = focusedPosition;
+    if (!position || position.entity === DRAFT_ROW || !table || !witness || !onSetCellStyle || controlsLocked || cellDraftActive || formulaDraftActive) return;
+    const { rows, selectedColumns } = formatSelectionTargets(position, table);
     void runStripCommand(async () => {
-      const result = await onSetCellStyle(witness, table.collection.key, rows, fields, [change]);
+      const result = await onSetCellStyle(witness, table.collection.key, rows, selectedColumns.map(column => column.id), [change]);
       if (result.kind === "confirmed" && boundSelection) setWidthSelectionRebind({ identity: collectionIdentity, revision: boundSelection.revision });
       return result;
     }, "selection");
+  }
+
+  function openFormatCells(position: GridPosition, trigger: HTMLElement): void {
+    if (!table || !witness || !onSetCellStyle || columnChangesBlocked || stripPendingRef.current || modalInteractionOpen) return;
+    const { rows, selectedColumns } = formatSelectionTargets(position, table);
+    const fields = selectedColumns.map(column => column.id);
+    const numberUnavailable = !boundSelection?.wholeColumns ? "Number formats apply to whole columns for now."
+      : !onSetColumnNumberFormat || !selectedColumns.every(column => column.field_type === "number" || column.field_type === "auto")
+        ? "Select whole number columns to apply a number format." : null;
+    setFormatCellsDialog({
+      trigger, position, identity: collectionIdentity, collection: table.collection.key, witness, rows, fields,
+      numberFields: numberUnavailable ? [] : fields,
+      ...(selectedColumns.length === 1 ? { numberFormat: selectedColumns[0]?.number_format } : {}),
+      numberUnavailable,
+    });
   }
 
   function onCellKeyDown(
@@ -4022,6 +4047,11 @@ export function SheetShell(props: SheetShellProps) {
   ): void {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     const draft = entity === DRAFT_ROW;
+    if (!draft && !editor && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key === "1" && clipboardPosition(event.target)) {
+      event.preventDefault();
+      if (!event.repeat) openFormatCells(position, event.currentTarget);
+      return;
+    }
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown", "Escape"].includes(event.key) || (event.key === "Enter" && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey))) tabRunStartRef.current = null;
     if (!draft && !editor && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && ["b", "i"].includes(event.key.toLowerCase()) && clipboardPosition(event.target)) {
       event.preventDefault();
@@ -4173,6 +4203,7 @@ export function SheetShell(props: SheetShellProps) {
           identity: selectionIdentity.identity, revision: selectionIdentity.view.revision,
           anchor: { entity: rowEntity(displayRows[0]!), field: position.field },
           end: { entity: rowEntity(displayRows.at(-1)!), field: position.field },
+          wholeColumns: true,
         });
       }
       return;
@@ -5215,7 +5246,7 @@ export function SheetShell(props: SheetShellProps) {
   const rowDeleteAvailable = Boolean(table?.native_table_profile && onInsertRow && onRemoveRows);
   const rowDeleteBlocked = controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft;
   const columnChangeReason = "Finish the current input before changing columns.";
-  useEffect(() => { setColumnDialog(null); setRuleDialog(null); setFormatDialog(null); setColumnAnnouncement(null); }, [collectionIdentity]);
+  useEffect(() => { setColumnDialog(null); setRuleDialog(null); setFormatDialog(null); setFormatCellsDialog(null); setColumnAnnouncement(null); }, [collectionIdentity]);
   useEffect(() => {
     if (columnChangesBlocked) {
       const disclosure = shellRef.current?.querySelector<HTMLDetailsElement>(".ts-column-toolbar[open]");
@@ -7311,6 +7342,32 @@ export function SheetShell(props: SheetShellProps) {
           onSubmitDate={format => onSetColumnDateFormat!(witness, table.collection.key, column.id, format)}
           onSuccess={confirmed => { setFormatDialog(null); if (confirmed) setColumnAnnouncement(`Format updated for ${column.display_name}. Undo restores it.`); restore(); }}
           onCancel={() => { setFormatDialog(null); restore(); }}
+        />;
+      })() : null}
+      {formatCellsDialog && formatCellsDialog.identity === collectionIdentity && onSetCellStyle ? (() => {
+        const { trigger, position, collection, witness: openedAt, rows, fields, numberFields, numberFormat, numberUnavailable } = formatCellsDialog;
+        const close = () => {
+          setFormatCellsDialog(null);
+          requestAnimationFrame(() => withAppFocus(() => {
+            if (trigger.isConnected) trigger.focus();
+            else focusCell(position.entity, position.field);
+          }));
+        };
+        return <FormatCellsDialog
+          numberFormat={numberFormat}
+          numberUnavailable={numberUnavailable}
+          numberColumnCount={numberFields.length}
+          composing={() => props.appearancePreference.getSnapshot().composing}
+          onStyles={changes => onSetCellStyle(openedAt, collection, rows, fields, changes)}
+          onNumber={format => onSetColumnNumberFormat!(openedAt, collection, numberFields, format)}
+          onCancel={close}
+          onSuccess={confirmed => {
+            if (confirmed) {
+              if (cellSelection) setWidthSelectionRebind({ identity: collectionIdentity, revision: openedAt.revision });
+              setColumnAnnouncement("Format updated.");
+            }
+            close();
+          }}
         />;
       })() : null}
       {deleteName !== null ? <Modal variant="close" label="Delete copy" onCancel={cancelDelete} dismissDisabled={deletePending}>
