@@ -1130,8 +1130,12 @@ const cases = [
     const download = page.waitForEvent("download");
     await consent.getByRole("button", { name: "Download", exact: true }).click();
     const xml = sheetXml(await (await download).path());
-    assert.match(xml, /<c\b[^>]*\br="C3"[^>]*>\s*<f>A2\s*\+\s*\$A\$2<\/f>/);
-    assert.match(xml, /<c\b[^>]*\br="D3"[^>]*>\s*<f>B2\s*\+\s*\$A\$2<\/f>/);
+    // Work keeps references to other rows bound to their row identity.
+    const sheet = "&apos;Fill anchors&apos;!";
+    const leftFormula = xml.match(/<c\b[^>]*\br="C3"[^>]*>\s*<f>([^<]+)<\/f>/)?.[1];
+    const rightFormula = xml.match(/<c\b[^>]*\br="D3"[^>]*>\s*<f>([^<]+)<\/f>/)?.[1];
+    assert.equal(leftFormula, `(${sheet}A$2+${sheet}$A$2)`);
+    assert.equal(rightFormula, `(${sheet}B$2+${sheet}$A$2)`);
   } },
   { id: "23", name: "Row operations", tier: "A", run: async (page) => {
     await example(page);
