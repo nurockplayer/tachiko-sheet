@@ -65,7 +65,7 @@ import { submitColumnIntent, type ColumnDialogState, type ColumnDraft } from "./
 import { NewTableDialog } from "./NewTableDialog.js";
 import { TemplatePicker } from "./TemplatePicker.js";
 import { A1_HEADER_ROW, a1ColumnLetter, a1GeometryFor, a1RowNumber } from "./a1-geometry.js";
-import { A1_TOO_MANY_ROWS, a1EditorStillCurrent, a1GoToTarget, a1NoteText, a1References, a1ReferencedRanges, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
+import { A1_TOO_MANY_ROWS, a1EditorStillCurrent, a1GoToTarget, a1NoteText, a1References, a1ReferencedRanges, a1RefusalText, cycleA1Reference, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 import type { A1TranslationNote } from "../../public/core-kit/runtime/protocol.js";
 import { ShortcutHelpDialog } from "./ShortcutHelpDialog.js";
 import { DeleteTableDialog } from "./DeleteTableDialog.js";
@@ -3219,7 +3219,7 @@ export function SheetShell(props: SheetShellProps) {
    * A cell click while the bar or an in-cell formula holds the caret inserts
    * that cell's reference token instead of moving focus or committing. The
    * token comes from the projection, or from the grid's displayed address
-   * when the draft is A1 text; Sheet never parses or rewrites the formula text.
+   * when the draft is A1 text.
    */
   function referenceForCell(row: TableRow | null, column: TableColumn, draft: boolean): { token: string; into: "bar" | "cell" } | null {
     const into = formulaCaretInBar() ? "bar" : formulaCaretInCellEditor() ? "cell" : null;
@@ -3527,10 +3527,28 @@ export function SheetShell(props: SheetShellProps) {
     return rowIndexByEntity.has(position.entity);
   }
 
+  function cycleFormulaReference(
+    event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+    changeDraft: (value: string, caret: number) => void,
+  ): boolean {
+    if (event.key !== "F4" || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false;
+    const input = event.currentTarget;
+    const start = input.selectionStart ?? input.value.length;
+    const edit = cycleA1Reference(input.value, start, input.selectionEnd ?? start);
+    if (!edit) return false;
+    const direction = input.selectionDirection ?? undefined;
+    event.preventDefault();
+    event.stopPropagation();
+    flushSync(() => changeDraft(edit.value, edit.start));
+    input.setSelectionRange(edit.start, edit.end, direction);
+    return true;
+  }
+
   function onFormulaKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     // The bar's input is not a cell editor; drop keys before the grid sees them.
     event.stopPropagation();
+    if (formulaState.editable && !cellDraftActive && cycleFormulaReference(event, changeFormulaDraft)) return;
     const changed = formulaBarDraftValue(formulaState, formulaDraft) !== formulaState.source;
     const action = formulaBarKeyAction(event, changed);
     if (!action) return;
@@ -6279,6 +6297,10 @@ export function SheetShell(props: SheetShellProps) {
       onKeyDown: (event) => {
         const composing = isComposingEvent(event) || props.appearancePreference.getSnapshot().composing;
         if (columnCompletionRef.current && (composing || event.key.length > 1)) columnCompletionRef.current.completeOnReply = false;
+        if (!composing && formulaMode && cycleFormulaReference(event, (value, caret) => {
+          setFormulaCaret(caret);
+          applyEditorValue(value);
+        })) return;
         const suffix = completionSuffixRef.current;
         if (!composing && (event.key === "Backspace" || event.key === "Delete") &&
           suffix && editor && suffix.instance === editor.instance && event.currentTarget.selectionStart === suffix.start &&

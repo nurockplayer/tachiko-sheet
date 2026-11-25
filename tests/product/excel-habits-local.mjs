@@ -1718,8 +1718,17 @@ const cases = [
     await page.keyboard.type("=");
     await page.getByTestId(id(0)).click();
     assert.equal(await editor.inputValue(), "=A2", "the clicked reference did not arrive as A2");
-    await page.keyboard.press("F4");
-    assert.equal(await editor.inputValue(), "=$A$2", "F4 did not cycle A2 to $A$2");
+    for (const next of ["=$A$2", "=A$2", "=$A2", "=A2"]) {
+      await page.keyboard.press("F4");
+      assert.equal(await editor.inputValue(), next, `F4 did not cycle the cell editor to ${next}`);
+    }
+    await page.keyboard.press("Escape");
+    const bar = page.getByTestId("formula-bar-input");
+    await bar.fill("=SUM(A1:B2)");
+    await bar.press("End");
+    await bar.press("ArrowLeft");
+    await bar.press("F4");
+    assert.equal(await bar.inputValue(), "=SUM($A$1:$B$2)", "F4 did not cycle the formula bar's range");
   } },
   { id: "42", name: "Formula bar and address", tier: "B", budgetMs: 60_000, waitMs: 10_000, run: async (page) => {
     await example(page);
