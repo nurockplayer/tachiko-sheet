@@ -7,8 +7,8 @@ import type { ConfirmedPublication, SheetShellProps, WorkbookView } from "../con
 import { UnknownOperationOutcomeError } from "../contracts.js";
 import { App } from "../App.js";
 
-const shell = vi.hoisted(() => ({ props: null as SheetShellProps | null, saveFile: vi.fn(async (): Promise<string | undefined> => undefined) }));
-vi.mock("../host/host-files.js", () => ({ useHostFiles: () => ({ saveFile: shell.saveFile }) }));
+const shell = vi.hoisted(() => ({ props: null as SheetShellProps | null, saveFile: vi.fn(async (): Promise<string | undefined> => undefined), readImportCompanion: vi.fn() }));
+vi.mock("../host/host-files.js", () => ({ useHostFiles: () => ({ saveFile: shell.saveFile, readImportCompanion: shell.readImportCompanion }) }));
 vi.mock("../ui/SheetShell.js", () => ({ SheetShell: (props: SheetShellProps) => {
   shell.props = props;
   return createElement("div", { role: "alert" }, props.message);
@@ -191,6 +191,44 @@ it("allows imported exports and Save after an unknown cell edit and Refresh", as
     }
     await act(async () => { expect(await current().onCreateCopy("Saved")).toMatchObject({ saved: true }); });
   } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+
+it("retains XLSX origin through a work-file download and reopen, and reads native and legacy origins", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const collection = { id: "s1", key: "s1", display_name: "Original", headerless: false, data_start_row: 2, entity_count: 0 };
+  const metadata = { version: 1 as const, sheets: [{ schema_id: "s1", name: "Original", has_header: true, columns: [], rows: [] }] };
+  const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1", collections: [collection], table: { revision: "r1", collection, columns: [], rows: [] }, importMetadata: metadata };
+  const bytes = new Uint8Array([8, 7]).buffer;
+  const source = { name: "book.xlsx", format: "xlsx", bytes, metadata, ledger: [] };
+  const runtime = {
+    prepare: vi.fn(async () => {}), close: vi.fn(async () => {}), queryCapacity: vi.fn(async () => null),
+    discoverKeyedGroupedSums: vi.fn(async () => []), openOpaque: vi.fn(async () => view),
+    openWorkFile: vi.fn(async () => view), read: vi.fn(async () => view),
+    exportWorkFile: vi.fn(async () => ({ revision: "r1", bytes, importMetadata: metadata, ledger: [] })),
+  };
+  const copies = { list: vi.fn(async () => []), readAny: vi.fn(async () => ({ kind: "opaque", revision: "r1", bytes, importedSource: source })) };
+  const root = createRoot(document.createElement("div"));
+  const current = () => shell.props!;
+  try {
+    await act(async () => root.render(createElement(App, { runtime, copies, appearancePreference: {} } as unknown as AppProps)));
+    await act(async () => current().onOpenSaved("Imported"));
+    await act(async () => { expect(await current().onPrepareDownload!("ro")).toBe(true); });
+    await act(async () => { expect(await current().onDownload!("ro")).toBe(true); });
+    const companion = shell.saveFile.mock.lastCall![2] as import("../contracts.js").ImportCompanion;
+    expect(companion.origin).toBe("xlsx");
+    const file = new File([bytes], "work.ro");
+    for (const [origin, expected] of [["xlsx", "xlsx"], ["native", "native"], [undefined, "imported"]] as const) {
+      await act(async () => current().onClose());
+      shell.readImportCompanion.mockResolvedValueOnce({ ...companion, origin });
+      await act(async () => current().onOpenWorkFile!(file));
+      expect(current().importOrigin).toBe(expected);
+      expect(current().interop?.metadata).toEqual(metadata);
+    }
+  } finally {
+    shell.readImportCompanion.mockReset();
     await act(async () => root.unmount());
   }
 });

@@ -206,7 +206,8 @@ export interface SavedCopy {
   importedSource?: ImportedSourceAttachment;
 }
 /** A private, unparsed core-project export (format version 2). */
-export interface ImportCompanion { snapshotDigest: string; metadata: InteropMetadata }
+export type ImportOrigin = "xlsx" | "csv" | "native" | "imported";
+export interface ImportCompanion { snapshotDigest: string; metadata: InteropMetadata; origin?: ImportOrigin }
 
 export interface OpaqueSavedCopy extends SavedCopySummary {
   importCompanion?: ImportCompanion;
@@ -477,6 +478,7 @@ export interface SheetShellProps {
   interop?: InteropState | null;
   /** The user's file name for imported work; display only. */
   importedSourceName?: string | null;
+  importOrigin?: ImportOrigin | null;
   /** `csv` re-reads the same file with a chosen separator or text encoding. */
   onInspectImport?(file: File, csv?: ImportReread): Promise<ImportInspection>;
   onImportCandidate?(selection: ImportSelection): Promise<boolean>;
