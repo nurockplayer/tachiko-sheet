@@ -69,9 +69,7 @@ it.each([
     await assertRefused();
     await act(async () => current().onRefresh());
     await assertRefused();
-    shell.saveFile.mockResolvedValueOnce("requested-without-companion");
     await downloadRo();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("imported sheet information could not be stored");
     expect(runtime.exportWorkFile).toHaveBeenLastCalledWith({ occurrence: "o1", revision: "r1" }, undefined);
     // An acknowledged publication without a mapping cannot restore trust either.
     runtime.renameTable.mockImplementation(async () => ({ view, publication }));
@@ -91,7 +89,30 @@ it.each([
       await act(async () => { expect(await current().onDownload!(format)).toBe(true); });
       expect(runtime.exportSpreadsheet).toHaveBeenCalledWith({ occurrence: "o1", revision: "r1" }, metadata, format);
     }
-    await downloadRo();
+    // Exercise the browser host with an actual companion and a failed keep.
+    const { BROWSER_HOST_FILES } = await vi.importActual<typeof import("../host/host-files.js")>("../host/host-files.js");
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
+    vi.stubGlobal("indexedDB", { open: () => {
+      const request = {} as IDBOpenDBRequest;
+      queueMicrotask(() => {
+        Object.assign(request, { result: {
+          transaction: () => ({ objectStore: () => ({ put: () => { throw new DOMException("Quota exceeded", "QuotaExceededError"); } }) }),
+          close: () => {},
+        } });
+        request.onsuccess?.(new Event("success") as Event & { target: IDBOpenDBRequest });
+      });
+      return request;
+    } });
+    try {
+      runtime.exportWorkFile.mockResolvedValueOnce({ ...exported, importMetadata: metadata } as typeof exported);
+      shell.saveFile.mockImplementationOnce(BROWSER_HOST_FILES.saveFile);
+      await act(async () => { expect(await current().onPrepareDownload!("ro")).toBe(true); });
+      await act(async () => { expect(await current().onDownload!("ro")).toBe(true); });
+      expect(shell.saveFile).toHaveBeenLastCalledWith("Imported.ro", expect.any(Blob), expect.objectContaining({ metadata }));
+      expect(click).toHaveBeenCalledOnce();
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain("imported sheet information could not be stored");
+    } finally { click.mockRestore(); create.mockRestore(); vi.unstubAllGlobals(); }
     expect(runtime.exportWorkFile).toHaveBeenLastCalledWith({ occurrence: "o1", revision: "r1" }, metadata);
     runtime.exportWorkFile.mockClear();
     await act(async () => { expect(await current().onCreateCopy("Saved")).toMatchObject({ saved: true }); });
