@@ -4000,15 +4000,16 @@ export function SheetShell(props: SheetShellProps) {
     if (!position || position.entity === DRAFT_ROW || !table || !witness || !onSetCellStyle || controlsLocked || cellDraftActive || formulaDraftActive) return;
     const at = address(position);
     const area = selectionRectangle ?? rectangle(at, at);
-    const entities = displayRows.slice(area.top, area.bottom + 1).map(rowEntity);
+    const selectedRows = displayRows.slice(area.top, area.bottom + 1);
+    const stored = rowSource(table);
+    const start = stored.indexOf(rowEntity(selectedRows[0]!));
+    // The positional command uses stored order, including for outline edges.
+    const rows = start >= 0 && selectedRows.every((row, offset) => row === stored.rowAt(start + offset))
+      ? { row: start + 1, rowCount: selectedRows.length }
+      : { entities: selectedRows.map(rowEntity) };
     const fields = columns.slice(area.left, area.right + 1).map(column => column.id);
-    const request = { type: "set_cell_style", expected_revision: witness.revision, collection: table.collection.key, entities, fields, changes: [change] };
-    if (new TextEncoder().encode(JSON.stringify(request)).byteLength > props.requestByteLimit) {
-      setColumnAnnouncement("This selection is too large to format at once. Select fewer cells.");
-      return;
-    }
     void runStripCommand(async () => {
-      const result = await onSetCellStyle(witness, table.collection.key, entities, fields, [change]);
+      const result = await onSetCellStyle(witness, table.collection.key, rows, fields, [change]);
       if (result.kind === "confirmed" && boundSelection) setWidthSelectionRebind({ identity: collectionIdentity, revision: boundSelection.revision });
       return result;
     }, "selection");

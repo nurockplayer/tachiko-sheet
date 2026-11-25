@@ -37,6 +37,7 @@ import {
   type NewTableColumn,
   type RowInitializer,
   type CellEdit,
+  type CellStyleRows,
   type PasteCellInput,
   type ColumnInitializer,
   type A1TranslationRequest,
@@ -1184,10 +1185,14 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     }, true);
   }
 
-  function setCellStyle(witness: ViewWitness, collection: string, entities: string[], fields: string[], changes: CellStyleChange[]) {
+  function setCellStyle(witness: ViewWitness, collection: string, rows: CellStyleRows, fields: string[], changes: CellStyleChange[]) {
     return confirmedMutation(witness, (client, revision) => {
-      const command = capability(client.setCellStyle, "cell style");
-      return command.call(client, revision, collection, entities, fields, changes);
+      if ("entities" in rows) {
+        const command = capability(client.setCellStyle, "cell style");
+        return command.call(client, revision, collection, rows.entities, fields, changes);
+      }
+      const command = capability(client.setCellStyleRange, "cell style range");
+      return command.call(client, revision, collection, rows.row, rows.rowCount, fields, changes);
     });
   }
 
