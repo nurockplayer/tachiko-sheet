@@ -1258,7 +1258,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const table = view?.table ?? null;
   const renameAvailable = Boolean(onRenameColumn && canRenameColumns(table, interop?.metadata ?? null));
-  const importedXlsx = /\.xlsx$/i.test(importedSourceName ?? "");
+  const importedXlsx = /\.xlsx$/i.test(importedSourceName ?? "") || (!importedSourceName && !!interop?.metadata);
   const names = useMemo(() => sourceNames(interop?.metadata ?? null, importedSourceName, table), [interop?.metadata, importedSourceName, table]);
   const ledgerColumns = useMemo(() => interop?.ledgerColumns ? bindingCatalogNames(interop.ledgerColumns, interop.metadata, importedSourceName) : null, [interop?.ledgerColumns, interop?.metadata, importedSourceName]);
   // Resolve labels once for every consumer. IDs, keys and canonical projections

@@ -10,7 +10,7 @@ import { createContext, useContext } from "react";
  * - `requested`: a browser download was requested; the browser does not
  *   report whether it was saved.
  */
-export type SaveOutcome = "saved" | "cancelled" | "requested";
+export type SaveOutcome = "saved" | "cancelled" | "requested" | "requested-without-companion";
 
 /**
  * Where exports go. The composition root supplies the host's implementation;
@@ -33,7 +33,11 @@ export interface HostFiles {
 export const BROWSER_HOST_FILES: HostFiles = {
   readImportCompanion: fileCompanion,
   async saveFile(suggestedName, content, companion) {
-    if (companion) await retainCompanion(companion);
+    let companionFailed = false;
+    if (companion) {
+      try { await retainCompanion(companion); }
+      catch { companionFailed = true; }
+    }
     const blob = await content;
     const href = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -44,7 +48,7 @@ export const BROWSER_HOST_FILES: HostFiles = {
     anchor.click();
     anchor.remove();
     window.setTimeout(() => URL.revokeObjectURL(href), 60_000);
-    return "requested";
+    return companionFailed ? "requested-without-companion" : "requested";
   },
 };
 
