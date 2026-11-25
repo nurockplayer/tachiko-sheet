@@ -1692,8 +1692,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       // The host saves it: a browser download, or the desktop Save panel.
       const companion = prepared.importMetadata
         ? { snapshotDigest: await companionDigest(prepared.bytes), metadata: prepared.importMetadata } : undefined;
-      if (companion) await hostFiles.saveFile(`${live.title}.${format}`, blob, companion);
-      else await hostFiles.saveFile(`${live.title}.${format}`, blob);
+      const result = companion ? await hostFiles.saveFile(`${live.title}.${format}`, blob, companion)
+        : await hostFiles.saveFile(`${live.title}.${format}`, blob);
+      if (result === "requested-without-companion") setMessage("The download was requested, but imported sheet information could not be stored in this browser. Original sheet names and order may be unavailable when reopening it.");
       preparedDownloadRef.current = null;
       setInterop((current) => current ? { ...current, downloadStatus: "idle", downloadError: null } : current);
       setOutcome("idle");
