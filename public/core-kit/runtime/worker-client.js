@@ -171,9 +171,15 @@ export class WorkerDesignerClient {
     async newTableWorkingSize(name, columns) {
         return expectResponse("opened_window", await this.#command({ type: "new_table", occurrence_id: freshOccurrenceId(), name, columns, profile: "working_size" }));
     }
-    async duplicateCollection(expectedRevision, collection, name, columnNames) {
+    async duplicateCollection(expectedRevision, collection, name, columnNames, toIndex) {
         const columns = columnNames === undefined ? {} : { column_names: columnNames };
-        return expectResponse("duplicated", await this.#command({ type: "duplicate_collection", expected_revision: expectedRevision, collection, name, ...columns }));
+        const copy = { expected_revision: expectedRevision, collection, name, ...columns };
+        return expectResponse("duplicated", await this.#command(toIndex === undefined
+            ? { type: "duplicate_collection", ...copy }
+            : { type: "duplicate_collection_at", ...copy, to_index: toIndex }));
+    }
+    async moveCollection(expectedRevision, collection, toIndex) {
+        return this.trackerCommand({ type: "move_collection", expected_revision: expectedRevision, collection, to_index: toIndex });
     }
     async deleteTable(expectedRevision, collection) {
         return expectResponse("published", await this.#command({ type: "delete_table", expected_revision: expectedRevision, collection }));
