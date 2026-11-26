@@ -64,6 +64,7 @@ import { capacityForView, type CapacityReading } from "./ui/capacity-message.js"
 import { workFileOpenRefusal } from "./ui/work-file-copy.js";
 import { templateLabel, type TemplateId } from "./ui/templates.js";
 import { copyFailureReason } from "./ui/save-close.js";
+import { copyColumnNames, sourceNames } from "./ui/source-names.js";
 import { escapeSequenceMessage, findingColumnTables, isEscapeSequenceRefusal } from "./ui/interop-copy.js";
 import { useHostFiles } from "./host/host-files.js";
 import { COPY_CHANGED_MESSAGE, validatePresentationAttachment, validateWorkFileCopy } from "./host/local-copies.js";
@@ -1876,6 +1877,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.deleteTable(witness, collection), null, undefined, true);
   }
 
+  function moveTable(witness: ViewWitness, collection: string, toIndex: number) {
+    return changeRows(witness, () => runtime.moveCollection(witness, collection, toIndex), null, undefined, true);
+  }
+
   function renameColumn(witness: ViewWitness, collection: string, field: string, name: string) {
     return changeRows(witness, () => runtime.renameColumn(witness, collection, field, name), "column");
   }
@@ -1892,9 +1897,24 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.removeRows(witness, collection, entities));
   }
 
-  function duplicateTable(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>) {
+  function duplicateTable(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>, toIndex?: number) {
     // The dialog closes on a recovery, so the recovery message carries the name.
-    return changeRows(witness, () => runtime.duplicateCollection(witness, collection, name, columnNames), "duplicate", name, true);
+    return changeRows(witness, async () => {
+      const metadata = interop?.metadata;
+      // A tab can be copied without selecting it first. Read its Work fields
+      // to preserve displayed import headings using the same rule as the dialog.
+      if (toIndex !== undefined && metadata) {
+        const catalog = await runtime.listKeyedGroupedSumBindings(witness);
+        const source = catalog.collections.find(item => item.key === collection);
+        if (!source) throw new Error("The worksheet to copy was not returned by Work.");
+        const names = sourceNames(metadata, null);
+        const shown = new Map(source.fields.map(field => [field.id,
+          names.catalogColumn(source.id, field.id, field.displayName, field.displayNameExplicit)]));
+        columnNames = copyColumnNames(source.fields.map(field => ({ id: field.id, display_name: field.displayName })),
+          field => shown.get(field) ?? null);
+      }
+      return runtime.duplicateCollection(witness, collection, name, columnNames, toIndex);
+    }, "duplicate", name, true);
   }
 
   function addTable(witness: ViewWitness, name: string, columns: NewTableColumn[]) {
@@ -2476,6 +2496,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onRenameTable={importedSourceRef.current?.format === "xlsx" || interop?.metadata || copies.createWorkFile ? renameTable : undefined}
           onAddTable={importedSourceRef.current?.format === "xlsx" || interop?.metadata || copies.createWorkFile ? addTable : undefined}
           onDeleteTable={deleteTable}
+          onMoveTable={moveTable}
           onRenameColumn={copies.createWorkFile ? renameColumn : undefined}
           onRemoveColumn={copies.createWorkFile ? removeColumn : undefined}
           onMoveColumn={copies.createWorkFile ? moveColumn : undefined}

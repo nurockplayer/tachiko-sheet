@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -615,6 +616,7 @@ export function SheetShell(props: SheetShellProps) {
     onRenameTable,
     onAddTable,
     onDeleteTable,
+    onMoveTable,
     onDuplicateTable,
     onQueryShownTotals,
     onQueryColumnValues,
@@ -802,6 +804,7 @@ export function SheetShell(props: SheetShellProps) {
   const [renameTableDraftActive, setRenameTableDraftActive] = useState(false);
   const [deleteTable, setDeleteTable] = useState<{ key: string; name: string; witness: ViewWitness } | null>(null);
   const tableMenuRef = useRef<HTMLDivElement>(null);
+  const tableDragRef = useRef<{ key: string; witness: ViewWitness } | null>(null);
   const [renameTable, setRenameTable] = useState<{ key: string; name: string; witness: ViewWitness } | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [duplicateDraftActive, setDuplicateDraftActive] = useState(false);
@@ -2782,6 +2785,9 @@ export function SheetShell(props: SheetShellProps) {
     const outside = (event: PointerEvent) => { if (!tableMenuRef.current?.contains(event.target as Node)) setTableMenu(null); };
     document.addEventListener("pointerdown", outside, true);
     return () => document.removeEventListener("pointerdown", outside, true);
+  }, [tableMenu]);
+  useLayoutEffect(() => {
+    if (tableMenu) (tableMenuRef.current?.querySelector<HTMLElement>("button:not(:disabled)") ?? tableMenuRef.current)?.focus();
   }, [tableMenu]);
   const draftActive =
     cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || (copyOpen && copyName.trim() !== "") ||
@@ -5250,6 +5256,10 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   const columnChangesBlocked = controlsLocked || currentness !== "current" || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft;
+  const tableTabChangesBlocked = columnChangesBlocked || commitPending || modalInteractionOpen;
+  const canCopyTableTab = !!onDuplicateTable && supportsDuplicateTable;
+  const hasTableMenu = !!(onRenameTable || onDeleteTable || onMoveTable || canCopyTableTab);
+  const tableMenuIndex = view?.collections.findIndex(collection => collection.key === tableMenu?.key) ?? -1;
   async function runStripCommand(command: () => Promise<RowCommandOutcome>, name: string, alignment = false) {
     if (stripPendingRef.current || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
     stripPendingRef.current = true; setStripPending(true);
@@ -7098,19 +7108,34 @@ export function SheetShell(props: SheetShellProps) {
           </div>
         </div>
         <footer className="ts-workspace-footer">
-          <div ref={tableTabsRef} className="ts-tabs" role="tablist" aria-label="Sheets" onKeyDown={onTableTabsKeyDown}>
+          <div ref={tableTabsRef} className="ts-tabs" role="tablist" aria-label="Sheets" onKeyDown={onTableTabsKeyDown}
+            onDragOver={event => {
+              if (!tableDragRef.current || tableTabChangesBlocked) return;
+              const copy = isMacPlatform() ? event.altKey : event.ctrlKey;
+              if (copy ? !canCopyTableTab : !onMoveTable) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = copy ? "copy" : "move";
+            }} onDrop={dropTableTab}>
             {view.collections.map((collection, index) => {
               const active = collection.key === view.table.collection.key;
               const name = names.table(collection.id) ?? collection.display_name;
               return <button key={collection.key} type="button" role="tab" id={tableTabId(collection.key)}
                 aria-label={tableTabName(name, index, view.collections.length)} aria-selected={active} aria-controls="ts-table-workspace"
                 tabIndex={active ? 0 : -1} className={active ? "ts-tab ts-table-tab ts-tab--active" : "ts-tab ts-table-tab"} title={name}
-                onContextMenu={event => { event.preventDefault(); if ((!onRenameTable && !onDeleteTable) || !witness || columnChangesBlocked) return; setTableMenu({ key: collection.key, id: collection.id, name, x: event.clientX, y: event.clientY, witness }); }}
+                draggable={!tableTabChangesBlocked && (!!onMoveTable || canCopyTableTab)}
+                onDragStart={event => {
+                  if (!witness || tableTabChangesBlocked || props.appearancePreference.getSnapshot().composing) { event.preventDefault(); return; }
+                  tableDragRef.current = { key: collection.key, witness };
+                  event.dataTransfer.effectAllowed = onMoveTable && canCopyTableTab ? "copyMove" : onMoveTable ? "move" : "copy";
+                  event.dataTransfer.setData("application/x-tachiko-sheet-tab", collection.key);
+                }}
+                onDragEnd={() => { tableDragRef.current = null; }}
+                onContextMenu={event => { event.preventDefault(); openTableMenu(collection, event.clientX, event.clientY); }}
                 onDoubleClick={() => { if (onRenameTable && witness && !columnChangesBlocked && (!names.table(collection.id) || importedXlsx)) setRenameTable({ key: collection.key, name, witness }); }}
                 onKeyDown={event => {
-                  if (!onRenameTable || !witness || columnChangesBlocked || isComposingEvent(event)) return;
-                  if (event.key === "F2" && (!names.table(collection.id) || importedXlsx)) { event.preventDefault(); setRenameTable({ key: collection.key, name, witness }); }
-                  else if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setTableMenu({ key: collection.key, id: collection.id, name, x: rect.left, y: rect.top, witness }); }
+                  if (!witness || tableTabChangesBlocked || isComposingEvent(event)) return;
+                  if (event.key === "F2" && onRenameTable && (!names.table(collection.id) || importedXlsx)) { event.preventDefault(); setRenameTable({ key: collection.key, name, witness }); }
+                  else if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); openTableMenu(collection, rect.left, rect.top); }
                 }}
                 onClick={() => void selectCollection(collection.key)}>{name}</button>;
             })}
@@ -7118,6 +7143,12 @@ export function SheetShell(props: SheetShellProps) {
               disabled={!onAddTable || (!!interop?.metadata && !importedXlsx) || columnChangesBlocked || commitPending || modalInteractionOpen}
               title={interop?.metadata && !importedXlsx ? "Adding sheets to imported work is not available yet." : "Add sheet (Shift+F11)"}
               onClick={() => void addSheet()}>+</button>
+            {hasTableMenu ? <button type="button" className="ts-tab" aria-label="Sheet actions" aria-haspopup="menu" title="Sheet actions"
+              disabled={tableTabChangesBlocked}
+              onClick={event => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                openTableMenu(view.table.collection, rect.left, rect.top);
+              }}>…</button> : null}
           </div>
           <div className="ts-workbook-status">{renderStatusStrip()}
             <div className="ts-grid-zoom" role="group" aria-label="Grid zoom">
@@ -7131,6 +7162,55 @@ export function SheetShell(props: SheetShellProps) {
         </footer>
       </div>
     );
+  }
+
+  function openTableMenu(collection: WorkbookView["collections"][number], x: number, y: number) {
+    if (!hasTableMenu || !witness || tableTabChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
+    setTableMenu({ key: collection.key, id: collection.id, name: names.table(collection.id) ?? collection.display_name, x, y, witness });
+  }
+
+  function dropTableTab(event: ReactDragEvent<HTMLDivElement>) {
+    const drag = tableDragRef.current;
+    tableDragRef.current = null;
+    if (!drag || !view) return;
+    event.preventDefault();
+    const copy = isMacPlatform() ? event.altKey : event.ctrlKey;
+    const tabs = event.currentTarget.querySelectorAll<HTMLButtonElement>(".ts-table-tab");
+    const next = Array.from(tabs).findIndex(tab => {
+      const rect = tab.getBoundingClientRect();
+      return event.clientX < rect.left + rect.width / 2;
+    });
+    const slot = next < 0 ? tabs.length : next;
+    const from = view.collections.findIndex(collection => collection.key === drag.key);
+    if (from < 0 || drag.witness.occurrence !== view.occurrence || drag.witness.revision !== view.revision) return;
+    const toIndex = copy || slot <= from ? slot : slot - 1;
+    if (copy || from !== toIndex) void changeTableTab(drag.witness, drag.key, toIndex, copy);
+  }
+
+  async function changeTableTab(target: ViewWitness, key: string, toIndex: number, copy: boolean) {
+    if (!view || tableTabChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
+    const source = view.collections.find(collection => collection.key === key);
+    if (!source) return;
+    setLocalError(null);
+    try {
+      if (copy && onDuplicateTable && canCopyTableTab) {
+        const name = names.table(source.id) ?? source.display_name;
+        const used = new Set(view.collections.flatMap(collection => [collection.display_name, names.table(collection.id) ?? collection.display_name]).map(name => name.toLowerCase()));
+        let number = 2;
+        while (used.has(`${name} (${number})`.toLowerCase())) number += 1;
+        const generation = focusIntentRef.current;
+        const result = await onDuplicateTable(target, key, `${name} (${number})`, undefined, toIndex);
+        if (result.kind === "confirmed") {
+          duplicateFocusIntentRef.current = generation;
+          setTab("table");
+        } else if (result.kind === "refused") setLocalError(result.message);
+      } else if (!copy && onMoveTable) {
+        const result = await onMoveTable(target, key, toIndex);
+        if (result.kind === "refused") setLocalError(result.message);
+      }
+    } catch (cause) {
+      setLocalError(explain(cause, "The sheet change could not be confirmed. Refresh to check the current work."));
+    }
   }
 
   async function addSheet(): Promise<void> {
@@ -7349,8 +7429,36 @@ export function SheetShell(props: SheetShellProps) {
         </div>
       ) : null}
       {view ? renderWorkbook() : renderHome()}
-      {tableMenu && witness && tableMenu.witness.occurrence === witness.occurrence ? <div ref={tableMenuRef} role="menu" aria-label="Sheet actions" tabIndex={-1} autoFocus className="ts-cell-menu" style={{ left: Math.max(8, Math.min(tableMenu.x, window.innerWidth - 240)), top: Math.max(8, Math.min(tableMenu.y, window.innerHeight - 100)), zIndex: 1000 }} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); const key = tableMenu.key; setTableMenu(null); requestAnimationFrame(() => document.getElementById(tableTabId(key))?.focus()); } }}>
-        <button type="button" role="menuitem" className="ts-cell-menu-item" autoFocus={!!onRenameTable && (!names.table(tableMenu.id) || importedXlsx)} disabled={!onRenameTable || (!!names.table(tableMenu.id) && !importedXlsx)} title={!onRenameTable ? "Renaming sheets is not available." : names.table(tableMenu.id) && !importedXlsx ? "Renaming imported sheets is not available yet." : undefined} onClick={() => { setTableMenu(null); if (onRenameTable && !columnChangesBlocked) setRenameTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); }}>Rename sheet…</button>
+      {tableMenu && view && witness && tableMenu.witness.occurrence === witness.occurrence ? <div ref={tableMenuRef} role="menu" aria-label="Sheet actions" tabIndex={-1} className="ts-cell-menu" style={{ left: Math.max(8, Math.min(tableMenu.x, window.innerWidth - 240)), bottom: Math.max(8, window.innerHeight - tableMenu.y), maxHeight: tableMenu.y - 8, zIndex: 1000 }} onKeyDown={event => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setTableMenu(null);
+          document.getElementById(tableTabId(tableMenu.key))?.focus();
+        } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+          const index = items.indexOf(document.activeElement as HTMLButtonElement);
+          const offset = event.key === "ArrowDown" ? 1 : -1;
+          event.preventDefault();
+          items[(index + offset + items.length) % items.length]?.focus();
+        }
+      }}>
+        <button type="button" role="menuitem" className="ts-cell-menu-item" disabled={!onRenameTable || (!!names.table(tableMenu.id) && !importedXlsx)} title={!onRenameTable ? "Renaming sheets is not available." : names.table(tableMenu.id) && !importedXlsx ? "Renaming imported sheets is not available yet." : undefined} onClick={() => { setTableMenu(null); if (onRenameTable && !columnChangesBlocked) setRenameTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); }}>Rename sheet…</button>
+        {onMoveTable ? ([-1, 1] as const).map(offset => {
+          const toIndex = tableMenuIndex + offset;
+          return <button key={offset} type="button" role="menuitem" className="ts-cell-menu-item"
+            disabled={tableTabChangesBlocked || tableMenuIndex < 0 || toIndex < 0 || toIndex >= view.collections.length}
+            onClick={() => {
+              setTableMenu(null);
+              document.getElementById(tableTabId(tableMenu.key))?.focus();
+              void changeTableTab(tableMenu.witness, tableMenu.key, toIndex, false);
+            }}>Move {offset < 0 ? "left" : "right"}</button>;
+        }) : null}
+        {canCopyTableTab ? <button type="button" role="menuitem" className="ts-cell-menu-item" disabled={tableTabChangesBlocked || tableMenuIndex < 0}
+          onClick={() => {
+            setTableMenu(null);
+            document.getElementById(tableTabId(tableMenu.key))?.focus();
+            void changeTableTab(tableMenu.witness, tableMenu.key, tableMenuIndex + 1, true);
+          }}>Duplicate</button> : null}
         {onDeleteTable ? <button type="button" role="menuitem" className="ts-cell-menu-item" disabled={(view?.collections.length ?? 0) <= 1} title={(view?.collections.length ?? 0) <= 1 ? "Keep at least one sheet in this work." : undefined} onClick={() => { setTableMenu(null); if (!columnChangesBlocked) setDeleteTable({ key: tableMenu.key, name: tableMenu.name, witness: tableMenu.witness }); }}>Delete sheet…</button> : null}
         {(view?.collections.length ?? 0) <= 1 ? <span className="ts-hint">Keep at least one sheet in this work.</span> : null}
         {names.table(tableMenu.id) && !importedXlsx ? <span className="ts-hint">Renaming imported sheets is not available yet.</span> : null}

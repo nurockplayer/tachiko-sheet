@@ -2376,18 +2376,85 @@ const cases = [
   } },
   { id: "51", name: "Move/copy worksheet tab", tier: "C", run: async (page) => {
     await example(page);
-    await duplicate(page, "Copy");
+    const original = await projection(page);
+    await duplicate(page, "Second");
+    await saveCopy(page, "habits-51");
     const tabs = page.locator(".ts-table-tab");
     const order = () => tabs.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("title")));
+    const tab = (name) => page.locator(".ts-table-tab").and(page.getByTitle(name, { exact: true }));
+    const history = async (name) => {
+      await page.getByRole("button", { name, exact: true }).click();
+      await settle(page);
+    };
+    const drag = async (source, target, offset, modifier) => {
+      const from = await source.boundingBox();
+      const to = await target.boundingBox();
+      if (modifier) await page.keyboard.down(modifier);
+      await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(to.x + offset(to.width), to.y + to.height / 2, { steps: 8 });
+      await page.mouse.up();
+      if (modifier) await page.keyboard.up(modifier);
+      await settle(page);
+    };
     const before = await order();
-    const first = await tabs.nth(0).boundingBox();
-    const second = await tabs.nth(1).boundingBox();
-    await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(second.x + second.width + 20, second.y + second.height / 2, { steps: 8 });
-    await page.mouse.up();
+    const [first, second] = before;
+    await drag(tab(first), tab(second), width => width + 20);
+    assert.deepEqual(await order(), [second, first], "drag did not move the first tab after the second");
+    await history("Undo");
+    assert.deepEqual(await order(), before, "one Undo did not restore the original order");
+    await history("Redo");
+    assert.deepEqual(await order(), [second, first], "Redo did not restore the moved order");
+
+    const copy = `${first} (2)`;
+    await drag(tab(first), tab(second), width => width / 4, "Control");
+    assert.deepEqual(await order(), [copy, second, first], "Ctrl+drag did not copy to the drop position");
+    const copied = await projection(page);
+    assert.notEqual(copied.collection.id, original.collection.id, "the copy reused the source identity");
+    assert.notEqual(rowEntity(copied.rows[0]), rowEntity(original.rows[0]), "the copy reused a source row identity");
+    await history("Undo");
+    assert.deepEqual(await order(), [second, first], "one Undo did not remove the copy and restore order");
+    await history("Redo");
+    assert.deepEqual(await order(), [copy, second, first], "Redo did not restore the copy in position");
+
+    await tab(first).press("Shift+F10");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
     await settle(page);
-    assert.notDeepEqual(await order(), before, "dragging a table tab did not reorder it; Ctrl+drag copies none either");
+    assert.deepEqual(await order(), [copy, first, second], "keyboard Move left did not reorder the sheet");
+    await tab(first).click();
+    await settle(page);
+    await page.getByRole("button", { name: "Sheet actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Move right", exact: true }).click();
+    await settle(page);
+    assert.deepEqual(await order(), [copy, second, first], "the Sheet actions button did not offer a working Move right");
+    await tab(first).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Duplicate", exact: true }).click();
+    await settle(page);
+    assert.deepEqual(await order(), [copy, second, first, `${first} (3)`], "the context-menu copy did not use the next free name");
+    await history("Undo");
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+    await page.reload();
+    await waitForColdHome(page);
+    await page.getByRole("button", { name: "Open saved habits-51", exact: true }).click();
+    await ready(page);
+    assert.deepEqual(await order(), [copy, second, first], "the saved tab order changed on reopen");
+    await tab(copy).click();
+    await settle(page);
+    const reopened = await projection(page);
+    assert.equal(reopened.collection.id, copied.collection.id, "the saved copy changed identity");
+    assert.equal(fieldAt(reopened, 0, 0)?.stored?.value, fieldAt(original, 0, 0)?.stored?.value, "the saved copy lost its data");
+    assert.ok(fieldAt(reopened, 0, 4)?.formula, "the saved copy lost its formula");
+    await waitForCellText(page, cellIdFor(reopened, 0, 4), "10");
+    await replaceCell(page, cellIdFor(reopened, 0, 2), "6");
+    assert.notEqual(await cellText(page, reopened, 0, 4), "10", "the copy's formula did not recalculate from its own inputs");
+    await tab(first).click();
+    await settle(page);
+    const source = await projection(page);
+    assert.equal(source.collection.id, original.collection.id, "reordering changed the source identity");
+    await waitForCellText(page, cellIdFor(source, 0, 4), "10");
   } },
   { id: "52", name: "Hide rows or columns", tier: "C", run: async (page) => {
     await example(page);
