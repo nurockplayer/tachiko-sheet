@@ -1384,7 +1384,8 @@ export function SheetShell(props: SheetShellProps) {
   }, [columns, gridSettings, table, worksheet]);
   const storedRowCount = table ? rowSource(table).total : 0;
   const firstBlankRow = displayRows.length + Number(hasDraftRow);
-  const blankRowCount = tableSpace && hasDraftRow
+  const blankRowsFiltered = tableSpace && hasDraftRow && Boolean(gridSettings.filters?.length);
+  const blankRowCount = tableSpace && hasDraftRow && !blankRowsFiltered
     ? Math.max(0, Math.min(NATIVE_INSERTION_ROW_LIMIT - storedRowCount - 1, Math.max(1, gridViewportRows - firstBlankRow)))
     : 0;
   const blankRowEntity = (offset: number) => `table-space-row:${offset}`;
@@ -1393,6 +1394,7 @@ export function SheetShell(props: SheetShellProps) {
     if (!tableSpace || !table) return null;
     const beside = position.field === adjacentColumn?.id;
     const below = position.entity.startsWith("table-space-row:");
+    if (below && blankRowsFiltered) return null;
     if (!beside && !below) return null;
     const row = below ? storedRowCount + 1 + Number(position.entity.slice("table-space-row:".length))
       : rowSource(table).indexOf(position.entity);
@@ -1997,10 +1999,11 @@ export function SheetShell(props: SheetShellProps) {
       return;
     }
     const copied = copiedFormulaRef.current;
-    if (!valuesOnly && !draft && !unallocated && onCopyFormula && copied && copied.identity === collectionIdentity && Boolean(table.native_table_profile)
+    if (!valuesOnly && !draft && (unallocated || onCopyFormula) && copied && copied.identity === collectionIdentity && Boolean(table.native_table_profile)
       && decoded.length === 1 && decoded[0]?.length === 1 && decoded[0][0] === copied.text) {
       if (pasteBlocked) { announceClipboard("Finish the current edit or operation before pasting.", true); return; }
       if (rowDraftActive) { announceClipboard("Add or discard the new row first.", true); return; }
+      if (unallocated) { announceClipboard("Pasting a formula requires an existing cell. Nothing was pasted.", true, true); return; }
       const area = selectionRectangle ?? rectangle(at, at);
       try {
         const plan = formulaPastePlan(displayRows, columns, area, copied, !gridSettings.sort && !gridSettings.filters?.length);
@@ -6122,7 +6125,7 @@ export function SheetShell(props: SheetShellProps) {
               dismiss={dismissSalesTip}
             /> : null}
             {viewStatus ? <div className="ts-row-view-status" data-testid="row-view-status">
-              <span className="ts-row-view-status-text" role="status" aria-live="polite">{viewStatus}</span>
+              <span className="ts-row-view-status-text" role="status" aria-live="polite">{viewStatus}{blankRowsFiltered ? " Clear the filter to edit blank grid rows." : ""}</span>
               {gridSettings.sort ? <button type="button" className="ts-button ts-button--ghost" disabled={controlsLocked || currentness !== "current"} onClick={clearGridSort}>Clear sort</button> : null}
               {gridSettings.filters?.length ? <button type="button" className="ts-button ts-button--ghost" disabled={controlsLocked || currentness !== "current"} onClick={clearGridFilters}>{gridSettings.filters.length === 1 ? "Clear filter" : `Clear ${gridSettings.filters.length} filters`}</button> : null}
             </div> : null}

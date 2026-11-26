@@ -625,6 +625,17 @@ const cases = [
     await page.keyboard.press("Enter");
     await waitForCellText(page, total, "6");
     assert.equal(await executeCount(page), before + 1, "Enter did not publish exactly one history transaction");
+
+    await page.getByTestId(total).click();
+    await page.keyboard.press("Control+c");
+    for (const blank of ["C5", "D2"]) {
+      await page.getByTestId(`table-space:${blank}`).click();
+      await page.keyboard.press("Control+v");
+      await page.getByText("Pasting a formula requires an existing cell. Nothing was pasted.", { exact: true }).waitFor();
+    }
+    const after = await projection(page);
+    assert.equal(after.rows.length, 2, "pasting a formula into a blank row allocated records");
+    assert.equal(after.columns.length, 3, "pasting a formula beside the table allocated a field");
   } },
   { id: "19", name: "Point-and-click formula references", tier: "A", budgetMs: 60_000, waitMs: 10_000, run: async (page) => {
     await newTable(page, "Refs", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);
@@ -2607,13 +2618,21 @@ const cases = [
     await page.keyboard.press("Control+c");
     await page.getByTestId("table-space:B6").click();
     await page.keyboard.press("Control+v");
-    await page.waitForFunction(() => window.__readObservedTable(window.__habits)?.rows.length === 5);
+    await page.waitForFunction(() => !window.__habits.stale && window.__readObservedTable(window.__habits)?.rows.length === 5);
     assert.equal(fieldAt(await projection(page), 4, 1)?.stored?.value, "Apple", "pasting below the table did not store the copied value in B6");
 
     await page.getByTestId("table-space:D4").click();
     await page.keyboard.press("Control+v");
-    await page.waitForFunction(() => window.__readObservedTable(window.__habits)?.columns.length === 4);
+    await page.waitForFunction(() => !window.__habits.stale && window.__readObservedTable(window.__habits)?.columns.length === 4);
     assert.equal(fieldAt(await projection(page), 2, 3)?.stored?.value, "Apple", "pasting beside the table did not store the copied value in D4");
+
+    await filterValues(page, "Two", ["Apple"]);
+    assert.equal(await page.locator("tbody tr.ts-row").count(), 2, "the filter did not hide rows");
+    assert.match(await page.getByTestId("row-view-status").textContent(), /Clear the filter to edit blank grid rows\./);
+    assert.equal(await page.locator('[data-unallocated-entity^="table-space-row:"]').count(), 0, "the filtered view still offered blank rows for editing");
+    await page.getByRole("button", { name: "Clear filter", exact: true }).click();
+    await page.getByTestId("table-space:B8").waitFor();
+    assert.equal((await projection(page)).rows.length, 5, "filtering changed the stored row count");
   } },
   { id: "N3", name: "Status bar statistics", tier: "A", run: async (page) => {
     await newTable(page, "Statistics", [{ name: "Amount", type: "number" }]);
