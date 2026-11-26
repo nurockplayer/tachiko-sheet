@@ -1895,9 +1895,12 @@ export function SheetShell(props: SheetShellProps) {
     return boundSelection && rowIndexByEntity.has(boundSelection.end.entity) ? boundSelection.end : position;
   }
 
-  function clipboardPosition(target: EventTarget | null): GridPosition | null {
+  function clipboardPosition(target: EventTarget | null, includeUnallocated = false): GridPosition | null {
     if (!(target instanceof Element) || target.closest('input, textarea, [contenteditable="true"]')) return null;
-    const cell = target.closest<HTMLElement>('td[data-work-field]');
+    const cell = target.closest<HTMLElement>(includeUnallocated ? 'td[data-work-field], td[data-unallocated-field]' : 'td[data-work-field]');
+    if (cell?.dataset.unallocatedEntity && cell.dataset.unallocatedField) {
+      return { entity: cell.dataset.unallocatedEntity, field: cell.dataset.unallocatedField };
+    }
     return cell?.dataset.workEntity && cell.dataset.workField ? { entity: cell.dataset.workEntity, field: cell.dataset.workField } : null;
   }
 
@@ -1960,7 +1963,7 @@ export function SheetShell(props: SheetShellProps) {
 
   function pasteGrid(event: React.ClipboardEvent<HTMLTableElement>): void {
     setClipboardMessage(null);
-    const position = clipboardPosition(event.target);
+    const position = clipboardPosition(event.target, true);
     // Input/textarea paste stays with the native text editor and caret.
     if (!position || !view || !witness || !table) return;
     event.preventDefault();
@@ -1980,20 +1983,21 @@ export function SheetShell(props: SheetShellProps) {
     if (!view || !witness || !table) return;
     const pasteSource = boundCopiedArea ? copiedArea : null;
     const draft = position.entity === DRAFT_ROW;
+    const unallocated = tableSpaceAddress(position);
     const at = address(position);
-    const start = draft ? { row: displayRows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at;
-    const pastedPosition = draft ? position : { entity: rowEntity(displayRows[start.row]!), field: columns[start.column]!.id };
+    const start = unallocated ?? (draft ? { row: displayRows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at);
+    const pastedPosition = draft || unallocated ? position : { entity: rowEntity(displayRows[start.row]!), field: columns[start.column]!.id };
     const pasteBlocked = controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen;
     const pasteRowCount = worksheet ? displayRows.filter(row => !row.id.startsWith("worksheet-row:")).length : displayRows.length;
     const pasteColumns = worksheet ? tableColumns(table) : columns;
-    const positional = worksheet && !draft && (start.row + decoded.length > pasteRowCount ||
-      start.column + (decoded[0]?.length ?? 0) > pasteColumns.length);
+    const positional = Boolean(unallocated) || (worksheet && !draft && (start.row + decoded.length > pasteRowCount ||
+      start.column + (decoded[0]?.length ?? 0) > pasteColumns.length));
     if (worksheet && decoded.some(row => row.some(value => value.trimStart().startsWith("=")))) {
       announceClipboard(`${worksheetFormulaLimitation} Nothing was pasted.`, true);
       return;
     }
     const copied = copiedFormulaRef.current;
-    if (!valuesOnly && !draft && onCopyFormula && copied && copied.identity === collectionIdentity && Boolean(table.native_table_profile)
+    if (!valuesOnly && !draft && !unallocated && onCopyFormula && copied && copied.identity === collectionIdentity && Boolean(table.native_table_profile)
       && decoded.length === 1 && decoded[0]?.length === 1 && decoded[0][0] === copied.text) {
       if (pasteBlocked) { announceClipboard("Finish the current edit or operation before pasting.", true); return; }
       if (rowDraftActive) { announceClipboard("Add or discard the new row first.", true); return; }
@@ -2015,9 +2019,10 @@ export function SheetShell(props: SheetShellProps) {
         // The plan is pure; anything else falls back to the ordinary value paste.
       }
     }
-    const viewRefusal = draft ? null : rowViewPasteRefusal(gridSettings, start.row, decoded.length, pasteRowCount);
+    const singleUnallocatedRow = unallocated && decoded.length === 1;
+    const viewRefusal = draft || singleUnallocatedRow ? null : rowViewPasteRefusal(gridSettings, start.row, decoded.length, pasteRowCount);
     if (viewRefusal) { announceClipboard(viewRefusal, true); return; }
-    if (positional && (gridSettings.sort || gridSettings.filters?.length)) {
+    if (positional && !singleUnallocatedRow && (gridSettings.sort || gridSettings.filters?.length)) {
       announceClipboard("Clear the sort and filter to paste into unused worksheet cells.", true);
       return;
     }
@@ -2049,7 +2054,7 @@ export function SheetShell(props: SheetShellProps) {
     }
     // Rows pasted into the new row append at the end: Work takes no start row.
     const anchor = draft ? null : displayRows[start.row];
-    if ((!draft && !anchor) || !columns[start.column]) { announceClipboard("Select a current cell before pasting.", true); return; }
+    if (!unallocated && ((!draft && !anchor) || !columns[start.column])) { announceClipboard("Select a current cell before pasting.", true); return; }
     const edits: CellEdit[] = [];
     const blockRows = rowViewBlockRows(displayRows, start.row, route.rows.length);
     if (route.kind === "edit") {
@@ -2089,7 +2094,10 @@ export function SheetShell(props: SheetShellProps) {
         keepGridRows(result.addedEntities ?? []);
         if (positional) {
           requestAnimationFrame(() => {
-            if (completionMayUpdateUi(intent)) withAppFocus(() => focusWorksheetCellRef.current(start.row, start.column));
+            if (completionMayUpdateUi(intent)) withAppFocus(() => {
+              if (unallocated) focusWrittenCellRef.current(unallocated);
+              else focusWorksheetCellRef.current(start.row, start.column);
+            });
           });
         } else revealPastedCell(pastedPosition, intent);
       }
@@ -6601,6 +6609,8 @@ export function SheetShell(props: SheetShellProps) {
         data-work-revision={view.revision}
         data-work-entity={unallocated ? undefined : entity}
         data-work-field={unallocated ? undefined : column.id}
+        data-unallocated-entity={unallocated ? entity : undefined}
+        data-unallocated-field={unallocated ? column.id : undefined}
         data-work-currentness={currentness}
         tabIndex={focusedKey === key || (!focusedEntityVisible && isFirstCell(entity, column)) ? 0 : -1}
         aria-selected={Boolean(rangeSelected) || (!selectionRectangle && focusedKey === key)}

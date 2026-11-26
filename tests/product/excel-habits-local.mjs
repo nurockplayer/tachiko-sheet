@@ -2602,6 +2602,18 @@ const cases = [
     assert.equal(await page.getByTestId(savedCell).textContent(), "Apple", "B4 changed after Save and reopen");
     assert.equal((await projection(page)).rows.length, 3, "reopen materialized additional blank rows");
     assert.equal(await page.getByTestId("table-space:B6").textContent(), "", "the reopened grid did not show blank rows below the data");
+
+    await page.getByTestId(savedCell).click();
+    await page.keyboard.press("Control+c");
+    await page.getByTestId("table-space:B6").click();
+    await page.keyboard.press("Control+v");
+    await page.waitForFunction(() => window.__readObservedTable(window.__habits)?.rows.length === 5);
+    assert.equal(fieldAt(await projection(page), 4, 1)?.stored?.value, "Apple", "pasting below the table did not store the copied value in B6");
+
+    await page.getByTestId("table-space:D4").click();
+    await page.keyboard.press("Control+v");
+    await page.waitForFunction(() => window.__readObservedTable(window.__habits)?.columns.length === 4);
+    assert.equal(fieldAt(await projection(page), 2, 3)?.stored?.value, "Apple", "pasting beside the table did not store the copied value in D4");
   } },
   { id: "N3", name: "Status bar statistics", tier: "A", run: async (page) => {
     await newTable(page, "Statistics", [{ name: "Amount", type: "number" }]);
