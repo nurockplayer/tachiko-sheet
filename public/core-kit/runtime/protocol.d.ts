@@ -604,6 +604,9 @@ export type CellStyleChange = {
     kind: "fill";
     color: string | null;
 } | {
+    kind: "number_format";
+    format: NumberFormat;
+} | {
     kind: "border";
     target: "top" | "right" | "bottom" | "left" | "outline" | "all";
     value: boolean;
@@ -756,6 +759,11 @@ export type TrackerCommand = {
     field: string;
     to_index: number;
 } | {
+    type: "move_collection";
+    expected_revision: string;
+    collection: string;
+    to_index: number;
+} | {
     type: "rename_table";
     expected_revision: string;
     collection: string;
@@ -906,6 +914,13 @@ export type DesignerRequest = {
     collection: string;
     name: string;
     column_names?: Record<string, string>;
+} | {
+    type: "duplicate_collection_at";
+    expected_revision: string;
+    collection: string;
+    name: string;
+    column_names?: Record<string, string>;
+    to_index: number;
 } | {
     type: "delete_table";
     expected_revision: string;

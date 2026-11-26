@@ -13,6 +13,13 @@ import { fileURLToPath } from 'node:url';
 // tuple for an explicit rollback, never mix receipts between qualified kits.
 const qualifiedArtifacts = [
   {
+    // Work #948 XLSX open performance re-pin. Byte-identical exports recorded on #246.
+    sourceCommit: '2565365c6bb5252776ecf1c1fc3fe96bb81aafbe',
+    artifactManifestSha256: '21cb67c25c3658c065a5837feafc2fcfe99203419f43a721a82c529b8edde96d',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7191047481',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7191047481',
+  },
+  {
     // Work #943 re-pin, with byte-identical exports recorded on #246.
     sourceCommit: '4fc0636106831df936e416a70fb90ad6b665b085',
     artifactManifestSha256: '3825c82840455fc4721512dd7c2b28d83d32b0cb27e89d7a70bad0da54a63bb3',
