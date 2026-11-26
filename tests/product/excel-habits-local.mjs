@@ -2634,6 +2634,8 @@ const cases = [
     await ready(page);
     const cell = (address) => page.getByTestId(`worksheet:${address}`);
     const text = async (address) => (await cell(address).textContent()).trim();
+    await replaceCell(page, "worksheet:A1", "=1/0");
+    assert.equal(await text("A1"), "#DIV/0!", "a blank worksheet accepts a division-by-zero formula");
     await cell("A1").click();
     await page.evaluate(() => navigator.clipboard.writeText("division\t1\t0\t0\nreference\t2\t0\t0\nlookup\t3\t0\t0"));
     await page.keyboard.press("Control+v");
