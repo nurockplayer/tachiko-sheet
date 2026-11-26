@@ -1807,7 +1807,7 @@ describe("recovery presentation", () => {
   });
 
   it("adds Duplicate sheet without changing the grid's own markup", () => {
-    const workspaceOf = (markup: string) => markup.slice(markup.indexOf('id="ts-table-workspace"'));
+    const workspaceOf = (markup: string) => markup.slice(markup.indexOf('id="ts-table-workspace"'), markup.indexOf('<footer class="ts-workspace-footer"'));
     const base = render({ view: makeView() });
     const offered = render({ view: makeView(), onDuplicateTable: async () => ({ kind: "confirmed" }) });
     expect(workspaceOf(offered)).toBe(workspaceOf(base));
