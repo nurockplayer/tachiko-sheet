@@ -653,15 +653,8 @@ export function SheetShell(props: SheetShellProps) {
     const sync = () => setCompactColumnActions(compact.matches);
     sync();
     compact.addEventListener("change", sync);
-    const reposition = () => {
-      repositionOpenColumnMenu();
-    };
-    window.addEventListener("resize", reposition);
-    window.addEventListener("scroll", reposition, true);
     return () => {
       compact.removeEventListener("change", sync);
-      window.removeEventListener("resize", reposition);
-      window.removeEventListener("scroll", reposition, true);
     };
   }, []);
 
@@ -828,6 +821,18 @@ export function SheetShell(props: SheetShellProps) {
   const [showFormulas, setShowFormulas] = useState(false);
   const [gridZoom, setGridZoom] = useState(100);
   const gridScale = gridZoom / 100;
+  const [activeColumnDisclosure, setActiveColumnDisclosure] = useState<HTMLDetailsElement | null>(null);
+  useEffect(() => {
+    if (!activeColumnDisclosure?.open) return;
+    const reposition = () => positionColumnToolbar(activeColumnDisclosure);
+    reposition();
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [activeColumnDisclosure, gridScale]);
   function stepGridZoom(delta: number): void {
     setGridZoom(current => Math.max(50, Math.min(200, current + delta)));
   }
@@ -1258,7 +1263,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const table = view?.table ?? null;
   const renameAvailable = Boolean(onRenameColumn && canRenameColumns(table, interop?.metadata ?? null));
-  const importedXlsx = /\.xlsx$/i.test(importedSourceName ?? "");
+  const importedXlsx = /\.xlsx$/i.test(importedSourceName ?? "") || (!importedSourceName && !!interop?.metadata);
   const names = useMemo(() => sourceNames(interop?.metadata ?? null, importedSourceName, table), [interop?.metadata, importedSourceName, table]);
   const ledgerColumns = useMemo(() => interop?.ledgerColumns ? bindingCatalogNames(interop.ledgerColumns, interop.metadata, importedSourceName) : null, [interop?.ledgerColumns, interop?.metadata, importedSourceName]);
   // Resolve labels once for every consumer. IDs, keys and canonical projections
@@ -4018,15 +4023,16 @@ export function SheetShell(props: SheetShellProps) {
     if (!position || position.entity === DRAFT_ROW || !table || !witness || !onSetCellStyle || controlsLocked || cellDraftActive || formulaDraftActive) return;
     const at = address(position);
     const area = selectionRectangle ?? rectangle(at, at);
-    const entities = displayRows.slice(area.top, area.bottom + 1).map(rowEntity);
+    const selectedRows = displayRows.slice(area.top, area.bottom + 1);
+    const stored = rowSource(table);
+    const start = stored.indexOf(rowEntity(selectedRows[0]!));
+    // The positional command uses stored order, including for outline edges.
+    const rows = start >= 0 && selectedRows.every((row, offset) => row === stored.rowAt(start + offset))
+      ? { row: start + 1, rowCount: selectedRows.length }
+      : { entities: selectedRows.map(rowEntity) };
     const fields = columns.slice(area.left, area.right + 1).map(column => column.id);
-    const request = { type: "set_cell_style", expected_revision: witness.revision, collection: table.collection.key, entities, fields, changes: [change] };
-    if (new TextEncoder().encode(JSON.stringify(request)).byteLength > props.requestByteLimit) {
-      setColumnAnnouncement("This selection is too large to format at once. Select fewer cells.");
-      return;
-    }
     void runStripCommand(async () => {
-      const result = await onSetCellStyle(witness, table.collection.key, entities, fields, [change]);
+      const result = await onSetCellStyle(witness, table.collection.key, rows, fields, [change]);
       if (result.kind === "confirmed" && boundSelection) setWidthSelectionRebind({ identity: collectionIdentity, revision: boundSelection.revision });
       return result;
     }, "selection");
@@ -5255,6 +5261,7 @@ export function SheetShell(props: SheetShellProps) {
     // Place it horizontally first: wrapping, and therefore height, follows the
     // width the menu actually takes at its final position.
     const scale = disclosure.closest("table.ts-grid") ? gridScale : 1;
+    if (disclosure.closest("table.ts-grid")) menu.style.maxHeight = `${(window.innerHeight - 32) / scale}px`;
     const width = menu.getBoundingClientRect().width;
     const left = disclosure.classList.contains("ts-column-toolbar") ? trigger.left : trigger.right - width;
     menu.style.left = `${Math.max(16, Math.min(left, window.innerWidth - width - 16)) / scale}px`;
@@ -5273,6 +5280,7 @@ export function SheetShell(props: SheetShellProps) {
     if (!menu) return;
     menu.style.left = "";
     menu.style.top = "";
+    menu.style.maxHeight = "";
   }
 
   /** Close synchronously: the position must be gone before the close renders. */
@@ -5747,9 +5755,10 @@ export function SheetShell(props: SheetShellProps) {
               {!compactColumnActions ? <>
                 <details className="ts-column-overflow" onToggle={event => {
                   const disclosure = event.currentTarget;
-                  if (!disclosure.open) { resetColumnToolbar(disclosure); setFilterDraft(null); return; }
+                  if (!disclosure.open) { setActiveColumnDisclosure(current => current === disclosure ? null : current); resetColumnToolbar(disclosure); setFilterDraft(null); return; }
                   if (columnChangesBlocked) { disclosure.open = false; return; }
                   gridScrollRef.current?.querySelectorAll<HTMLDetailsElement>(".ts-column-overflow[open]").forEach(other => { if (other !== disclosure) other.open = false; });
+                  setActiveColumnDisclosure(disclosure);
                   positionColumnToolbar(disclosure);
                 }} onBlur={event => {
                   if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
@@ -6030,8 +6039,9 @@ export function SheetShell(props: SheetShellProps) {
           </div> : null}
           {rowDeleteAvailable ? <button type="button" className="ts-button" disabled={rowDeleteBlocked} title={rowDraftActive ? "Add or discard the new row first." : undefined} onClick={() => void deleteRow()}>{selectionRectangle && selectionRectangle.bottom > selectionRectangle.top ? `Delete ${selectionRectangle.bottom - selectionRectangle.top + 1} rows` : "Delete row"}</button> : null}
           {compactColumnActions && focusedColumn ? <details className="ts-column-overflow ts-column-toolbar" onToggle={event => {
-            if (!event.currentTarget.open) { resetColumnToolbar(event.currentTarget); setFilterDraft(null); return; }
+            if (!event.currentTarget.open) { const disclosure = event.currentTarget; setActiveColumnDisclosure(current => current === disclosure ? null : current); resetColumnToolbar(disclosure); setFilterDraft(null); return; }
             if (columnChangesBlocked) { closeColumnToolbar(event.currentTarget); return; }
+            setActiveColumnDisclosure(event.currentTarget);
             positionColumnToolbar(event.currentTarget);
           }} onBlur={event => {
             if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {

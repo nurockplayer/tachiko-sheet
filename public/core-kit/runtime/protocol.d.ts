@@ -736,6 +736,14 @@ export type TrackerCommand = {
     fields: string[];
     changes: CellStyleChange[];
 } | {
+    type: "set_cell_style_range";
+    expected_revision: string;
+    collection: string;
+    row: number;
+    row_count: number;
+    fields: string[];
+    changes: CellStyleChange[];
+} | {
     type: "set_column_width";
     expected_revision: string;
     collection: string;
