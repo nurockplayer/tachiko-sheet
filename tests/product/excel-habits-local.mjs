@@ -2604,11 +2604,16 @@ const cases = [
     const table = await projection(page);
     assert.deepEqual(table.columns.map(column => column.field_type), ["auto", "auto", "auto", "auto"]);
     const missing = [];
+    const checkError = async (address, expected, label) => {
+      const actual = await text(address);
+      if (actual === expected) return;
+      const refusal = await page.locator(".ts-error").allTextContents();
+      missing.push(`${label} shows ${JSON.stringify(actual)}, expected ${expected}${refusal.length ? ` (${refusal.join(" ")})` : ""}`);
+    };
     const formulas = [["=1/0", "#DIV/0!"], ["=Z999999", "#REF!"], ['=VLOOKUP("missing",A1:B3,2,FALSE)', "#N/A"]];
     for (const [row, [formula, expected]] of formulas.entries()) {
       await replaceCell(page, `worksheet:C${row + 1}`, formula);
-      const actual = await text(`C${row + 1}`);
-      if (actual !== expected) missing.push(`${formula} shows ${JSON.stringify(actual)}, expected ${expected} in its cell`);
+      await checkError(`C${row + 1}`, expected, formula);
       await page.keyboard.press("Escape");
       const label = `Still editable ${row}`;
       await replaceCell(page, `worksheet:A${row + 1}`, label);
@@ -2616,20 +2621,22 @@ const cases = [
       assert.equal(fieldAt(await projection(page), row, 0)?.stored?.value, label, `editing after ${formula} was not committed`);
     }
     await replaceCell(page, "worksheet:D1", "=C1+1");
-    assert.equal(await text("D1"), "#DIV/0!", "the dependent cell did not inherit the division error");
-    const checkDivision = async () => {
-      assert.equal(await text("C1"), "#DIV/0!");
+    await checkError("D1", "#DIV/0!", "=C1+1");
+    await page.keyboard.press("Escape");
+    const checkDivision = async (stage) => {
+      await checkError("C1", "#DIV/0!", `C1 ${stage}`);
       await cell("C1").click();
-      assert.match(await page.getByTestId("formula-bar-input").inputValue(), /^=\(?1\s*\/\s*0\)?$/);
+      const source = await page.getByTestId("formula-bar-input").inputValue();
+      if (!/^=?\(?1\s*\/\s*0\)?$/.test(source)) missing.push(`C1 formula bar ${stage} shows ${JSON.stringify(source)}`);
     };
-    await checkDivision();
+    await checkDivision("before Save");
     await saveCopy(page, "habits-N16");
     await page.reload();
     await waitForColdHome(page);
     await page.getByRole("button", { name: "Open saved habits-N16", exact: true }).click();
     await ready(page);
-    await checkDivision();
-    assert.equal(await text("D1"), "#DIV/0!", "the dependent error did not survive reopen");
+    await checkDivision("after reopen");
+    await checkError("D1", "#DIV/0!", "D1 after reopen");
 
     await page.getByRole("tab", { name: "Import & export", exact: true }).click();
     await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
@@ -2642,6 +2649,7 @@ const cases = [
     } else {
       missing.push("XLSX export did not prepare a workbook containing the failing formula");
     }
+    for (const gap of missing) console.error(`N16: ${gap}`);
     assert.deepEqual(missing, [], missing.join("; "));
   } },
   { id: "N24", name: "Save semantics", tier: "A", manualAfterRun: true, note: "Native desktop verification must compare the opened XLSX and directory after Save for original-file update, stray copies and wrong-file overwrites; Chromium cannot write back an uploaded file.", run: async (page) => {
