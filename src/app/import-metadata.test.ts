@@ -232,3 +232,38 @@ it("retains XLSX origin through a work-file download and reopen, and reads nativ
     await act(async () => root.unmount());
   }
 });
+
+it("saves XLSX origin after Refresh recovers an older saved copy without a companion", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const collection = { id: "s1", key: "s1", display_name: "Original", headerless: false, data_start_row: 2, entity_count: 0 };
+  const metadata = { version: 1 as const, sheets: [{ schema_id: "s1", name: "Original", has_header: true, columns: [], rows: [] }] };
+  const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1", collections: [collection], table: { revision: "r1", collection, columns: [], rows: [] }, importMetadata: metadata };
+  const bytes = new Uint8Array([8, 7]).buffer;
+  const importedSource = { name: "book.xlsx", format: "xlsx", bytes, metadata, ledger: [] };
+  const runtime = {
+    prepare: vi.fn(async () => {}), queryCapacity: vi.fn(async () => null),
+    discoverKeyedGroupedSums: vi.fn(async () => []).mockRejectedValueOnce(new Error("Discovery failed")),
+    openOpaque: vi.fn(async () => view), read: vi.fn(async () => view),
+    exportOpaque: vi.fn(async () => ({ revision: "r1", bytes, importMetadata: metadata })),
+  };
+  const copies = {
+    list: vi.fn(async () => []),
+    readAny: vi.fn(async () => ({ kind: "opaque", revision: "r1", bytes, importedSource })),
+    createOpaque: vi.fn(async () => ({ name: "Recovered", kind: "opaque", revision: "r1", savedAt: "2026-11-26T00:00:00Z", saveToken: "saved" })),
+  };
+  const root = createRoot(document.createElement("div"));
+  const current = () => shell.props!;
+  try {
+    await act(async () => root.render(createElement(App, { runtime, copies, appearancePreference: {} } as unknown as AppProps)));
+    await act(async () => current().onOpenSaved("Imported"));
+    expect(current().currentness).toBe("unknown");
+    await act(async () => current().onRefresh());
+    expect(current().currentness).toBe("current");
+    await act(async () => { expect(await current().onCreateCopy("Recovered")).toMatchObject({ saved: true }); });
+    expect(copies.createOpaque).toHaveBeenCalledWith("Recovered", expect.objectContaining({
+      importCompanion: expect.objectContaining({ origin: "xlsx", metadata }),
+    }));
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

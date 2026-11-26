@@ -825,7 +825,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           occurrence: witness?.occurrence ?? null,
           revision: witness?.revision ?? null,
           importedSource: provenance.importedSource ?? null,
-          importOrigin: provenance.importOrigin ?? null,
+          importOrigin: provenance.importedSource?.format ?? provenance.importOrigin ?? null,
           interop: provenance.interop ?? null,
           savedRevision: provenance.savedRevision ?? null,
           boundCopy: provenance.boundCopy ?? null,
