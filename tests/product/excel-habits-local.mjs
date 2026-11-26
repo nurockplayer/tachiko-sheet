@@ -339,17 +339,54 @@ const cases = [
     assert.deepEqual(after.columns.slice(0, ids.length).map((column) => column.id), ids, "existing field ids changed");
   } },
   { id: "06", name: "Mixed values", tier: "A", run: async (page) => {
-    await newTable(page, "Mixed", [{ name: "Value", type: "number" }]);
+    await newTable(page, "Typed", [{ name: "Value", type: "number" }]);
     await addRow(page, ["123"], 1);
     const cell = page.locator(".ts-entry-row td[data-entry-field]").first();
     await cell.dblclick();
-    await page.getByTestId("cell-editor").waitFor();
+    const editor = page.getByTestId("cell-editor");
+    await editor.waitFor();
     await page.keyboard.type("N/A");
     await page.keyboard.press("Enter");
-    await settle(page);
-    const after = await projection(page);
-    assert.equal(after.rows.length, 2, "a Number column refused N/A; an Excel worksheet column accepts mixed values");
-    assert.equal(String(fieldAt(after, 1, 0)?.stored?.value), "N/A", "N/A did not survive as typed");
+    await page.getByRole("alert").filter({ hasText: "Value needs a number." }).waitFor();
+    assert.equal((await projection(page)).rows.length, 1, "the Number column accepted N/A");
+    await cell.dblclick();
+    assert.equal(await editor.inputValue(), "N/A", "the rejected draft was lost");
+    await editor.fill("456");
+    await editor.press("Enter");
+    await page.waitForFunction(() => !window.__habits.stale && window.__readObservedTable(window.__habits)?.rows.length === 2);
+    assert.equal(fieldAt(await projection(page), 1, 0)?.stored?.value, 456, "the corrected number was not stored");
+
+    await home(page);
+    await page.keyboard.press("Control+n");
+    const inputs = ["12", "N/A", "3.5", "TRUE", "2026-01-05"];
+    const expected = [
+      { kind: "number", value: 12 },
+      { kind: "text", value: "N/A" },
+      { kind: "number", value: 3.5 },
+      { kind: "boolean", value: true },
+      { kind: "date", value: "2026-01-05" },
+    ];
+    for (const [index, input] of inputs.entries()) {
+      if (index === inputs.length - 1) await saveCopy(page, "habits-06");
+      const worksheetCell = page.getByTestId(`worksheet:A${index + 1}`);
+      await worksheetCell.click();
+      await page.keyboard.type(input);
+      await page.keyboard.press("Enter");
+      await worksheetCell.filter({ hasText: index === 3 ? "true" : input }).waitFor();
+    }
+    const assertMixedColumn = async () => {
+      const table = await projection(page);
+      assert.equal(table.columns[0].field_type, "auto");
+      assert.deepEqual(expected.map((_, row) => fieldAt(table, row, 0)?.stored), expected);
+    };
+    await assertMixedColumn();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+    await home(page);
+    await page.getByRole("button", { name: "Open saved habits-06", exact: true }).click();
+    await ready(page);
+    await page.getByTestId("worksheet:A5").filter({ hasText: "2026-01-05" }).waitFor();
+    await assertMixedColumn();
   } },
   { id: "07", name: "Type to replace", tier: "A", run: async (page) => {
     await example(page);
