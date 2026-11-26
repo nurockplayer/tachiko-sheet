@@ -835,7 +835,7 @@ async function namedTableJourney() {
     return {
       name: document.querySelector("#ts-active-table option:checked")?.textContent,
       columns: [...grid().querySelectorAll(".ts-col-head")].map(el => el.textContent),
-      cells: [...grid().querySelectorAll("tbody tr.ts-row td")].map(el => ({ id: el.dataset.testid, value: el.textContent.trim() })),
+      cells: [...grid().querySelectorAll("tbody tr.ts-row td[data-work-field]")].map(el => ({ id: el.dataset.testid, value: el.textContent.trim() })),
     };
   `);
   const initial = await snapshot();

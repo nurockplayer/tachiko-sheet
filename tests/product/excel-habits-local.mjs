@@ -2565,7 +2565,7 @@ const cases = [
     assert.deepEqual(missing, [], `commands not reachable from visible chrome: ${missing.join(", ")}`);
   } },
   { id: "N2", name: "Grid chrome", tier: "A", run: async (page) => {
-    await newTable(page, "Grid chrome", [{ name: "One" }, { name: "Two" }, { name: "Three" }]);
+    await newTable(page, "Grid chrome", [{ name: "One" }, { name: "Two" }, { name: "Three", type: "number" }]);
     // Inspect the new sheet before any grid click, focus or selection.
     const missing = await page.getByRole("grid", { name: "Table", exact: true }).evaluate((grid) => {
       const missing = [];
@@ -2597,6 +2597,15 @@ const cases = [
     await page.keyboard.type("Apple");
     await page.keyboard.press("Escape");
     assert.equal((await projection(page)).rows.length, 0, "cancelling a blank cell edit materialized rows");
+
+    // Match the packaged named-table snapshot while preserving adjacent grid entry.
+    const values = ["Tea", "飲食", "4.5"];
+    await addRow(page, values, 1);
+    const readCells = (selector) => page.locator(selector).evaluateAll((cells) => cells.map((cell) => cell.textContent.trim()));
+    assert.deepEqual(await readCells("tbody tr.ts-row td"), [...values, ""]);
+    assert.deepEqual(await readCells("tbody tr.ts-row td[data-work-field]"), values);
+    assert.equal((await projection(page)).columns.length, 3, "the adjacent blank materialized a Work column");
+
     await blank.click();
     await page.keyboard.type("Apple");
     await page.keyboard.press("Enter");
