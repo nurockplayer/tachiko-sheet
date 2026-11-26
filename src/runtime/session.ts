@@ -1121,12 +1121,15 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     return confirmedMutation(witness, (client, revision) => dispatchScalarEdit(client, revision, target, change));
   }
 
-  function insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[]) {
+  function insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[], before?: string) {
     const inputs = initializers.map(({ field, input }) => ({ field, input: { ...input } }));
     return confirmedMutation(witness, (client, revision) => {
       const command = capability(client.trackerCommand, "row insertion");
-      return command.call(client, { type: "insert_row", expected_revision: revision, collection, initializers: inputs });
-    });
+      return command.call(client, {
+        type: "insert_row", expected_revision: revision, collection, initializers: inputs,
+        ...(before !== undefined ? { position: { before } } : {}),
+      });
+    }, false, before !== undefined);
   }
 
   function editCells(witness: ViewWitness, edits: CellEdit[]) {

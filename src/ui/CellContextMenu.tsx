@@ -80,10 +80,12 @@ export function CellContextMenu({ x, y, items, label = "Cell actions", onClose }
           role="menuitem"
           className="ts-cell-menu-item"
           aria-disabled={item.disabled || undefined}
+          aria-description={item.description}
           tabIndex={-1}
           onClick={() => { if (!item.disabled) item.run(); }}
         >
           <span className="ts-cell-menu-label">{item.label}</span>
+          {item.description ? <span className="ts-cell-menu-shortcut" aria-hidden="true">{item.description}</span> : null}
           {item.shortcut ? <span className="ts-cell-menu-shortcut" aria-hidden="true">{item.shortcut}</span> : null}
         </button>)}
     </div>

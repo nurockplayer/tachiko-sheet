@@ -1176,7 +1176,7 @@ const cases = [
     assert.equal(leftFormula, `(${sheet}A$2+${sheet}$A$2)`);
     assert.equal(rightFormula, `(${sheet}B$2+${sheet}$A$2)`);
   } },
-  { id: "23", name: "Row operations", tier: "A", run: async (page) => {
+  { id: "23", name: "Row operations", tier: "A", budgetMs: 45_000, run: async (page) => {
     await example(page);
     const table = await projection(page);
     await page.getByTestId(cellIdFor(table, 1, 0)).click();
@@ -1186,10 +1186,78 @@ const cases = [
     await page.keyboard.press("Control+z");
     await settle(page);
     assert.deepEqual((await projection(page)).rows, table.rows, "Undo did not restore the deleted record with its identity");
-    await page.getByTestId(cellIdFor(table, 1, 0)).click();
+    await newTable(page, "Row operations", [{ name: "Input", type: "number" }, { name: "Result", type: "number" }]);
+    for (const [index, value] of ["10", "20", "30", "40"].entries()) await addRow(page, [value], index + 1);
+    const original = await projection(page);
+    const ids = original.rows.map(rowEntity);
+    const formula = cellIdFor(original, 3, 1);
+    await replaceCell(page, formula, "=A3*2");
+    await waitForCellText(page, formula, "40");
+    const headers = page.locator("tbody tr.ts-row > th.ts-row-head");
+    const projectedIds = rows => rows.map(row => row.fields.find(field => field?.target?.entity)?.target.entity ?? row.id);
+    const currentIds = async () => projectedIds((await projection(page)).rows);
+    const undo = async () => { await page.keyboard.press("Control+z"); await settle(page); };
+
+    await page.getByTestId(cellIdFor(original, 1, 0)).click();
+    await page.keyboard.press("Shift+Space");
     await page.keyboard.press("Control+=");
     await settle(page);
-    assert.equal((await projection(page)).rows.length, 4, "Ctrl+= inserted no record between existing records");
+    const inserted = await projection(page);
+    assert.equal(inserted.rows.length, 5, "Ctrl+= inserted no record between existing records");
+    const blank = projectedIds(inserted.rows)[1];
+    const withBlank = [ids[0], blank, ...ids.slice(1)];
+    assert.ok(!ids.includes(blank), "inserted row has a fresh identity");
+    assert.deepEqual(await currentIds(), withBlank, "existing rows kept their identities and order");
+    for (const column of inserted.columns) {
+      assert.equal((await page.getByTestId(`cell:${blank}:${column.id}`).textContent()).trim(), "");
+    }
+    await waitForCellText(page, formula, "40");
+    await undo();
+    assert.deepEqual(await currentIds(), ids, "one Undo removes the inserted row");
+
+    await headers.nth(1).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Insert row", exact: true }).click();
+    await settle(page);
+    const viaMenu = await currentIds();
+    assert.deepEqual(viaMenu.filter((_, index) => index !== 1), ids, "row menu inserts above the clicked row");
+    await undo();
+    assert.deepEqual(await currentIds(), ids);
+
+    await headers.nth(1).click();
+    await page.keyboard.press("Control+Shift+Equal");
+    await settle(page);
+    const shifted = await currentIds();
+    assert.deepEqual(shifted.filter((_, index) => index !== 1), ids, "Ctrl+Shift+= inserts above");
+
+    await headers.nth(0).click();
+    await headers.nth(1).click({ modifiers: ["Shift"] });
+    await page.keyboard.press("Control+=");
+    await page.getByText("Insert one row at a time for now", { exact: true }).waitFor();
+    assert.deepEqual(await currentIds(), shifted, "multi-row insert did not publish");
+    await headers.nth(1).click({ button: "right" });
+    const insertItem = page.getByRole("menuitem", { name: "Insert row", exact: true });
+    assert.equal(await insertItem.getAttribute("aria-disabled"), "true");
+    assert.equal(await insertItem.getAttribute("aria-description"), "Insert one row at a time for now");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Control+-");
+    await settle(page);
+    assert.deepEqual(await currentIds(), ids.slice(1), "Ctrl+- deletes both selected rows");
+    await undo();
+    assert.deepEqual(await currentIds(), shifted, "one Undo restores both deleted row identities");
+
+    await headers.nth(3).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Delete row", exact: true }).click();
+    await settle(page);
+    const finalIds = [ids[0], shifted[1], ids[1], ids[3]];
+    assert.deepEqual(await currentIds(), finalIds);
+    await saveCopy(page, "habit-23-rows");
+    await home(page);
+    await page.getByRole("button", { name: "Open saved habit-23-rows", exact: true }).click();
+    await waitForCellText(page, formula, "40");
+    const reopened = await projection(page);
+    assert.deepEqual(projectedIds(reopened.rows), finalIds, "save and reopen preserve the structural edits");
+    await replaceCell(page, cellIdFor(reopened, 2, 0), "25");
+    await waitForCellText(page, formula, "50");
   } },
   { id: "24", name: "Workbook sheets", tier: "A", note: "Native and imported add/rename/delete; standalone .ro names/order and XLSX re-import are exercised by the same journey as workbook-tabs step 8.", budgetMs: 120_000, run: async () => {
     const profile = await mkdtemp(path.join(tmpdir(), "habits-24-"));

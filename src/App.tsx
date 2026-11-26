@@ -1798,8 +1798,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     })();
   }
 
-  function insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[]) {
-    return changeRows(witness, () => runtime.insertRow(witness, collection, initializers));
+  function insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[], before?: string) {
+    return changeRows(witness, () => runtime.insertRow(witness, collection, initializers, before));
   }
 
   function editCells(witness: ViewWitness, edits: CellEdit[]) {
