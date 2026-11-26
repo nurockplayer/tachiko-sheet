@@ -337,6 +337,7 @@ const cases = [
     const after = await projection(page);
     assert.equal(after.columns.length, before.columns.length + 1, "typing to the right of the last column created no field");
     assert.deepEqual(after.columns.slice(0, ids.length).map((column) => column.id), ids, "existing field ids changed");
+    assert.equal(fieldAt(after, 0, ids.length)?.stored?.value, "Extra", "Work did not store the text beside the table");
   } },
   { id: "06", name: "Mixed values", tier: "A", run: async (page) => {
     await newTable(page, "Mixed", [{ name: "Value", type: "number" }]);
@@ -2540,6 +2541,30 @@ const cases = [
       return missing;
     });
     assert.deepEqual(missing, [], `new sheet does not show ${missing.join(", ")} at once`);
+
+    const before = await projection(page);
+    assert.equal(before.rows.length, 0, "opening the grid materialized blank rows");
+    const blank = page.getByTestId("table-space:B4");
+    await blank.click();
+    await page.keyboard.type("Apple");
+    await page.keyboard.press("Escape");
+    assert.equal((await projection(page)).rows.length, 0, "cancelling a blank cell edit materialized rows");
+    await blank.click();
+    await page.keyboard.type("Apple");
+    await page.keyboard.press("Enter");
+    await settle(page);
+    const after = await projection(page);
+    assert.equal(after.rows.length, 3, "typing in row 4 did not extend the table to that row");
+    assert.equal(fieldAt(after, 2, 1)?.stored?.value, "Apple", "Work did not store the value in B4");
+    const savedCell = cellIdFor(after, 2, 1);
+    await saveCopy(page, "habits-N2");
+    await page.reload();
+    await waitForColdHome(page);
+    await page.getByRole("button", { name: "Open saved habits-N2", exact: true }).click();
+    await ready(page);
+    assert.equal(await page.getByTestId(savedCell).textContent(), "Apple", "B4 changed after Save and reopen");
+    assert.equal((await projection(page)).rows.length, 3, "reopen materialized additional blank rows");
+    assert.equal(await page.getByTestId("table-space:B6").textContent(), "", "the reopened grid did not show blank rows below the data");
   } },
   { id: "N3", name: "Status bar statistics", tier: "A", run: async (page) => {
     await newTable(page, "Statistics", [{ name: "Amount", type: "number" }]);
