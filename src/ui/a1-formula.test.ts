@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { A1_TOO_MANY_ROWS, A1_NOTE_TEXT, a1EditorStillCurrent, a1GoToTarget, a1NoteText, a1References, a1ReferencedRanges, a1RefusalText, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
+import { A1_TOO_MANY_ROWS, A1_NOTE_TEXT, a1EditorStillCurrent, a1GoToTarget, a1NoteText, a1References, a1ReferencedRanges, a1RefusalText, cycleA1Reference, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 
 describe("isTachikoFormulaSource", () => {
   it("treats a bracketed reference as Tachiko source and anything else as Excel text", () => {
@@ -79,6 +79,39 @@ describe("a1ReferencedRanges", () => {
     expect(a1ReferencedRanges("=SUM(B:B)")).toEqual([]);
     expect(a1ReferencedRanges("=A0")).toEqual([]);
     expect(a1ReferencedRanges("=1.5E3")).toEqual([]);
+  });
+});
+
+describe("cycleA1Reference", () => {
+  it.each([
+    ["=A2", "=$A$2", "=A$2", "=$A2"],
+    ["=A1:B2", "=$A$1:$B$2", "=A$1:B$2", "=$A1:$B2"],
+    ["=A1:$B$2", "=$A$1:B$2", "=A$1:$B2", "=$A1:B2"],
+    ["=Q1!b2", "=Q1!$b$2", "=Q1!b$2", "=Q1!$b2"],
+    ["='Q1''s A2'!A1:B2", "='Q1''s A2'!$A$1:$B$2", "='Q1''s A2'!A$1:B$2", "='Q1''s A2'!$A1:$B2"],
+  ])("cycles %s through all four modes with the caret at its end", (...modes) => {
+    for (const [index, mode] of modes.entries()) {
+      const next = modes[(index + 1) % modes.length];
+      expect(cycleA1Reference(mode, mode.length, mode.length)).toEqual({ value: next, start: next.length, end: next.length });
+    }
+  });
+
+  it("cycles the reference on either side of an operator when the caret touches it", () => {
+    expect(cycleA1Reference("=A2+B3", 3, 3)).toEqual({ value: "=$A$2+B3", start: 5, end: 5 });
+    expect(cycleA1Reference("=A2+B3", 4, 4)).toEqual({ value: "=A2+$B$3", start: 8, end: 8 });
+    expect(cycleA1Reference("=A2 + B3", 4, 4)).toBeNull();
+  });
+
+  it("cycles just the selected references and keeps them selected", () => {
+    const value = "=A1 + B2:C3 + D4";
+    const next = "=$A$1 + $B$2:$C$3 + D4";
+    expect(cycleA1Reference(value, 2, 10)).toEqual({ value: next, start: 1, end: next.indexOf(" + D4") });
+  });
+
+  it("leaves string literals, function names and Work references alone", () => {
+    const value = '=LOG10(A2)&"B3"';
+    expect(cycleA1Reference(value, 1, value.length)?.value).toBe('=LOG10($A$2)&"B3"');
+    expect(cycleA1Reference("=[.A2]", 6, 6)).toBeNull();
   });
 });
 

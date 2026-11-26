@@ -2,7 +2,7 @@ import { companionDigest, companionMetadata, IMPORT_COMPANION_NOTE } from "./hos
 import { COLUMN_SAVE_UNAVAILABLE, DUPLICATE_SAVE_UNAVAILABLE, columnSavePreflightDecision, duplicateSavePreflightDecision } from "./application/column-save-preflight.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
-import { emptyLocalHistory, observeLocalHistory, type LocalHistorySnapshot } from "./application/local-history.js";
+import { applyViewHistory, emptyLocalHistory, observeLocalHistory, recordViewHistory, type LocalHistorySnapshot, type ViewHistoryChange } from "./application/local-history.js";
 import { DetachedReportPresentations } from "./application/detached-report-presentations.js";
 import { readWorkFile, requireWorkFileName, sameWorkFileOmissions, workFileOmissions, WORK_FILE_SAVE_UNAVAILABLE } from "./application/work-file.js";
 import { createMutationCompletion, settledSaveStatus, salesRevisionHasChanged, type MutationRecovery } from "./app/mutation-completion.js";
@@ -444,6 +444,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
   // encoding re-read) cannot reopen the preview it was cancelled from.
   const inspectGenerationRef = useRef(0);
   const importedSourceRef = useRef<ImportedSourceAttachment | null>(null);
+  const importOriginRef = useRef<import("./contracts.js").ImportOrigin | null>(null);
   const [importMappingUntrusted, setImportMappingUntrusted] = useState(false);
   // An ephemeral, user-consented delivery candidate; never canonical state.
   const preparedDownloadRef = useRef<PreparedDownload | null>(null);
@@ -494,6 +495,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     occurrence: string | null;
     revision: string | null;
     importedSource: ImportedSourceAttachment | null;
+    importOrigin: import("./contracts.js").ImportOrigin | null;
     interop: InteropState | null;
     savedRevision: string | null;
     boundCopy: SavedCopySummary | null;
@@ -507,6 +509,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     occurrence: string;
     revision: string;
     importedSource: ImportedSourceAttachment | null;
+    importOrigin: import("./contracts.js").ImportOrigin | null;
     interop: InteropState | null;
     importBytes: ArrayBuffer | null;
     preparedDownload: PreparedDownload | null;
@@ -751,6 +754,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   type ReplacementProvenance = {
     importedSource?: ImportedSourceAttachment | null;
+    importOrigin?: import("./contracts.js").ImportOrigin | null;
     interop?: InteropState | null;
     boundCopy?: SavedCopySummary | null;
     savedRevision?: string | null;
@@ -764,6 +768,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       occurrence: old.occurrence,
       revision: old.revision,
       importedSource: importedSourceRef.current,
+      importOrigin: importOriginRef.current,
       interop,
       importBytes: importBytesRef.current?.slice(0) ?? null,
       preparedDownload: preparedDownloadRef.current
@@ -815,11 +820,12 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     // The resident runtime now belongs to the candidate occurrence. Keep its
     // provenance private until Refresh proves this exact replacement; old
     // work must not leak into an unconfirmed projection.
-    pendingReplacementRef.current = (provenance.importedSource || provenance.interop || provenance.savedRevision || provenance.presentation)
+    pendingReplacementRef.current = (provenance.importedSource || provenance.importOrigin || provenance.interop || provenance.savedRevision || provenance.presentation)
       ? {
           occurrence: witness?.occurrence ?? null,
           revision: witness?.revision ?? null,
           importedSource: provenance.importedSource ?? null,
+          importOrigin: provenance.importedSource?.format ?? provenance.importOrigin ?? null,
           interop: provenance.interop ?? null,
           savedRevision: provenance.savedRevision ?? null,
           boundCopy: provenance.boundCopy ?? null,
@@ -830,6 +836,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     savedRevisionRef.current = null;
     setSaveStatus("not-saved");
     importedSourceRef.current = null;
+    importOriginRef.current = null;
     importBytesRef.current = null;
     preparedDownloadRef.current = null;
     setInterop(null);
@@ -886,6 +893,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       markNotSaved();
     }
     importedSourceRef.current = provenance.importedSource ?? null;
+    importOriginRef.current = provenance.importedSource?.format ?? provenance.importOrigin ?? null;
     setImportMappingUntrusted(false);
     importBytesRef.current = null;
     preparedDownloadRef.current = null;
@@ -1124,7 +1132,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       const bytes = await readWorkFile(file);
       const companion = await hostFiles.readImportCompanion?.(file, bytes);
       const metadata = await companionMetadata(bytes, companion);
-      const opened = await replaceWork(() => metadata ? runtime.openWorkFile(bytes, metadata) : runtime.openWorkFile(bytes));
+      const opened = await replaceWork(() => metadata ? runtime.openWorkFile(bytes, metadata) : runtime.openWorkFile(bytes),
+        { importOrigin: metadata ? companion?.origin ?? "imported" : null });
       if (opened.kind !== "confirmed") return;
       if ((companion || viewRef.current?.importMetadata) && (!metadata || !viewRef.current?.importMetadata)) setMessage(IMPORT_COMPANION_NOTE);
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
@@ -1218,6 +1227,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     savedRevisionRef.current = null;
     setSaveStatus("not-saved");
     importedSourceRef.current = null;
+    importOriginRef.current = null;
     importBytesRef.current = null;
     preparedDownloadRef.current = null;
     setInterop(null);
@@ -1260,6 +1270,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         savedRevisionRef.current = null;
         setSaveStatus("not-saved");
         importedSourceRef.current = null;
+    importOriginRef.current = null;
         importBytesRef.current = null;
         preparedDownloadRef.current = null;
         setInterop(null);
@@ -1388,7 +1399,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       if ((await replaceWork(
         () => copy.kind === "work-file" ? (savedMetadata ? runtime.openWorkFile(copy.bytes, savedMetadata) : runtime.openWorkFile(copy.bytes))
           : copy.kind === "opaque" ? runtime.openOpaque(copy.bytes, savedMetadata ?? copy.importedSource?.metadata) : runtime.openCanonical(copy.files, copy.importedSource?.metadata),
-        { importedSource: copy.importedSource ?? null, interop: candidateInterop, savedRevision: copy.revision, presentation, boundCopy: copy },
+        { importedSource: copy.importedSource ?? null, importOrigin: savedMetadata && "importCompanion" in copy ? copy.importCompanion?.origin ?? "imported" : null, interop: candidateInterop, savedRevision: copy.revision, presentation, boundCopy: copy },
       )).kind !== "confirmed") return;
       recoveryDraftRef.current = recoveryDraftAfterBoundary(recoveryDraftRef.current, "replacement");
     } catch (error) {
@@ -1532,6 +1543,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       // The preserved source is the user's file as chosen, not the UTF-8 text Work read.
       setImportMappingUntrusted(false);
       importedSourceRef.current = { name: pending.name, format: pending.format, bytes: (pending.csv?.sourceBytes ?? bytes).slice(0), metadata: imported.metadata, ledger: imported.ledger };
+      importOriginRef.current = pending.format;
       setCurrentness("current");
       setOutcome("idle");
       importBytesRef.current = null;
@@ -1692,7 +1704,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       const blob = new Blob([prepared.bytes], { type: format === "ro" ? "application/octet-stream" : format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       // The host saves it: a browser download, or the desktop Save panel.
       const companion = prepared.importMetadata
-        ? { snapshotDigest: await companionDigest(prepared.bytes), metadata: prepared.importMetadata } : undefined;
+        ? { snapshotDigest: await companionDigest(prepared.bytes), metadata: prepared.importMetadata, origin: importOriginRef.current ?? "native" as const } : undefined;
       const result = companion ? await hostFiles.saveFile(`${live.title}.${format}`, blob, companion)
         : await hostFiles.saveFile(`${live.title}.${format}`, blob);
       if (result === "requested-without-companion") setMessage("The download was requested, but imported sheet information could not be stored in this browser. Original sheet names and order may be unavailable when reopening it.");
@@ -1913,11 +1925,25 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return runtime.translateA1Formula(witness, input);
   }
 
+  function recordGridViewChange(witness: ViewWitness, change: ViewHistoryChange): boolean {
+    const live = viewRef.current;
+    if (inflightRef.current || currentness !== "current" || live?.occurrence !== witness.occurrence ||
+      live.revision !== witness.revision) return false;
+    installLocalHistory(recordViewHistory(localHistoryRef.current, change));
+    return true;
+  }
+
   function runHistory(direction: "undo" | "redo"): Promise<FieldTarget | null> {
     const live = viewRef.current;
     const known = localHistoryRef.current;
-    if (!live || currentness !== "current" || known.occurrence !== live.occurrence ||
-      known.revision !== live.revision || (direction === "undo" ? known.undoCount : known.redoCount) < 1 || !begin()) return Promise.resolve(null);
+    if (inflightRef.current || !live || currentness !== "current" || known.occurrence !== live.occurrence ||
+      known.revision !== live.revision || known[direction].length === 0) return Promise.resolve(null);
+    const updated = applyViewHistory(known, direction);
+    if (updated) {
+      installLocalHistory(updated);
+      return Promise.resolve(null);
+    }
+    if (!begin()) return Promise.resolve(null);
     const witness = witnessOf(live);
     return mutationCompletion.run({ kind: "history", witness, direction, dispatch: () => runtime.trackerHistory(witness, direction) }, result => result.kind === "published" ? result.focusTarget : null, end);
   }
@@ -1983,7 +2009,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       requireCurrentSnapshot(snapshotRevision);
       const payload = {
         ...snapshot,
-        ...(snapshot.importMetadata ? { importCompanion: { snapshotDigest: await companionDigest(snapshot.bytes), metadata: snapshot.importMetadata } } : {}),
+        ...(snapshot.importMetadata ? { importCompanion: { snapshotDigest: await companionDigest(snapshot.bytes), metadata: snapshot.importMetadata, origin: importOriginRef.current ?? "native" as const } } : {}),
         importedSource: importedSourceRef.current ?? undefined,
         presentation,
       };
@@ -2146,6 +2172,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
       savedRevisionRef.current = null;
       setSaveStatus("not-saved");
       importedSourceRef.current = null;
+    importOriginRef.current = null;
       importBytesRef.current = null;
       preparedDownloadRef.current = null;
       setInterop(null);
@@ -2185,6 +2212,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         clearJ4Results();
         installReport(null);
         importedSourceRef.current = null;
+    importOriginRef.current = null;
         setInterop(null);
         cleanupPreviewContextRef.current = null;
         importBytesRef.current = null;
@@ -2201,11 +2229,12 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         return;
       }
       if (pendingReplacement) {
-        const sameReplacement = pendingReplacement.savedRevision !== null &&
-          (pendingReplacement.occurrence === null ||
-            (pendingReplacement.occurrence === next.occurrence && pendingReplacement.revision === next.revision));
+        const sameReplacement = pendingReplacement.occurrence === null
+          ? pendingReplacement.savedRevision !== null
+          : pendingReplacement.occurrence === next.occurrence && pendingReplacement.revision === next.revision;
         if (sameReplacement) {
           importedSourceRef.current = pendingReplacement.importedSource;
+          importOriginRef.current = pendingReplacement.importOrigin;
           if (pendingReplacement.importedSource) setImportMappingUntrusted(false);
           setInterop(pendingReplacement.interop
             ? { ...pendingReplacement.interop, cleanupPreview: null, downloadStatus: "idle", downloadError: null }
@@ -2230,8 +2259,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           }
           installReport(recoveredReport);
           bindCopy(next.occurrence, pendingReplacement.boundCopy);
-          savedRevisionRef.current = next.revision;
-          setSaveStatus("saved");
+          if (pendingReplacement.savedRevision !== null) {
+            savedRevisionRef.current = next.revision;
+            setSaveStatus("saved");
+          }
           pendingReplacementRef.current = null;
           if (pendingReplacement.presentation && !recoveredReport) {
             setMessage("The saved report configuration does not match a current source, so it was not opened.");
@@ -2241,6 +2272,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           // candidate's source attachment, receipt, or report configuration.
           pendingReplacementRef.current = null;
           importedSourceRef.current = null;
+    importOriginRef.current = null;
           setInterop(null);
           installReport(null);
           markNotSaved();
@@ -2261,6 +2293,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         // the receipt is valid only when the observed revision still matches
         // and no draft/dirty state was pending at the checkpoint.
         importedSourceRef.current = checkpoint.importedSource;
+        importOriginRef.current = checkpoint.importOrigin;
         setInterop(checkpoint.interop
           ? {
               ...checkpoint.interop,
@@ -2292,6 +2325,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         // not prove source identity, so keep the projection unbound to the
         // previous source attachment and receipt.
         importedSourceRef.current = null;
+    importOriginRef.current = null;
         setInterop(null);
         cleanupPreviewContextRef.current = null;
         importBytesRef.current = null;
@@ -2460,6 +2494,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onSelectCollection={selectCollection}
           onCommit={commit}
           localHistory={localHistory}
+          onRecordViewHistory={recordGridViewChange}
           onHistory={runHistory}
           onCreateCopy={createCopy}
           boundCopyName={boundCopyRef.current?.occurrence === view?.occurrence ? boundCopyName : null}
@@ -2500,6 +2535,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onRemoveReport={removeReport}
           interop={interop}
           importedSourceName={importedSourceRef.current?.name ?? null}
+          importOrigin={importOriginRef.current}
           onInspectImport={inspectImport}
           onImportCandidate={importCandidate}
           onCancelImport={cancelImport}

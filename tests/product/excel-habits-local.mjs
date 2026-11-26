@@ -252,6 +252,7 @@ const cases = [
     await page.keyboard.press("Enter");
     await waitForCellText(page, "worksheet:A1", "Hello");
     assert.equal(fieldAt(await projection(page), 0, 0)?.stored?.value, "Hello", "Hello was not stored by Work");
+    await page.locator('[data-testid="worksheet:A2"]:focus').waitFor();
     await page.keyboard.type("World");
     await page.keyboard.press("Enter");
     await waitForCellText(page, "worksheet:A2", "World");
@@ -507,10 +508,48 @@ const cases = [
     const order = () => page.locator("tbody tr.ts-row").evaluateAll((rows) => rows.map((row) => row.querySelector("td")?.textContent?.trim() ?? ""));
     const before = await order();
     await columnAction(page, "title", "Sort Z → A");
-    assert.notDeepEqual(await order(), before, "sorting did not change the visible order");
+    const sorted = await order();
+    assert.notDeepEqual(sorted, before, "sorting did not change the visible order");
+    await replaceCell(page, id, "Zebra");
+    await waitForCellText(page, id, "Zebra");
+    await page.keyboard.press("Control+z");
+    await waitForCellText(page, id, "Zed");
+    assert.deepEqual(await order(), sorted, "Undo of the later edit changed the sort");
     await page.keyboard.press("Control+z");
     await settle(page);
-    assert.deepEqual(await order(), before, "Undo did not restore the pre-sort order; sorting is view state with no history entry");
+    assert.deepEqual(await order(), before, "Undo did not restore the pre-sort order");
+    await page.keyboard.press("Control+z");
+    await waitForCellText(page, id, original);
+    await page.keyboard.press("Control+y");
+    await waitForCellText(page, id, "Zed");
+    await page.keyboard.press("Control+y");
+    await settle(page);
+    assert.deepEqual(await order(), sorted, "Redo did not reapply the sort");
+    await page.keyboard.press("Control+y");
+    await waitForCellText(page, id, "Zebra");
+
+    const sortedAfterEdit = await order();
+    await page.getByRole("button", { name: "Clear sort", exact: true }).click();
+    await settle(page);
+    const unsortedAfterEdit = await order();
+    assert.notDeepEqual(unsortedAfterEdit, sortedAfterEdit, "Clear sort did not restore storage order");
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.deepEqual(await order(), sortedAfterEdit, "Undo did not restore the cleared sort");
+
+    await filterValues(page, "area", ["發版"]);
+    const filtered = await order();
+    assert.equal(filtered.length, 1);
+    await page.getByRole("button", { name: "Clear filter", exact: true }).click();
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.deepEqual(await order(), filtered, "Undo did not restore the cleared filter");
+    await page.keyboard.press("Control+z");
+    await settle(page);
+    assert.deepEqual(await order(), sortedAfterEdit, "Undo did not remove the applied filter");
+    await page.keyboard.press("Control+y");
+    await settle(page);
+    assert.deepEqual(await order(), filtered, "Redo did not reapply the filter");
   } },
   { id: "16", name: "Mouse selection", tier: "A", note: "The fixture table has three records, so the drag is B2:D4 instead of B2:D8.", run: async (page) => {
     await example(page);
@@ -1507,6 +1546,28 @@ const cases = [
     assert.equal((await projection(page)).rows.length, 3, "filtering deleted nonmatching records");
     await page.getByRole("button", { name: "Clear filter", exact: true }).click();
     await settle(page);
+
+    const title = cellIdFor(table, 0, 0);
+    const rows = page.locator("tbody tr.ts-row");
+    await replaceCell(page, title, "Apple");
+    await waitForCellText(page, title, "Apple");
+    await filterValues(page, "title", ["Apple"]);
+    await replaceCell(page, title, "Banana");
+    await waitForCellText(page, title, "Banana");
+    assert.equal(await rows.count(), 1);
+    for (let replay = 0; replay < 2; replay++) {
+      await page.keyboard.press("Control+z");
+      await waitForCellText(page, title, "Apple");
+      await page.keyboard.press("Control+z");
+      await settle(page);
+      assert.equal(await rows.count(), 3, "Undo did not remove the Apple filter");
+      await page.keyboard.press("Control+y");
+      await settle(page);
+      assert.equal(await rows.count(), 1, "Redo did not reapply the Apple filter");
+      await page.keyboard.press("Control+y");
+      await waitForCellText(page, title, "Banana");
+      assert.equal(await rows.count(), 1, "Redo changed the visible rows after editing under the filter");
+    }
   } },
   { id: "31", name: "Find/replace", tier: "A", run: async (page) => {
     await newTable(page, "Replace", [{ name: "Item" }, { name: "Amount", type: "number" }]);
@@ -1790,8 +1851,17 @@ const cases = [
     await page.keyboard.type("=");
     await page.getByTestId(id(0)).click();
     assert.equal(await editor.inputValue(), "=A2", "the clicked reference did not arrive as A2");
-    await page.keyboard.press("F4");
-    assert.equal(await editor.inputValue(), "=$A$2", "F4 did not cycle A2 to $A$2");
+    for (const next of ["=$A$2", "=A$2", "=$A2", "=A2"]) {
+      await page.keyboard.press("F4");
+      assert.equal(await editor.inputValue(), next, `F4 did not cycle the cell editor to ${next}`);
+    }
+    await page.keyboard.press("Escape");
+    const bar = page.getByTestId("formula-bar-input");
+    await bar.fill("=SUM(A1:B2)");
+    await bar.press("End");
+    await bar.press("ArrowLeft");
+    await bar.press("F4");
+    assert.equal(await bar.inputValue(), "=SUM($A$1:$B$2)", "F4 did not cycle the formula bar's range");
   } },
   { id: "42", name: "Formula bar and address", tier: "B", budgetMs: 60_000, waitMs: 10_000, run: async (page) => {
     await example(page);
