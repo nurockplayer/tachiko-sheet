@@ -319,6 +319,31 @@ describe("headerless worksheets use the existing grid", () => {
     expect(ui.container.textContent).not.toContain("Nothing was pasted.");
   });
 
+  it.each([false, true])("blocks number formats for unused columns (includes a stored column: %s)", async includesStoredColumn => {
+    const view = makeView();
+    view.table.columns = [{ ...view.table.columns[0]!, field_type: "auto" }];
+    const onSetColumnNumberFormat = vi.fn<NonNullable<SheetShellProps["onSetColumnNumberFormat"]>>();
+    const ui = await mount(includesStoredColumn ? view : undefined, {
+      importedSourceName: null,
+      onSetCellStyle: vi.fn(),
+      onSetColumnNumberFormat,
+    });
+    await ui.focus("A1");
+    await ui.key(" ", { ctrlKey: true });
+    if (includesStoredColumn) {
+      const neighbour = ui.container.querySelector('th[data-column-letter="B"]')!;
+      await act(async () => neighbour.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true })));
+    }
+    await ui.key("1", { ctrlKey: true });
+
+    const dialog = ui.container.querySelector('[role="dialog"][aria-label="Format Cells"]')!;
+    const apply = Array.from(dialog.querySelectorAll("button")).find(button => button.textContent === "Apply number format")!;
+    expect(apply.closest("fieldset")?.disabled).toBe(true);
+    expect(dialog.textContent).toContain("Number formats are unavailable while the selection includes an unused column.");
+    await act(async () => apply.form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(onSetColumnNumberFormat).not.toHaveBeenCalled();
+  });
+
   it("refuses blank worksheet formulas and reference insertion without publishing", async () => {
     const onTranslateA1Formula = vi.fn<NonNullable<SheetShellProps["onTranslateA1Formula"]>>();
     const ui = await mount(undefined, { onTranslateA1Formula });
