@@ -5772,8 +5772,8 @@ export function SheetShell(props: SheetShellProps) {
     const totals = footerTotals?.totals ?? table.column_totals;
     const hasColumnTotals = totals !== undefined && Object.keys(totals).length > 0;
     const focusedColumn = columns.find(column => column.id === focusedKey?.split("\u0000")[1]) ?? columns[0];
-    const fillTarget = focusedPosition ? address(focusedPosition) : null;
-    const projectedFill = fillTarget ? displayRows[fillTarget.row]?.styles?.[fillTarget.column]?.fill : undefined;
+    const focusedRow = focusedPosition ? rowSource(table).byEntity(focusedPosition.entity) : undefined;
+    const projectedFill = focusedRow?.styles?.[columns.findIndex(column => column.id === focusedPosition?.field)]?.fill;
     const fillColour = projectedFill ? `#${projectedFill}` : "#000000";
     const compactFilterEditorColumn = columns.find(column => column.id === filterDraft?.field) ?? focusedColumn;
     const focusedColumnName = focusedColumn ? focusedColumn.display_name : "";
