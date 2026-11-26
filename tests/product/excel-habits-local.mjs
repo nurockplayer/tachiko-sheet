@@ -45,6 +45,18 @@ function evidence() {
       super(...args);
       this.addEventListener("message", (event) => {
         if (event.data.response?.type === "table") window.__habits.tables.push(window.__trackObservedTable(window.__habits, structuredClone(event.data.response.payload)));
+        if (event.data.response?.type === "table_window") {
+          const part = event.data.response.payload;
+          if (part.start === 0) this.habitsWindow = { ...part, rows: [] };
+          const table = this.habitsWindow;
+          if (table && part.revision === table.revision && part.start === table.rows.length) {
+            table.rows.push(...structuredClone(part.rows));
+            if (table.rows.length === part.total_rows) {
+              window.__habits.tables.push(window.__trackObservedTable(window.__habits, table, true));
+              this.habitsWindow = null;
+            }
+          }
+        }
         if (event.data.response?.type === "published") {
           const table = window.__trackPublished(window.__habits, event.data.response.payload);
           if (table) window.__habits.tables.push(table);
@@ -240,6 +252,7 @@ const cases = [
     await page.keyboard.press("Enter");
     await waitForCellText(page, "worksheet:A1", "Hello");
     assert.equal(fieldAt(await projection(page), 0, 0)?.stored?.value, "Hello", "Hello was not stored by Work");
+    await page.locator('[data-testid="worksheet:A2"]:focus').waitFor();
     await page.keyboard.type("World");
     await page.keyboard.press("Enter");
     await waitForCellText(page, "worksheet:A2", "World");
@@ -1046,9 +1059,9 @@ const cases = [
       const latest = await projection(page);
       return Promise.all([0, 1, 2].flatMap(row => [0, 1, 2, 3].map(column => cellText(page, latest, row, column))));
     };
-    const dragHandleTo = async (row, column) => {
+    const dragHandleTo = async (row, column, table = directions) => {
       const handle = await fillHandleBox(page);
-      const target = await page.getByTestId(id(row, column)).boundingBox();
+      const target = await page.getByTestId(cellIdFor(table, row, column)).boundingBox();
       await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
       await page.mouse.down();
       await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 8 });
@@ -1079,28 +1092,7 @@ const cases = [
     assert.deepEqual(await directionValues(), before, "one Undo did not restore the left value fill");
     await checkDirectionSelection([0], [1, 2, 3], 0, 3);
 
-    // TODO: enable sideways relative formula fills after https://github.com/nurockplayer/tachiko-work/issues/921.
     await replaceCell(page, id(0, 3), "=C2*2");
-    await page.getByTestId(id(0, 3)).click();
-    before = await directionValues();
-    const selectedBeforeLeft = await selectedCount(page);
-    await dragHandleTo(0, 1);
-    assert.deepEqual(await directionValues(), before, "refused left formula fill changed cells");
-    assert.equal(await selectedCount(page), selectedBeforeLeft, "refused left formula fill changed selection");
-    assert.equal(await activeId(page), id(0, 3));
-    assert.equal((await page.locator(".ts-clipboard-status").first().textContent()).trim(), "Filling formulas sideways is not available yet.");
-
-    await replaceCell(page, id(0, 2), "=B2*2");
-    await page.getByTestId(id(0, 2)).click();
-    const beforeRightRefusal = await directionValues();
-    const selectedBeforeRight = await selectedCount(page);
-    await dragHandleTo(0, 3);
-    assert.deepEqual(await directionValues(), beforeRightRefusal, "refused right formula fill changed cells");
-    assert.equal(await selectedCount(page), selectedBeforeRight, "refused right formula fill changed selection");
-    assert.equal(await activeId(page), id(0, 2));
-    assert.equal((await page.locator(".ts-clipboard-status").first().textContent()).trim(), "Filling formulas sideways is not available yet.");
-    await page.keyboard.press("Control+z"); await settle(page);
-    assert.deepEqual(await directionValues(), before, "refused formula fill added an Undo step");
 
     await replaceCell(page, id(2, 3), "=A4*2");
     await page.getByTestId(id(2, 3)).click();
@@ -1148,6 +1140,41 @@ const cases = [
     assert.equal(await activeId(page), cellIdFor(refusal, 0, 0));
     assert.match(await page.locator(".ts-clipboard-status").first().textContent(), /number/i);
 
+    await newTable(page, "Fill anchors", ["A", "B", "C", "D"].map(name => ({ name, type: "number" })));
+    await addRow(page, ["10", "20"], 1);
+    await addRow(page, ["1", "1", "1", "1"], 2);
+    const anchors = await projection(page);
+    const c3 = cellIdFor(anchors, 1, 2), d3 = cellIdFor(anchors, 1, 3);
+    await replaceCell(page, c3, "=A2+$A$2");
+    await page.getByTestId(c3).click();
+    await dragHandleTo(1, 3, anchors);
+    await waitForCellText(page, d3, "30");
+    await page.getByTestId(c3).click();
+    const bar = page.getByTestId("formula-bar-input");
+    await bar.fill("=1");
+    await bar.press("Enter");
+    await waitForCellText(page, c3, "1");
+    await page.getByTestId(d3).click();
+    await dragHandleTo(1, 2, anchors);
+    await waitForCellText(page, c3, "20");
+
+    await saveCopy(page, "sideways-fill");
+    await home(page);
+    await page.getByRole("button", { name: "Open saved sideways-fill", exact: true }).click();
+    await waitForCellText(page, c3, "20");
+    await waitForCellText(page, d3, "30");
+    await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+    await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
+    const consent = page.getByRole("dialog", { name: "Confirm download", exact: true });
+    const download = page.waitForEvent("download");
+    await consent.getByRole("button", { name: "Download", exact: true }).click();
+    const xml = sheetXml(await (await download).path());
+    // Work keeps references to other rows bound to their row identity.
+    const sheet = "&apos;Fill anchors&apos;!";
+    const leftFormula = xml.match(/<c\b[^>]*\br="C3"[^>]*>\s*<f>([^<]+)<\/f>/)?.[1];
+    const rightFormula = xml.match(/<c\b[^>]*\br="D3"[^>]*>\s*<f>([^<]+)<\/f>/)?.[1];
+    assert.equal(leftFormula, `(${sheet}A$2+${sheet}$A$2)`);
+    assert.equal(rightFormula, `(${sheet}B$2+${sheet}$A$2)`);
   } },
   { id: "23", name: "Row operations", tier: "A", run: async (page) => {
     await example(page);
@@ -1344,7 +1371,7 @@ const cases = [
       await rm(work, { recursive: true, force: true });
     }
   } },
-  { id: "28", name: "Direct formatting", tier: "A", note: "Bold, italic, fill and borders use Work presentation styles; checked through save and XLSX export.", run: async (page) => {
+  { id: "28", name: "Direct formatting", tier: "A", budgetMs: 60_000, waitMs: 10_000, note: "Bold, italic, fill and borders use Work presentation styles; checked through save and XLSX export.", run: async (page) => {
     await example(page);
     const table = await projection(page);
     const id = cellIdFor(table, 0, 0);
@@ -1419,6 +1446,52 @@ const cases = [
     await settle(page);
     assert.equal(await page.getByTestId(id).evaluate(node => getComputedStyle(node).fontStyle), "normal");
 
+    await home(page);
+    await page.keyboard.press("Control+n");
+    const first = page.getByTestId("worksheet:A1");
+    await first.click();
+    await page.evaluate(() => navigator.clipboard.writeText(Array(26).fill("1").join("\t")));
+    await page.keyboard.press("Control+v");
+    await waitForCellText(page, "worksheet:Z1", "1");
+    await first.click();
+    await page.evaluate(() => navigator.clipboard.writeText(Array(2000).fill("2").join("\n")));
+    await page.keyboard.press("Control+v");
+    await waitForCellText(page, "worksheet:A1", "2");
+
+    const nameBox = page.getByRole("textbox", { name: "Name Box", exact: true });
+    await nameBox.fill("A1:Z2000");
+    await nameBox.press("Enter");
+    const styleCount = () => page.evaluate(() => {
+      const rows = window.__readObservedTable(window.__habits).rows;
+      return rows.reduce((counts, row) => {
+        for (const style of row.styles ?? []) {
+          if (style.bold) counts.bold++;
+          if (style.fill?.toLowerCase() === "ffff00") counts.fill++;
+        }
+        return counts;
+      }, { bold: 0, fill: 0 });
+    });
+    await page.keyboard.press("Control+b");
+    await settle(page);
+    assert.deepEqual(await styleCount(), { bold: 52_000, fill: 0 });
+    await page.getByLabel("Fill colour").fill("#ffff00");
+    await settle(page);
+    assert.deepEqual(await styleCount(), { bold: 52_000, fill: 52_000 });
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await settle(page);
+    assert.deepEqual(await styleCount(), { bold: 52_000, fill: 0 }, "one Undo did not clear the entire range fill");
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await settle(page);
+    assert.deepEqual(await styleCount(), { bold: 0, fill: 0 }, "one Undo did not clear the entire range bold");
+    for (let step = 0; step < 2; step += 1) {
+      await page.getByRole("button", { name: "Redo", exact: true }).click();
+      await settle(page);
+    }
+    await saveCopy(page, "large-range-format");
+    await home(page);
+    await page.getByRole("button", { name: "Open saved large-range-format", exact: true }).click();
+    await ready(page);
+    assert.deepEqual(await styleCount(), { bold: 52_000, fill: 52_000 }, "the full range formatting did not survive reopen");
   } },
   { id: "29", name: "Number display", tier: "A", run: async (page) => {
     await newTable(page, "Percent", [{ name: "Name" }, { name: "Rate", type: "number" }]);
@@ -1778,8 +1851,17 @@ const cases = [
     await page.keyboard.type("=");
     await page.getByTestId(id(0)).click();
     assert.equal(await editor.inputValue(), "=A2", "the clicked reference did not arrive as A2");
-    await page.keyboard.press("F4");
-    assert.equal(await editor.inputValue(), "=$A$2", "F4 did not cycle A2 to $A$2");
+    for (const next of ["=$A$2", "=A$2", "=$A2", "=A2"]) {
+      await page.keyboard.press("F4");
+      assert.equal(await editor.inputValue(), next, `F4 did not cycle the cell editor to ${next}`);
+    }
+    await page.keyboard.press("Escape");
+    const bar = page.getByTestId("formula-bar-input");
+    await bar.fill("=SUM(A1:B2)");
+    await bar.press("End");
+    await bar.press("ArrowLeft");
+    await bar.press("F4");
+    assert.equal(await bar.inputValue(), "=SUM($A$1:$B$2)", "F4 did not cycle the formula bar's range");
   } },
   { id: "42", name: "Formula bar and address", tier: "B", budgetMs: 60_000, waitMs: 10_000, run: async (page) => {
     await example(page);
