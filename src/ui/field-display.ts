@@ -86,7 +86,7 @@ function baseDisplay(field: FieldProjection, format?: NumberFormat): FieldDispla
     }
     if (calculated.status === "failure") {
       return {
-        text: CALCULATION_FAILED_TEXT,
+        text: field.display ?? CALCULATION_FAILED_TEXT,
         calculationFailed: true,
         tone: "warning",
         title: `${calculated.code}: ${calculated.message}`,

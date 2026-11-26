@@ -2592,20 +2592,55 @@ const cases = [
     await named();
   } },
   { id: "N16", name: "In-cell formula errors", tier: "A", run: async (page) => {
-    await newTable(page, "Formula errors", [{ name: "Label" }, { name: "Amount", type: "number" }]);
-    for (const [index, label] of ["division", "reference", "lookup"].entries()) await addRow(page, [label, "1"], index + 1);
+    await home(page);
+    await page.keyboard.press("Control+n");
+    await ready(page);
+    const cell = (address) => page.getByTestId(`worksheet:${address}`);
+    const text = async (address) => (await cell(address).textContent()).trim();
+    await cell("A1").click();
+    await page.evaluate(() => navigator.clipboard.writeText("division\t1\t0\t0\nreference\t2\t0\t0\nlookup\t3\t0\t0"));
+    await page.keyboard.press("Control+v");
+    await waitForCellText(page, "worksheet:D1", "0");
     const table = await projection(page);
+    assert.deepEqual(table.columns.map(column => column.field_type), ["auto", "auto", "auto", "auto"]);
     const missing = [];
-    const formulas = [["=1/0", "#DIV/0!"], ["=Z999999", "#REF!"], ['=VLOOKUP("missing",A2:B4,2,FALSE)', "#N/A"]];
+    const formulas = [["=1/0", "#DIV/0!"], ["=Z999999", "#REF!"], ['=VLOOKUP("missing",A1:B3,2,FALSE)', "#N/A"]];
     for (const [row, [formula, expected]] of formulas.entries()) {
-      await replaceCell(page, cellIdFor(table, row, 1), formula);
-      const actual = await cellText(page, table, row, 1);
+      await replaceCell(page, `worksheet:C${row + 1}`, formula);
+      const actual = await text(`C${row + 1}`);
       if (actual !== expected) missing.push(`${formula} shows ${JSON.stringify(actual)}, expected ${expected} in its cell`);
       await page.keyboard.press("Escape");
       const label = `Still editable ${row}`;
-      await replaceCell(page, cellIdFor(table, row, 0), label);
-      assert.equal(await cellText(page, table, row, 0), label, `other cells stopped working after ${formula}`);
+      await replaceCell(page, `worksheet:A${row + 1}`, label);
+      assert.equal(await text(`A${row + 1}`), label, `other cells stopped working after ${formula}`);
       assert.equal(fieldAt(await projection(page), row, 0)?.stored?.value, label, `editing after ${formula} was not committed`);
+    }
+    await replaceCell(page, "worksheet:D1", "=C1+1");
+    assert.equal(await text("D1"), "#DIV/0!", "the dependent cell did not inherit the division error");
+    const checkDivision = async () => {
+      assert.equal(await text("C1"), "#DIV/0!");
+      await cell("C1").click();
+      assert.match(await page.getByTestId("formula-bar-input").inputValue(), /^=\(?1\s*\/\s*0\)?$/);
+    };
+    await checkDivision();
+    await saveCopy(page, "habits-N16");
+    await page.reload();
+    await waitForColdHome(page);
+    await page.getByRole("button", { name: "Open saved habits-N16", exact: true }).click();
+    await ready(page);
+    await checkDivision();
+    assert.equal(await text("D1"), "#DIV/0!", "the dependent error did not survive reopen");
+
+    await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+    await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
+    await settle(page);
+    const consent = page.getByRole("dialog", { name: "Confirm download", exact: true });
+    if (await consent.isVisible()) {
+      const download = page.waitForEvent("download");
+      await consent.getByRole("button", { name: "Download", exact: true }).click();
+      assert.match(sheetXml(await (await download).path()), /<c\b[^>]*\br="C1"[^>]*>\s*<f>\(?1\s*\/\s*0\)?<\/f>/);
+    } else {
+      missing.push("XLSX export did not prepare a workbook containing the failing formula");
     }
     assert.deepEqual(missing, [], missing.join("; "));
   } },

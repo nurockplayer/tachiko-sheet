@@ -1,9 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type { FieldProjection } from "../../public/core-kit/experimental-client.js";
 import type { TableColumn, TableRow } from "./projection-access.js";
-import { cellDisplay, fieldClipboardText, formatNumber, formatNumberFor, seedTextOf } from "./field-display.js";
+import { cellDisplay, fieldClipboardText, fieldDisplay, formatNumber, formatNumberFor, seedTextOf } from "./field-display.js";
 
 describe("field display", () => {
+  it("shows Work's formula error display with the failure marker and diagnostic", () => {
+    const field: FieldProjection = {
+      target: { entity: "e1", field: "result" }, address: "e1.result",
+      stored: null, formula: { source: "1/0" },
+      calculated: { status: "failure", code: "division_by_zero", message: "#DIV/0!" },
+      display: "#DIV/0!", diagnostics: [], editable_scalar: null,
+    };
+    expect(fieldDisplay(field)).toEqual({
+      text: "#DIV/0!", tone: "warning", calculationFailed: true, title: "division_by_zero: #DIV/0!",
+    });
+  });
+
   it("shows an unformatted number to 15 significant digits, as other spreadsheets do", () => {
     expect(formatNumber(1455.7999999999997)).toBe("1455.8");
     expect(formatNumber(0.1 + 0.2)).toBe("0.3");
