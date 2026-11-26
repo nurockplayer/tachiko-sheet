@@ -285,6 +285,41 @@ export function rowViewStatusText(
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
+function updateGridViewRecord(
+  current: RowViewRecord,
+  occurrence: string,
+  collection: string,
+  update: (settings: RowViewSettings) => RowViewSettings,
+): RowViewRecord {
+  const base = rowViewRecordForOccurrence(current, occurrence);
+  const previous = base.byCollection[collection] ?? {};
+  const next = update(previous);
+  if (next === previous) return base;
+  return { occurrence, byCollection: { ...base.byCollection, [collection]: next } };
+}
+
+function rowViewHistoryChange(
+  setGridViews: (update: (current: RowViewRecord) => RowViewRecord) => void,
+  keptRowsByFilter: WeakMap<readonly RowViewFilter[], RowViewSettings["kept"]>,
+  occurrence: string,
+  collection: string,
+  previous: RowViewSettings,
+  next: RowViewSettings,
+) {
+  const sortChanged = previous.sort !== next.sort;
+  const filtersChanged = previous.filters !== next.filters;
+  return (direction: "undo" | "redo") => {
+    const settings = direction === "undo" ? previous : next;
+    const kept = settings.filters && keptRowsByFilter.get(settings.filters);
+    setGridViews(record => updateGridViewRecord(record, occurrence, collection, current => ({
+      ...current,
+      sort: sortChanged ? settings.sort : current.sort,
+      filters: filtersChanged ? settings.filters : current.filters,
+      kept: filtersChanged ? kept : current.kept,
+    })));
+  };
+}
+
 export function scrollCellIntoGridNearest(cell: HTMLElement, scrollport: HTMLElement): boolean {
   const before = cell.getBoundingClientRect();
   const port = scrollport.getBoundingClientRect();
@@ -589,6 +624,7 @@ export function SheetShell(props: SheetShellProps) {
     onSelectCollection = async () => {},
     onCommit,
     localHistory = emptyLocalHistory(),
+    onRecordViewHistory,
     onHistory = async () => null,
     onCreateCopy,
     boundCopyName = null,
@@ -751,6 +787,8 @@ export function SheetShell(props: SheetShellProps) {
   const [stripPending, setStripPending] = useState(false);
   const stripPendingRef = useRef(false);
   const [gridViews, setGridViews] = useState<RowViewRecord>({ occurrence: null, byCollection: {} });
+  // Each application of a filter has its own kept rows, including when history revisits it.
+  const [keptRowsByFilter] = useState(() => new WeakMap<readonly RowViewFilter[], RowViewSettings["kept"]>());
   const [filterDraft, setFilterDraft] = useState<{ field: string; mode: "contains" | "values" | "condition"; text: string; op: RowViewComparison; checked: string[]; attempted?: boolean } | null>(null);
   const columnTriggerRef = useRef<HTMLElement | null>(null);
   const columnFocusIntentRef = useRef<ReturnType<typeof completionIntent> | null>(null);
@@ -1493,13 +1531,19 @@ export function SheetShell(props: SheetShellProps) {
     const occurrence = view?.occurrence;
     const collection = table?.collection.key;
     if (!occurrence || !collection) return;
-    setGridViews((current) => {
-      const base = current.occurrence === occurrence ? current : { occurrence, byCollection: {} };
-      const previous = base.byCollection[collection] ?? {};
-      const next = update(previous);
-      if (next === previous) return base;
-      return { occurrence, byCollection: { ...base.byCollection, [collection]: next } };
-    });
+    setGridViews(current => updateGridViewRecord(current, occurrence, collection, update));
+  }
+
+  function changeRowView(update: (current: RowViewSettings) => RowViewSettings): boolean {
+    if (!witness || !table || controlsLocked || currentness !== "current") return false;
+    const previous = rawGridSettings ?? {};
+    const next = update(previous);
+    if (rowViewDisplaySignature(previous) === rowViewDisplaySignature(next)) return false;
+
+    const change = rowViewHistoryChange(setGridViews, keptRowsByFilter, witness.occurrence, table.collection.key, previous, next);
+    if (!onRecordViewHistory(witness, change)) return false;
+    change("redo");
+    return true;
   }
 
   const [pendingColumnWidths, setPendingColumnWidths] = useState<Record<string, number>>({});
@@ -1678,22 +1722,29 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   function keepGridRows(entities: readonly string[]): void {
-    if (!gridSettings.filters?.length) return;
-    const extra = entities.filter((entity) => entity !== DRAFT_ROW);
-    if (extra.length === 0) return;
-    updateGridSettings((current) => rowViewKeepingRows(current, extra));
+    const filters = rawGridSettings?.filters;
+    if (!filters || !gridSettings.filters?.length) return;
+    const settings = { filters, kept: keptRowsByFilter.get(filters) };
+    const next = rowViewKeepingRows(settings, entities.filter(entity => entity !== DRAFT_ROW));
+    if (next === settings) return;
+    keptRowsByFilter.set(filters, next.kept);
+    updateGridSettings(current => current.filters === filters ? { ...current, kept: next.kept } : current);
   }
 
   function setGridSort(field: string, direction: "asc" | "desc"): void {
-    updateGridSettings((current) => ({ ...current, sort: { field, direction } }));
+    changeRowView((current) => ({ ...current, sort: { field, direction } }));
   }
 
   function clearGridSort(): void {
-    updateGridSettings((current) => ({ ...current, sort: undefined }));
+    changeRowView((current) => ({ ...current, sort: undefined }));
+  }
+
+  function clearGridFilters(): boolean {
+    return changeRowView((current) => ({ ...current, filters: undefined, kept: undefined }));
   }
 
   function applyGridFilter(field: string, filter: RowViewFilter | null): void {
-    updateGridSettings((current) => rowViewSettingsForFilter(current, field, filter));
+    changeRowView((current) => rowViewSettingsForFilter(current, field, filter));
     setFilterDraft(null);
   }
 
@@ -3713,7 +3764,7 @@ export function SheetShell(props: SheetShellProps) {
   async function requestHistory(direction: "undo" | "redo", initiator: HTMLElement | null): Promise<void> {
     if (historyInteractionLocked || controlsLocked || historyFocusRequestRef.current) return;
     if (!view || currentness !== "current" || localHistory.occurrence !== view.occurrence || localHistory.revision !== view.revision ||
-        (direction === "undo" ? localHistory.undoCount < 1 : localHistory.redoCount < 1)) return;
+        localHistory[direction].length === 0) return;
     const request: HistoryFocusRequest = {
       operationId: ++historyOperationIdRef.current,
       occurrence: view?.occurrence ?? null,
@@ -4091,8 +4142,7 @@ export function SheetShell(props: SheetShellProps) {
       if (event.repeat) return;
       if (event.code === "KeyL") {
         if (gridSettings.filters?.length) {
-          updateGridSettings(current => ({ ...current, filters: undefined, kept: undefined }));
-          announceClipboard("Filters cleared.", false, true);
+          if (clearGridFilters()) announceClipboard("Filters cleared.", false, true);
         } else openCellFilter(position);
         return;
       }
@@ -5617,7 +5667,7 @@ export function SheetShell(props: SheetShellProps) {
           type="button"
           className="ts-button ts-history-command"
           onClick={(event) => void requestHistory("undo", event.currentTarget)}
-          title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.undoCount < 1 || localHistory.occurrence !== view?.occurrence || localHistory.revision !== view?.revision}
+          title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.undo.length === 0 || localHistory.occurrence !== view?.occurrence || localHistory.revision !== view?.revision}
           aria-describedby={controlsLocked ? lockNoteId : undefined}
         >
           Undo
@@ -5626,7 +5676,7 @@ export function SheetShell(props: SheetShellProps) {
           type="button"
           className="ts-button ts-history-command"
           onClick={(event) => void requestHistory("redo", event.currentTarget)}
-          title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.redoCount < 1 || localHistory.occurrence !== view?.occurrence || localHistory.revision !== view?.revision}
+          title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.redo.length === 0 || localHistory.occurrence !== view?.occurrence || localHistory.revision !== view?.revision}
           aria-describedby={controlsLocked ? lockNoteId : undefined}
         >
           Redo
@@ -5669,8 +5719,8 @@ export function SheetShell(props: SheetShellProps) {
         <details className="ts-command-overflow">
           <summary ref={commandOverflowSummaryRef} aria-label="More document commands">…</summary>
           <div className="ts-command-menu">
-            <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("undo", event.currentTarget)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.undoCount < 1}>Undo</button>
-            <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("redo", event.currentTarget)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.redoCount < 1}>Redo</button>
+            <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("undo", event.currentTarget)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.undo.length === 0}>Undo</button>
+            <button type="button" className="ts-button ts-button--ghost" onClick={(event) => void requestHistory("redo", event.currentTarget)} title={rowDraftActive ? "Add or discard the new row first." : undefined} disabled={controlsLocked || historyInteractionLocked || localHistory.redo.length === 0}>Redo</button>
             {helpButton("ts-button ts-button--ghost")}
             {closeButton("ts-button ts-button--ghost")}
           </div>
@@ -5928,8 +5978,8 @@ export function SheetShell(props: SheetShellProps) {
             /> : null}
             {viewStatus ? <div className="ts-row-view-status" data-testid="row-view-status">
               <span className="ts-row-view-status-text" role="status" aria-live="polite">{viewStatus}</span>
-              {gridSettings.sort ? <button type="button" className="ts-button ts-button--ghost" onClick={clearGridSort}>Clear sort</button> : null}
-              {gridSettings.filters?.length ? <button type="button" className="ts-button ts-button--ghost" onClick={() => updateGridSettings(current => ({ ...current, filters: undefined, kept: undefined }))}>{gridSettings.filters.length === 1 ? "Clear filter" : `Clear ${gridSettings.filters.length} filters`}</button> : null}
+              {gridSettings.sort ? <button type="button" className="ts-button ts-button--ghost" disabled={controlsLocked || currentness !== "current"} onClick={clearGridSort}>Clear sort</button> : null}
+              {gridSettings.filters?.length ? <button type="button" className="ts-button ts-button--ghost" disabled={controlsLocked || currentness !== "current"} onClick={clearGridFilters}>{gridSettings.filters.length === 1 ? "Clear filter" : `Clear ${gridSettings.filters.length} filters`}</button> : null}
             </div> : null}
             {find ? <div className="ts-find-bar" role="search" data-testid="find-bar" onKeyDown={(event) => {
               if (isComposingEvent(event) || event.key !== "Escape") return;
