@@ -76,13 +76,49 @@ export function a1ColumnIndex(letters: string): number {
 
 // A cell address that is a whole token: not the tail of a longer name (LOG10,
 // Amount*2) and not the name of a function (SUM(), LOG10()).
-const A1_CELL_START = String.raw`(?<![\p{L}\p{N}_.!])\$?([A-Za-z]{1,3})\$?(\d+)`;
+const A1_CELL_ADDRESS = String.raw`\$?([A-Za-z]{1,3})\$?(\d+)`;
+const A1_CELL_START = String.raw`(?<![\p{L}\p{N}_.!])${A1_CELL_ADDRESS}`;
 const A1_CELL_END = String.raw`(?![\p{L}\p{N}_(])`;
 const A1_ONE_CELL = new RegExp(`${A1_CELL_START}${A1_CELL_END}`, "gu");
-const A1_CELL_RANGE = new RegExp(`${A1_CELL_START}:\\$?([A-Za-z]{1,3})\\$?(\\d+)${A1_CELL_END}`, "gu");
+const A1_CELL_RANGE = new RegExp(`${A1_CELL_START}:${A1_CELL_ADDRESS}${A1_CELL_END}`, "gu");
 // A name followed by `!` refers to another sheet's cell (or range), which this
 // sheet can't outline: `Items!B3`, `'My items'!B3`, `Items!B3:D4`.
-const A1_OTHER_SHEET = /(?:'(?:[^']|'')*'|[\p{L}_][\p{L}\p{N}_.]*)![^\s+\-*/^&<>=,();]*/gu;
+const A1_SHEET_QUALIFIER = String.raw`(?:'(?:[^']|'')*'|[\p{L}_][\p{L}\p{N}_.]*)!`;
+const A1_OTHER_SHEET = new RegExp(String.raw`${A1_SHEET_QUALIFIER}[^\s+\-*/^&<>=,();]*`, "gu");
+const A1_EDIT_CELL = `${A1_CELL_ADDRESS}${A1_CELL_END}(?![!.$])`;
+const A1_EDIT_REFERENCE = new RegExp(
+  String.raw`"(?:[^"]|"")*"?|(?<![\p{L}\p{N}_.$!])(?<sheet>${A1_SHEET_QUALIFIER})?(?<first>${A1_EDIT_CELL})(?:(?<join>\s*:\s*(?:${A1_SHEET_QUALIFIER})?)(?<last>${A1_EDIT_CELL}))?`,
+  "gu",
+);
+
+function cycleA1Address(address: string): string {
+  const [, columnLock, column, rowLock, row] = /^(\$?)([A-Za-z]+)(\$?)(\d+)$/.exec(address)!;
+  return `${columnLock ? "" : "$"}${column}${columnLock === rowLock ? "$" : ""}${row}`;
+}
+
+/** Cycle the A1 reference touching the caret or each reference intersecting the selection. */
+export function cycleA1Reference(value: string, start: number, end: number): { value: string; start: number; end: number } | null {
+  if (isTachikoFormulaSource(value)) return null;
+  const caretOnly = start === end;
+  let next = "";
+  let cursor = 0;
+  let selectionStart = start;
+  for (const match of value.matchAll(A1_EDIT_REFERENCE)) {
+    const { sheet, first, join, last } = match.groups!;
+    if (!first) continue; // A string literal.
+    const from = match.index;
+    const to = from + match[0].length;
+    const touches = caretOnly ? from <= start && start <= to : from < end && start < to;
+    if (!touches) continue;
+    const rangeEnd = last ? `${join}${cycleA1Address(last)}` : "";
+    next += `${value.slice(cursor, from)}${sheet ?? ""}${cycleA1Address(first)}${rangeEnd}`;
+    cursor = to;
+    selectionStart = Math.min(selectionStart, from);
+  }
+  if (!cursor) return null;
+  const selectionEnd = Math.max(end, cursor) + next.length - cursor;
+  return { value: next + value.slice(cursor), start: caretOnly ? selectionEnd : selectionStart, end: selectionEnd };
+}
 
 /**
  * The cells a formula drafts refers to, as A1 rectangles: 1-based rows and
