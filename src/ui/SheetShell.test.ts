@@ -660,6 +660,44 @@ describe("keyboard history queue", () => {
     } finally { vi.restoreAllMocks(); vi.unstubAllGlobals(); }
   });
 
+  it("shows the focused cell fill and applies the colour already shown", async () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.rows[0]!.styles = [{ bold: false, italic: false, fill: "FFFF00", border: false, number_format: null, wrap: false, alignment: null }];
+    const onSetCellStyle = vi.fn(async () => ({ kind: "confirmed" as const }));
+    const ui = await mount({ view, onSetCellStyle });
+    const colour = ui.container.querySelector<HTMLInputElement>('[aria-label="Fill colour"]')!;
+    const buttons = Array.from(ui.container.querySelectorAll<HTMLButtonElement>('[aria-label="Format"] button'));
+    const apply = buttons.find(button => button.textContent === "Apply fill")!;
+    const noFill = buttons.find(button => button.textContent === "No fill")!;
+    expect(colour.value).toBe("#ffff00");
+
+    const secondCell = ui.container.querySelector<HTMLElement>(`[data-testid="cell:${entityB}:c-title"]`)!;
+    await act(async () => secondCell.focus());
+    expect(colour.value).toBe("#000000");
+    await act(async () => apply.click());
+    expect(onSetCellStyle).toHaveBeenLastCalledWith(
+      { occurrence: view.occurrence, revision: view.revision }, view.table.collection.key,
+      { row: 2, rowCount: 1 }, ["c-title"], [{ kind: "fill", color: "#000000" }],
+    );
+
+    await act(async () => ui.cell().focus());
+    expect(colour.value).toBe("#ffff00");
+    await act(async () => noFill.click());
+    const cleared = makeView();
+    cleared.table.native_table_profile = true;
+    await ui.update({ view: cleared });
+    expect(colour.value).toBe("#000000");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(colour, "#ffff00");
+      colour.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(onSetCellStyle).toHaveBeenLastCalledWith(
+      { occurrence: view.occurrence, revision: view.revision }, view.table.collection.key,
+      { row: 1, rowCount: 1 }, ["c-title"], [{ kind: "fill", color: "#FFFF00" }],
+    );
+  });
+
   it("sends large contiguous formatting selections as one stored row range", async () => {
     const view = makeView();
     view.table.native_table_profile = true;
