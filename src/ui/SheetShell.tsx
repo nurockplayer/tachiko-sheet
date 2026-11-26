@@ -5772,6 +5772,9 @@ export function SheetShell(props: SheetShellProps) {
     const totals = footerTotals?.totals ?? table.column_totals;
     const hasColumnTotals = totals !== undefined && Object.keys(totals).length > 0;
     const focusedColumn = columns.find(column => column.id === focusedKey?.split("\u0000")[1]) ?? columns[0];
+    const fillTarget = focusedPosition ? address(focusedPosition) : null;
+    const projectedFill = fillTarget ? displayRows[fillTarget.row]?.styles?.[fillTarget.column]?.fill : undefined;
+    const fillColour = projectedFill ? `#${projectedFill}` : "#000000";
     const compactFilterEditorColumn = columns.find(column => column.id === filterDraft?.field) ?? focusedColumn;
     const focusedColumnName = focusedColumn ? focusedColumn.display_name : "";
     const viewActionsBlocked = columnChangesBlocked || editor !== null;
@@ -6066,7 +6069,8 @@ export function SheetShell(props: SheetShellProps) {
             {onSetCellStyle ? <>
               <button type="button" className="ts-button" aria-label="Bold" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "toggle_bold" })}><b>B</b></button>
               <button type="button" className="ts-button" aria-label="Italic" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "toggle_italic" })}><i>I</i></button>
-              <label>Fill <input aria-label="Fill colour" type="color" disabled={columnChangesBlocked} onChange={event => formatSelection({ kind: "fill", color: event.currentTarget.value.toUpperCase() })} /></label>
+              <label>Fill <input aria-label="Fill colour" type="color" value={fillColour.toLowerCase()} disabled={columnChangesBlocked} onChange={event => formatSelection({ kind: "fill", color: event.currentTarget.value.toUpperCase() })} /></label>
+              <button type="button" className="ts-button" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "fill", color: fillColour.toUpperCase() })}>Apply fill</button>
               <button type="button" className="ts-button" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "fill", color: null })}>No fill</button>
               <button type="button" className="ts-button" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "border", target: "all", value: true })}>All borders</button>
               <button type="button" className="ts-button" disabled={columnChangesBlocked} onMouseDown={event => event.preventDefault()} onClick={() => formatSelection({ kind: "border", target: "all", value: false })}>No borders</button>
