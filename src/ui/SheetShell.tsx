@@ -4105,7 +4105,9 @@ export function SheetShell(props: SheetShellProps) {
     if (!table || !witness || !onSetCellStyle || columnChangesBlocked || stripPendingRef.current || modalInteractionOpen) return;
     const { rows, selectedColumns } = formatSelectionTargets(position, table);
     const fields = selectedColumns.map(column => column.id);
+    const storedFields = new Set(table.columns.map(column => column.id));
     const numberUnavailable = !boundSelection?.wholeColumns ? "Number formats apply to whole columns for now."
+      : fields.some(field => !storedFields.has(field)) ? "Number formats are unavailable while the selection includes an unused column."
       : !onSetColumnNumberFormat || !selectedColumns.every(column => column.field_type === "number" || column.field_type === "auto")
         ? "Select whole number columns to apply a number format." : null;
     setFormatCellsDialog({
