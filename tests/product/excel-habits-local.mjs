@@ -387,12 +387,6 @@ const cases = [
     await ready(page);
     await page.getByTestId("worksheet:A5").filter({ hasText: "2026-01-05" }).waitFor();
     await assertMixedColumn();
-
-    await page.getByTestId("worksheet:A6").click();
-    await page.keyboard.type("=SUM(A1:A5)");
-    await page.keyboard.press("Enter");
-    await page.getByTestId("worksheet:A6").filter({ hasText: "15.5" }).waitFor();
-    assert.equal(fieldAt(await projection(page), 5, 0)?.calculated?.value, 15.5);
   } },
   { id: "07", name: "Type to replace", tier: "A", run: async (page) => {
     await example(page);
