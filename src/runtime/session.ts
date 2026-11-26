@@ -1238,6 +1238,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     }, false, false, collection);
   }
 
+  function moveCollection(witness: ViewWitness, collection: string, toIndex: number) {
+    return confirmedMutation(witness, (client, revision) => {
+      const move = capability(client.moveCollection, "sheet move");
+      return move.call(client, revision, collection, toIndex);
+    }, false, true); // Reload Work's collection order after publication.
+  }
+
   function renameColumn(witness: ViewWitness, collection: string, field: string, name: string) {
     return confirmedMutation(witness, (client, revision) => {
       const command = capability(client.trackerCommand, "column rename");
@@ -1272,7 +1279,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
    * the new collection, so this cannot reuse `confirmedMutation`: the coherent
    * read must follow the copy rather than the live collection.
    */
-  function duplicateCollection(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>): Promise<ConfirmedPublication> {
+  function duplicateCollection(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>, toIndex?: number): Promise<ConfirmedPublication> {
     return enqueue(async () => {
       const live = requireWitness(witness);
       const expected = epoch;
@@ -1283,9 +1290,11 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
       try {
         duplicated = await afterUsable(
           expected,
-          dispatch(kit, () => columnNames && Object.keys(columnNames).length > 0
-            ? duplicate.call(client, live.revision, collection, name, columnNames)
-            : duplicate.call(client, live.revision, collection, name)),
+          dispatch(kit, () => {
+            if (toIndex !== undefined) return duplicate.call(client, live.revision, collection, name, columnNames, toIndex);
+            if (columnNames && Object.keys(columnNames).length > 0) return duplicate.call(client, live.revision, collection, name, columnNames);
+            return duplicate.call(client, live.revision, collection, name);
+          }),
         );
       } catch (error) {
         if (error instanceof UnknownOperationOutcomeError) {
@@ -1877,7 +1886,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   return {
     get requestByteLimit() { return requestByteLimit; },
     prepare,
-    addTable, newTable, newBlankWorkbook, writeCellAt, insertRow, editCells, pasteCells, pasteCellsAt, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setCellStyle, setColumnWidth, queryCapacity, querySelectionStatistics, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    addTable, newTable, newBlankWorkbook, writeCellAt, insertRow, editCells, pasteCells, pasteCellsAt, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setCellStyle, setColumnWidth, queryCapacity, querySelectionStatistics, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, moveCollection, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };

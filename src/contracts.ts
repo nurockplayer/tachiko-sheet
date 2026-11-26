@@ -138,7 +138,8 @@ export interface SheetRuntime {
   moveColumn(witness: ViewWitness, collection: string, field: string, toIndex: number): Promise<ConfirmedPublication>;
   removeRows(witness: ViewWitness, collection: string, entities: string[]): Promise<ConfirmedPublication>;
   /** `columnNames` names the copy's columns by source field id (imported headings Work does not hold). */
-  duplicateCollection(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>): Promise<ConfirmedPublication>;
+  moveCollection(witness: ViewWitness, collection: string, toIndex: number): Promise<ConfirmedPublication>;
+  duplicateCollection(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>, toIndex?: number): Promise<ConfirmedPublication>;
   /** Work's Number totals over exactly these entities; null when the kit lacks it or the revision moved. */
   querySelectionStatistics(witness: ViewWitness, selection: FieldTarget[] | SelectionStatisticsRange): Promise<SelectionStatisticsProjection | "too-large" | null>;
   queryColumnTotals(witness: ViewWitness, collection: string, entities: string[]): Promise<ColumnTotalsProjection | null>;
@@ -431,7 +432,8 @@ export interface SheetShellProps {
   onRemoveColumn?(witness: ViewWitness, collection: string, field: string): Promise<RowCommandOutcome>;
   onMoveColumn?(witness: ViewWitness, collection: string, field: string, toIndex: number): Promise<RowCommandOutcome>;
   onRemoveRows?(witness: ViewWitness, collection: string, entities: string[]): Promise<RowCommandOutcome>;
-  onDuplicateTable?(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>): Promise<RowCommandOutcome>;
+  onMoveTable?(witness: ViewWitness, collection: string, toIndex: number): Promise<RowCommandOutcome>;
+  onDuplicateTable?(witness: ViewWitness, collection: string, name: string, columnNames?: Record<string, string>, toIndex?: number): Promise<RowCommandOutcome>;
   onQuerySelectionStatistics?(witness: ViewWitness, selection: FieldTarget[] | SelectionStatisticsRange): Promise<SelectionStatisticsProjection | "too-large" | null>;
   /** Totals of the rows a filter shows; arithmetic stays in Work. */
   onQueryShownTotals?(witness: ViewWitness, collection: string, entities: string[]): Promise<ColumnTotalsProjection | null>;
