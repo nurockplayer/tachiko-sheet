@@ -90,7 +90,7 @@ describe("native table download disclosures", () => {
       "Formula cell exports its current computed value only: the formula is outside the native XLSX formula grammar. Retain the Tachiko source to keep the formula.",
       "This formula downloads as its current value only, because Tachiko cannot write this kind of formula into a spreadsheet file yet. Save a copy of your work to keep the formula."],
     ["native_tables_formulas_written",
-      "Formula cells export as Excel formulas over the exported cells, with their current computed Number kept as the cached value.",
+      "Formula cells export as Excel formulas over the exported cells, with their current computed value kept as the cached value.",
       "Formulas download as spreadsheet formulas, with their current values saved alongside, so Excel shows the same numbers when it opens the file."],
   ])("words the exact %s finding and preserves changed wording", (code, message, copy) => {
     expect(findingMessage(message, code)).toBe(copy);

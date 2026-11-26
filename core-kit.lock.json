@@ -3,16 +3,16 @@
   "qualificationStatus": "qualified producer pin; product acceptance separate",
   "defaultKit": "public/core-kit",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "23c5e03e55562917de1eb74c492a72edf04dea35",
+  "sourceCommit": "4fc0636106831df936e416a70fb90ad6b665b085",
   "artifactManifest": "public/core-kit/artifact-manifest.json",
-  "artifactManifestSha256": "2171e66653da00794f2cfabc4d945f763c8beda1c23ff8e7326a3e58872dcf3c",
+  "artifactManifestSha256": "3825c82840455fc4721512dd7c2b28d83d32b0cb27e89d7a70bad0da54a63bb3",
   "entry": "experimental-client.js",
   "playwrightVersion": "1.62.1",
-  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7133692227",
+  "qualificationHandback": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7171449602",
   "qualificationArtifactReview": {
-    "sourceCommit": "23c5e03e55562917de1eb74c492a72edf04dea35",
-    "artifactManifestSha256": "2171e66653da00794f2cfabc4d945f763c8beda1c23ff8e7326a3e58872dcf3c",
-    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7133692227"
+    "sourceCommit": "4fc0636106831df936e416a70fb90ad6b665b085",
+    "artifactManifestSha256": "3825c82840455fc4721512dd7c2b28d83d32b0cb27e89d7a70bad0da54a63bb3",
+    "url": "https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7171449602"
   },
-  "notes": "Re-pin to Work 23c5e03e (PR #937). Two clean detached exports match byte for byte in 25 files. Sheet adopts positional paste for #305 habits 02/03. The handback records artifact provenance for Sheet's separate product acceptance and independent review."
+  "notes": "Re-pin to Work 4fc06361 (PR #943, including PR #940). Two clean detached exports match byte for byte. Sheet adopts sideways anchored formula fill and stored-row range formatting for #305 habits 22 and 28. Product acceptance and independent review remain separate."
 }

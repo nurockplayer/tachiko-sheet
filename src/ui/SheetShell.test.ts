@@ -659,7 +659,7 @@ describe("keyboard history queue", () => {
     } finally { vi.restoreAllMocks(); vi.unstubAllGlobals(); }
   });
 
-  it("refuses an oversized formatting selection before sending a command or adding history", async () => {
+  it("sends large contiguous formatting selections as one stored row range", async () => {
     const view = makeView();
     view.table.native_table_profile = true;
     view.table.rows = Array.from({ length: 1800 }, (_, index) => {
@@ -667,17 +667,13 @@ describe("keyboard history queue", () => {
       return { id: entity, key: entity, fields: view.table.columns.map(column => projected(entity, column.id, { kind: "text", value: "value" })) };
     });
     const onSetCellStyle = vi.fn(async () => ({ kind: "confirmed" as const }));
-    const onHistory = vi.fn(async () => null);
-    const ui = await mount({ view, onSetCellStyle, onHistory, localHistory: { occurrence: view.occurrence, revision: view.revision, undoCount: 0, redoCount: 0 } });
-    const entities = view.table.rows.map(row => row.key);
-    const request = { type: "set_cell_style", expected_revision: view.revision, collection: view.table.collection.key, entities, fields: view.table.columns.map(column => column.id), changes: [{ kind: "toggle_bold" }] };
-    expect(new TextEncoder().encode(JSON.stringify(request)).byteLength).toBeGreaterThan(65_536);
+    const ui = await mount({ view, onSetCellStyle });
     await act(async () => ui.cell().dispatchEvent(new KeyboardEvent("keydown", { key: "End", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })));
     await ui.key("b");
-    expect(onSetCellStyle).not.toHaveBeenCalled();
-    expect(ui.container.textContent).toContain("This selection is too large to format at once. Select fewer cells.");
-    await ui.key("z");
-    expect(onHistory).not.toHaveBeenCalled();
+    expect(onSetCellStyle).toHaveBeenCalledExactlyOnceWith(
+      { occurrence: view.occurrence, revision: view.revision }, view.table.collection.key,
+      { row: 1, rowCount: 1800 }, view.table.columns.map(column => column.id), [{ kind: "toggle_bold" }],
+    );
   });
 
   it.each(["Shift+click", "Ctrl+Shift+End"])("preserves B2 as the range anchor after scrolling a 450-row table (%s)", async extension => {
