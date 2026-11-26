@@ -2,7 +2,7 @@ import { companionDigest, companionMetadata, IMPORT_COMPANION_NOTE } from "./hos
 import { COLUMN_SAVE_UNAVAILABLE, DUPLICATE_SAVE_UNAVAILABLE, columnSavePreflightDecision, duplicateSavePreflightDecision } from "./application/column-save-preflight.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppearancePreferenceController } from "./application/appearance-preference.js";
-import { emptyLocalHistory, observeLocalHistory, type LocalHistorySnapshot } from "./application/local-history.js";
+import { applyViewHistory, emptyLocalHistory, observeLocalHistory, recordViewHistory, type LocalHistorySnapshot, type ViewHistoryChange } from "./application/local-history.js";
 import { DetachedReportPresentations } from "./application/detached-report-presentations.js";
 import { readWorkFile, requireWorkFileName, sameWorkFileOmissions, workFileOmissions, WORK_FILE_SAVE_UNAVAILABLE } from "./application/work-file.js";
 import { createMutationCompletion, settledSaveStatus, salesRevisionHasChanged, type MutationRecovery } from "./app/mutation-completion.js";
@@ -1898,11 +1898,25 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return runtime.translateA1Formula(witness, input);
   }
 
+  function recordGridViewChange(witness: ViewWitness, change: ViewHistoryChange): boolean {
+    const live = viewRef.current;
+    if (inflightRef.current || currentness !== "current" || live?.occurrence !== witness.occurrence ||
+      live.revision !== witness.revision) return false;
+    installLocalHistory(recordViewHistory(localHistoryRef.current, change));
+    return true;
+  }
+
   function runHistory(direction: "undo" | "redo"): Promise<FieldTarget | null> {
     const live = viewRef.current;
     const known = localHistoryRef.current;
-    if (!live || currentness !== "current" || known.occurrence !== live.occurrence ||
-      known.revision !== live.revision || (direction === "undo" ? known.undoCount : known.redoCount) < 1 || !begin()) return Promise.resolve(null);
+    if (inflightRef.current || !live || currentness !== "current" || known.occurrence !== live.occurrence ||
+      known.revision !== live.revision || known[direction].length === 0) return Promise.resolve(null);
+    const updated = applyViewHistory(known, direction);
+    if (updated) {
+      installLocalHistory(updated);
+      return Promise.resolve(null);
+    }
+    if (!begin()) return Promise.resolve(null);
     const witness = witnessOf(live);
     return mutationCompletion.run({ kind: "history", witness, direction, dispatch: () => runtime.trackerHistory(witness, direction) }, result => result.kind === "published" ? result.focusTarget : null, end);
   }
@@ -2445,6 +2459,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onSelectCollection={selectCollection}
           onCommit={commit}
           localHistory={localHistory}
+          onRecordViewHistory={recordGridViewChange}
           onHistory={runHistory}
           onCreateCopy={createCopy}
           boundCopyName={boundCopyRef.current?.occurrence === view?.occurrence ? boundCopyName : null}

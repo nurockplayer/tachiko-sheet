@@ -304,7 +304,12 @@ try {
   await status().filter({ hasText: "Added 2 rows" }).waitFor(); await ready();
   assert.deepEqual(await visibleItems(), ["Coffee", "Tea", "Water"], "pasted rows stay visible under the filter");
   await page.getByRole("button", { name: "Clear filter", exact: true }).click(); await ready();
-  await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
+  const undo = page.getByRole("button", { name: "Undo", exact: true });
+  await undo.click(); await ready();
+  assert.deepEqual(await visibleItems(), ["Coffee", "Tea", "Water"], "Undo restores the cleared filter and its kept rows");
+  await undo.click(); await ready();
+  assert.deepEqual(await visibleItems(), ["Coffee"], "one Undo removes both pasted rows under the filter");
+  await undo.click(); await ready();
   assert.deepEqual(values(await displayed()), pasted);
   // Existing draft blocks published-grid paste; discard remains ordinary UI.
   await paste(draftFirst(), "draft\t1\ttrue");
