@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { WORK_FIELD_CELL } from "./windowed-table-collector.mjs";
 import { homeImportInput, openReleasePlanExample, waitForColdHome } from "./home-entry.mjs";
 
 const dist = process.env.WORK_DIST;
@@ -2603,7 +2604,7 @@ const cases = [
     await addRow(page, values, 1);
     const readCells = (selector) => page.locator(selector).evaluateAll((cells) => cells.map((cell) => cell.textContent.trim()));
     assert.deepEqual(await readCells("tbody tr.ts-row td"), [...values, ""]);
-    assert.deepEqual(await readCells("tbody tr.ts-row td[data-work-field]"), values);
+    assert.deepEqual(await readCells(`tbody tr.ts-row ${WORK_FIELD_CELL}`), values);
     assert.equal((await projection(page)).columns.length, 3, "the adjacent blank materialized a Work column");
 
     await blank.click();

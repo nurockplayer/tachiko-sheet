@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { collectWindowedRows } from "../product/windowed-table-collector.mjs";
+import { collectWindowedRows, WORK_FIELD_CELL } from "../product/windowed-table-collector.mjs";
 
 // The only clipboard writer is an OS utility, outside the app's WebView.
 export function writeOsClipboard(text) {
@@ -54,7 +54,7 @@ export async function pasteRaces({ evaluate, work, extraChecks = [], receipt = a
   `, 300_000);
   const page = String.raw`
     const row = index => grid().querySelector('tbody tr.ts-row[aria-rowindex="' + (index + 2) + '"]');
-    const cell = (index, column = 0) => row(index)?.querySelectorAll("td")[column];
+    const cell = (index, column = 0) => row(index)?.querySelectorAll("${WORK_FIELD_CELL}")[column];
     const scroller = () => document.querySelector(".ts-grid-scroll");
     const inView = index => {
       const box = cell(index)?.getBoundingClientRect(), port = scroller().getBoundingClientRect();
@@ -77,7 +77,7 @@ export async function pasteRaces({ evaluate, work, extraChecks = [], receipt = a
     }
     return true;
   `);
-  const snapshot = () => evaluate(`return await (${collectWindowedRows.toString()})({ rowCount: 8406, columnCount: 3, draftRows: 1 });`, 300_000);
+  const snapshot = () => evaluate(`return await (${collectWindowedRows.toString()})({ rowCount: 8406, columnCount: 3, cellSelector: "${WORK_FIELD_CELL}", draftRows: 1 });`, 300_000);
 
   for (const [name, run] of extraChecks) await check(name, run);
 

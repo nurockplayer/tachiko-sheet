@@ -18,7 +18,7 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boundedText } from "../../scripts/desktop-evidence.mjs";
-import { collectWindowedRows } from "../product/windowed-table-collector.mjs";
+import { collectWindowedRows, WORK_FIELD_CELL } from "../product/windowed-table-collector.mjs";
 import { formulaPersistence } from "./formula-persistence.mjs";
 import { pasteRaces, writeOsClipboard, nativePaste } from "./paste-races.mjs";
 
@@ -233,9 +233,9 @@ const current = () => ready() && document.querySelector('[data-testid="currentne
 const grid = () => document.querySelector('table[aria-label="Table"]');
 // Windowed grids carry aria-rowindex; small, fully rendered grids correctly
 // omit it, so fall back to the row's position among rendered data rows.
-const rowAt = (row) => grid()?.querySelector('tbody tr[aria-rowindex="' + (row + 2) + '"]') ??
+const rowAt = (row) => grid()?.querySelector('tbody tr.ts-row[aria-rowindex="' + (row + 2) + '"]') ??
   (grid()?.querySelector("tbody tr.ts-row[aria-rowindex]") ? null : grid()?.querySelectorAll("tbody tr.ts-row")[row] ?? null);
-const cellAt = (row, column) => rowAt(row)?.querySelectorAll("td")[column];
+const cellAt = (row, column) => rowAt(row)?.querySelectorAll("${WORK_FIELD_CELL}")[column];
 const tab = (name) => [...document.querySelectorAll('[role="tab"]')].find((t) => nameOf(t) === name);
 async function visibleTable(name) {
   click(await waitFor(() => tab("Table"), "Table tab"));
@@ -243,7 +243,7 @@ async function visibleTable(name) {
   Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, name);
   select.dispatchEvent(new Event("change", { bubbles: true }));
   await waitFor(() => select.value === name && current() && grid()?.querySelector("tbody tr"), "table " + name);
-  return [...grid().querySelectorAll("tbody tr:not(.ts-entry-row)")].map((row) => [...row.querySelectorAll("td")].map((cell) => cell.textContent.trim()));
+  return [...grid().querySelectorAll("tbody tr.ts-row")].map((row) => [...row.querySelectorAll("${WORK_FIELD_CELL}")].map((cell) => cell.textContent.trim()));
 }
 async function resultRows() {
   click(await waitFor(() => tab("Cross-table summary"), "summary tab"));
@@ -434,8 +434,8 @@ async function history(direction, row, column, value) {
 async function mixedCells(edited) {
   const actual = await evaluate(`
     click(await waitFor(() => [...document.querySelectorAll('[role="tab"]')].find(t => nameOf(t) === "Table"), "Table tab"));
-    const records = await (${collectWindowedRows.toString()})({ rowCount: ${ROWS}, columnCount: ${COLS}, draftRows: 1 });
-    return { headers: [...grid().querySelectorAll("thead th")].slice(1).map(c => c.textContent), records };
+    const records = await (${collectWindowedRows.toString()})({ rowCount: ${ROWS}, columnCount: ${COLS}, cellSelector: "${WORK_FIELD_CELL}", draftRows: 1 });
+    return { headers: [...grid().querySelectorAll(".ts-col-head")].map(c => c.textContent), records };
   `, 240_000);
   const data = expectedMixed[`${ROWS}x${COLS}`];
   assert.deepEqual(actual.headers, data[0]);
@@ -587,11 +587,11 @@ async function salesJourney() {
     await visibleTable("catalog");
     const headers = [...grid().querySelectorAll('th[scope="col"]')].map((h) => h.textContent.trim()).filter((h) => h !== "Row");
     const price = headers.indexOf("price");
-    const row = [...grid().querySelectorAll("tbody tr:not(.ts-entry-row)")].find((r) => r.textContent.includes("PEN"));
-    dblclick(row.querySelectorAll("td")[price]);
+    const row = [...grid().querySelectorAll("tbody tr.ts-row")].find((r) => r.textContent.includes("PEN"));
+    dblclick(row.querySelectorAll("${WORK_FIELD_CELL}")[price]);
     fill(await waitFor(() => textbox("Edit cell"), "cell editor"), "250");
     press(textbox("Edit cell"), "Enter");
-    await waitFor(() => !textbox("Edit cell") && current() && row.querySelectorAll("td")[price].textContent.trim() === "250", "published price");
+    await waitFor(() => !textbox("Edit cell") && current() && row.querySelectorAll("${WORK_FIELD_CELL}")[price].textContent.trim() === "250", "published price");
     return true;
   `));
   assert.deepEqual(await evaluate(`return resultRows();`), [["NOTE", "1000"], ["PEN", "1000"]], "summary recalculated by the native runtime");
@@ -686,8 +686,8 @@ async function salesJourney() {
   const inFlight = await evaluate(`
     await visibleTable("catalog");
     const headers = [...grid().querySelectorAll('th[scope="col"]')].map((h) => h.textContent.trim()).filter((h) => h !== "Row");
-    const row = [...grid().querySelectorAll("tbody tr:not(.ts-entry-row)")].find((r) => r.textContent.includes("PEN"));
-    dblclick(row.querySelectorAll("td")[headers.indexOf("price")]);
+    const row = [...grid().querySelectorAll("tbody tr.ts-row")].find((r) => r.textContent.includes("PEN"));
+    dblclick(row.querySelectorAll("${WORK_FIELD_CELL}")[headers.indexOf("price")]);
     fill(await waitFor(() => textbox("Edit cell"), "cell editor"), "300");
     press(textbox("Edit cell"), "Enter");
     const event = new Event("beforeunload", { cancelable: true });
@@ -835,7 +835,7 @@ async function namedTableJourney() {
     return {
       name: document.querySelector("#ts-active-table option:checked")?.textContent,
       columns: [...grid().querySelectorAll(".ts-col-head")].map(el => el.textContent),
-      cells: [...grid().querySelectorAll("tbody tr.ts-row td[data-work-field]")].map(el => ({ id: el.dataset.testid, value: el.textContent.trim() })),
+      cells: [...grid().querySelectorAll("tbody tr.ts-row ${WORK_FIELD_CELL}")].map(el => ({ id: el.dataset.testid, value: el.textContent.trim() })),
     };
   `);
   const initial = await snapshot();
@@ -934,7 +934,7 @@ async function namedTableJourney() {
 async function fileDuringUnsavedQuestion() {
   const originalFile = await readFile(openFixture);
   await edit(0, 0, "unsaved-arrival-edit");
-  const snapshot = () => evaluate(`return await (${collectWindowedRows.toString()})({ rowCount: 8406, columnCount: 3, draftRows: 1 });`, 300_000);
+  const snapshot = () => evaluate(`return await (${collectWindowedRows.toString()})({ rowCount: 8406, columnCount: 3, cellSelector: "${WORK_FIELD_CELL}", draftRows: 1 });`, 300_000);
   const before = await snapshot();
   await evaluate(`
     window.__g6Arrival = null;
@@ -1010,7 +1010,7 @@ async function nativeCoverage() {
   `);
   const snapshot = () => evaluate(`
     await waitFor(current, "R6 current table");
-    return [...grid().querySelectorAll("tbody tr.ts-row")].map(row => [...row.querySelectorAll("td")].map(cell => ({
+    return [...grid().querySelectorAll("tbody tr.ts-row")].map(row => [...row.querySelectorAll("${WORK_FIELD_CELL}")].map(cell => ({
       text: cell.textContent, entity: cell.dataset.workEntity, field: cell.dataset.workField,
     })));
   `);

@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
-import { collectWindowedRows } from "./windowed-table-collector.mjs";
+import { collectWindowedRows, WORK_FIELD_CELL } from "./windowed-table-collector.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -148,7 +148,7 @@ async function allCells(page, edited) {
   await page.getByRole("tab", { name: "Table", exact: true }).click();
   assert.equal(await rowCount(page), ROWS);
   assert.deepEqual((await grid(page).locator("thead th").allTextContents()).slice(1), expected[`${ROWS}x${COLS}`][0]);
-  const records = new Map(await page.evaluate(collectWindowedRows, { rowCount: ROWS, columnCount: COLS, draftRows: 1 }));
+  const records = new Map(await page.evaluate(collectWindowedRows, { rowCount: ROWS, columnCount: COLS, cellSelector: WORK_FIELD_CELL, draftRows: 1 }));
   assert.equal(records.size, ROWS, "all rows independently read");
   const ids = [];
   for (let r = 0; r < ROWS; r++) {
