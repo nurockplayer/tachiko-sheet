@@ -6,6 +6,7 @@ import type { AppProps } from "../App.js";
 import type { ConfirmedPublication, SheetShellProps, WorkbookView } from "../contracts.js";
 import { UnknownOperationOutcomeError } from "../contracts.js";
 import { App } from "../App.js";
+import { companionDigest } from "../host/import-companion.js";
 
 const shell = vi.hoisted(() => ({ props: null as SheetShellProps | null, saveFile: vi.fn(async (..._args: [string, Blob | Promise<Blob>, import("../contracts.js").ImportCompanion?]): Promise<string | undefined> => undefined), readImportCompanion: vi.fn() }));
 vi.mock("../host/host-files.js", () => ({ useHostFiles: () => ({ saveFile: shell.saveFile, readImportCompanion: shell.readImportCompanion }) }));
@@ -264,6 +265,42 @@ it("saves XLSX origin after Refresh recovers an older saved copy without a compa
       importCompanion: expect.objectContaining({ origin: "xlsx", metadata }),
     }));
   } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it.each(["xlsx", "csv", "native"] as const)("preserves %s work-file origin after Refresh recovers a failed open projection", async origin => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const collection = { id: "s1", key: "s1", display_name: "Original", headerless: false, data_start_row: 2, entity_count: 0 };
+  const metadata = { version: 1 as const, sheets: [{ schema_id: "s1", name: "Original", has_header: true, columns: [], rows: [] }] };
+  const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1", collections: [collection], table: { revision: "r1", collection, columns: [], rows: [] }, importMetadata: metadata };
+  const bytes = new Uint8Array([8, 7]).buffer;
+  const file = new File([bytes], "work.ro");
+  const runtime = {
+    prepare: vi.fn(async () => {}), queryCapacity: vi.fn(async () => null),
+    discoverKeyedGroupedSums: vi.fn(async () => []).mockRejectedValueOnce(new Error("Discovery failed")),
+    openWorkFile: vi.fn(async () => view), read: vi.fn(async () => view),
+    exportWorkFile: vi.fn(async () => ({ revision: "r1", bytes, importMetadata: metadata, ledger: [] })),
+  };
+  const copies = { list: vi.fn(async () => []) };
+  const root = createRoot(document.createElement("div"));
+  const current = () => shell.props!;
+  try {
+    await act(async () => root.render(createElement(App, { runtime, copies, appearancePreference: {} } as unknown as AppProps)));
+    shell.readImportCompanion.mockResolvedValueOnce({ snapshotDigest: await companionDigest(bytes), origin, metadata });
+    await act(async () => current().onOpenWorkFile!(file));
+    expect(runtime.openWorkFile).toHaveBeenCalledWith(bytes, metadata);
+    expect(current().currentness).toBe("unknown");
+
+    await act(async () => current().onRefresh());
+    expect(current().currentness).toBe("current");
+    expect(current().saveStatus).toBe("not-saved");
+    await act(async () => { expect(await current().onPrepareDownload!("ro")).toBe(true); });
+    await act(async () => { expect(await current().onDownload!("ro")).toBe(true); });
+    expect(shell.saveFile).toHaveBeenLastCalledWith("Imported.ro", expect.any(Blob), expect.objectContaining({ origin, metadata }));
+    expect(current().importOrigin).toBe(origin);
+  } finally {
+    shell.readImportCompanion.mockReset();
     await act(async () => root.unmount());
   }
 });

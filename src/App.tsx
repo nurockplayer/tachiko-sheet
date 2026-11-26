@@ -2200,9 +2200,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
         return;
       }
       if (pendingReplacement) {
-        const sameReplacement = pendingReplacement.savedRevision !== null &&
-          (pendingReplacement.occurrence === null ||
-            (pendingReplacement.occurrence === next.occurrence && pendingReplacement.revision === next.revision));
+        const sameReplacement = pendingReplacement.occurrence === null
+          ? pendingReplacement.savedRevision !== null
+          : pendingReplacement.occurrence === next.occurrence && pendingReplacement.revision === next.revision;
         if (sameReplacement) {
           importedSourceRef.current = pendingReplacement.importedSource;
           importOriginRef.current = pendingReplacement.importOrigin;
@@ -2230,8 +2230,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           }
           installReport(recoveredReport);
           bindCopy(next.occurrence, pendingReplacement.boundCopy);
-          savedRevisionRef.current = next.revision;
-          setSaveStatus("saved");
+          if (pendingReplacement.savedRevision !== null) {
+            savedRevisionRef.current = next.revision;
+            setSaveStatus("saved");
+          }
           pendingReplacementRef.current = null;
           if (pendingReplacement.presentation && !recoveredReport) {
             setMessage("The saved report configuration does not match a current source, so it was not opened.");
