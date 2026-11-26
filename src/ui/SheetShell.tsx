@@ -6125,7 +6125,8 @@ export function SheetShell(props: SheetShellProps) {
               dismiss={dismissSalesTip}
             /> : null}
             {viewStatus ? <div className="ts-row-view-status" data-testid="row-view-status">
-              <span className="ts-row-view-status-text" role="status" aria-live="polite">{viewStatus}{blankRowsFiltered ? " Clear the filter to edit blank grid rows." : ""}</span>
+              <span className="ts-row-view-status-text" role="status" aria-live="polite">{viewStatus}</span>
+              {blankRowsFiltered ? <span className="ts-hint" role="status">Clear the filter to edit blank grid rows.</span> : null}
               {gridSettings.sort ? <button type="button" className="ts-button ts-button--ghost" disabled={controlsLocked || currentness !== "current"} onClick={clearGridSort}>Clear sort</button> : null}
               {gridSettings.filters?.length ? <button type="button" className="ts-button ts-button--ghost" disabled={controlsLocked || currentness !== "current"} onClick={clearGridFilters}>{gridSettings.filters.length === 1 ? "Clear filter" : `Clear ${gridSettings.filters.length} filters`}</button> : null}
             </div> : null}
