@@ -899,7 +899,7 @@ export function SheetShell(props: SheetShellProps) {
   useLayoutEffect(() => {
     if (gridWindowed) syncGridWindow();
   }, [gridZoom]);
-  const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition; fromFillHandle?: boolean; wholeColumns?: boolean } | null>(null);
+  const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition; fromFillHandle?: boolean; wholeColumns?: boolean; wholeRows?: boolean } | null>(null);
   const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition; activeCell?: GridPosition; pasteSpecial?: boolean; column?: string; trigger?: HTMLElement } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   // The live grid focus for async continuations: a translation that returns
@@ -1489,6 +1489,7 @@ export function SheetShell(props: SheetShellProps) {
   }, []);
   const boundSelection = cellSelection?.identity === collectionIdentity && cellSelection?.revision === view?.revision ? cellSelection : null;
   const selectionRectangle = boundSelection ? rectangle(address(boundSelection.anchor), address(boundSelection.end)) : null;
+  const wholeRowRange = boundSelection?.wholeRows ? selectionRectangle : null;
   const boundCopiedArea = copiedArea?.identity === collectionIdentity && copiedArea?.revision === view?.revision ? copiedArea.area : null;
   useEffect(() => {
     if (!pasteRebind) return;
@@ -1826,9 +1827,9 @@ export function SheetShell(props: SheetShellProps) {
     setClipboardMessage({ text, refused, polite });
   }
 
-  function extendSelection(anchor: GridPosition, end: GridPosition, reveal = true): void {
+  function extendSelection(anchor: GridPosition, end: GridPosition, reveal = true, wholeRows = false): void {
     if (!view || !collectionIdentity || anchor.entity === DRAFT_ROW || end.entity === DRAFT_ROW) return;
-    setCellSelection({ identity: collectionIdentity, revision: view.revision, anchor, end });
+    setCellSelection({ identity: collectionIdentity, revision: view.revision, anchor, end, wholeRows });
     if (!reveal) return;
     // Excel keeps focus and typing at the anchor; only the far end scrolls into view.
     const rowIndex = rowIndexByEntity.get(end.entity);
@@ -2286,6 +2287,14 @@ export function SheetShell(props: SheetShellProps) {
     setCellMenu({ x, y, position, activeCell, column: field, trigger });
   }
 
+  function openRowMenu(x: number, y: number, index: number): void {
+    if (historyInteractionLocked || !columns.length) return;
+    const position = { entity: rowEntity(displayRows[index]!), field: columns[0]!.id };
+    const inside = wholeRowRange && index >= wholeRowRange.top && index <= wholeRowRange.bottom;
+    if (!inside) selectHeader("row", index, false);
+    setCellMenu({ x, y, position, activeCell: inside && boundSelection ? boundSelection.anchor : position });
+  }
+
   /** The filter editor lives in the column's disclosure: its heading's, or the compact toolbar that follows the focused cell. */
   function openCellFilter(position: GridPosition): void {
     const column = columns.find((candidate) => candidate.id === position.field);
@@ -2345,6 +2354,19 @@ export function SheetShell(props: SheetShellProps) {
     const viewBlocked = columnChangesBlocked || editor !== null;
     const command = (action: () => void) => () => { closeCellMenu(); action(); };
     const rows = selectionRectangle ? selectionRectangle.bottom - selectionRectangle.top + 1 : 0;
+    const rowActions: CellMenuItem[] = [];
+    if (wholeRowRange && rowInsertAvailable) rowActions.push({
+      label: "Insert row",
+      disabled: !rowInsertAnchor || columnChangesBlocked || insertionLimitReached,
+      description: multiRowInsertReason,
+      run: command(() => { void insertSelectedRow(); }),
+    });
+    if (rowDeleteAvailable) rowActions.push({
+      label: rows > 1 ? `Delete ${rows} rows` : "Delete row",
+      disabled: rowDeleteBlocked,
+      run: command(() => { void deleteRow(); }),
+    });
+    if (rowActions.length) rowActions.push("separator");
     return [
       { label: "Cut", shortcut: menuShortcut("X", mac), disabled: blocked, run: command(() => { document.execCommand("cut"); }) },
       { label: "Copy", shortcut: menuShortcut("C", mac), run: command(() => { document.execCommand("copy"); }) },
@@ -2354,7 +2376,7 @@ export function SheetShell(props: SheetShellProps) {
       { label: "Clear contents", shortcut: "Delete", disabled: blocked, run: command(() => clearGrid(position)) },
       { label: "Fill down", shortcut: menuShortcut("D", mac), disabled: blocked || rows < 2, run: command(() => fillDown()) },
       "separator",
-      ...(rowDeleteAvailable ? [{ label: rows > 1 ? `Delete ${rows} rows` : "Delete row", disabled: rowDeleteBlocked, run: command(() => { void deleteRow(); }) }, "separator" as const] : []),
+      ...rowActions,
       { label: "Sort A → Z", disabled: viewBlocked, run: command(() => setGridSort(position.field, "asc")) },
       { label: "Sort Z → A", disabled: viewBlocked, run: command(() => setGridSort(position.field, "desc")) },
       { label: "Filter…", disabled: viewBlocked, run: command(() => openCellFilter(position)) },
@@ -3671,7 +3693,7 @@ export function SheetShell(props: SheetShellProps) {
     tabRunStartRef.current = null;
     const visibleCell = kind === "column" ? visibleColumnCell(anchor.field) : undefined;
     (visibleCell ?? cellRefs.current.get(cellKey(anchor.entity, anchor.field)))?.focus({ preventScroll: true });
-    setCellSelection({ identity: collectionIdentity, revision: view.revision, anchor, end, wholeColumns: kind === "column" });
+    setCellSelection({ identity: collectionIdentity, revision: view.revision, anchor, end, wholeColumns: kind === "column", wholeRows: kind === "row" });
   }
 
   /**
@@ -4131,6 +4153,19 @@ export function SheetShell(props: SheetShellProps) {
   ): void {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
     const draft = entity === DRAFT_ROW;
+    if (!draft && !editor && wholeRowRange && clipboardPosition(event.target) && !event.altKey) {
+      const insert = (event.ctrlKey || (event.metaKey && event.shiftKey))
+        && (event.key === "=" || event.key === "+" || (event.shiftKey && event.code === "Equal"));
+      const remove = event.ctrlKey && !event.shiftKey && event.key === "-";
+      if ((insert && rowInsertAvailable) || (remove && rowDeleteAvailable)) {
+        event.preventDefault();
+        if (!event.repeat) {
+          if (insert) void insertSelectedRow();
+          else if (!rowDeleteBlocked) void deleteRow();
+        }
+        return;
+      }
+    }
     if (!draft && !editor && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key === "1" && clipboardPosition(event.target)) {
       event.preventDefault();
       if (!event.repeat) openFormatCells(position, event.currentTarget);
@@ -4216,7 +4251,8 @@ export function SheetShell(props: SheetShellProps) {
         event.preventDefault();
         if (event.shiftKey) {
           const anchor = boundSelection && rowIndexByEntity.has(boundSelection.anchor.entity) ? boundSelection.anchor : position;
-          extendSelection(anchor, { entity: rowEntity(row), field: column.id });
+          extendSelection(anchor, { entity: rowEntity(row), field: column.id }, true,
+            boundSelection?.wholeRows && (event.key === "ArrowUp" || event.key === "ArrowDown"));
         } else {
           setCellSelection(null);
           setSelectedEntity(rowEntity(row));
@@ -4279,6 +4315,7 @@ export function SheetShell(props: SheetShellProps) {
           identity: selectionIdentity.identity, revision: selectionIdentity.view.revision,
           anchor: { entity: position.entity, field: columns[0]!.id },
           end: { entity: position.entity, field: columns.at(-1)!.id },
+          wholeRows: true,
         });
       } else if (mod && !event.shiftKey) {
         event.preventDefault();
@@ -4315,7 +4352,8 @@ export function SheetShell(props: SheetShellProps) {
       if (row && column) {
         event.preventDefault();
         const anchor = boundSelection && rowIndexByEntity.has(boundSelection.anchor.entity) ? boundSelection.anchor : position;
-        extendSelection(anchor, { entity: rowEntity(row), field: column.id });
+        extendSelection(anchor, { entity: rowEntity(row), field: column.id }, true,
+          boundSelection?.wholeRows && (event.key === "ArrowUp" || event.key === "ArrowDown"));
       }
       return;
     }
@@ -5232,14 +5270,18 @@ export function SheetShell(props: SheetShellProps) {
   }
 
   async function deleteRow(): Promise<void> {
-    if (!view || !witness || !selectedEntity || selectedEntity === DRAFT_ROW || !onRemoveRows || controlsLocked || rowDraftActive || cellDraftActive || formulaDraftActive || anyNotesDraft || rowCommandPendingRef.current) return;
+    if (!view || !witness || !selectedEntity || !onRemoveRows || rowDeleteBlocked || rowCommandPendingRef.current) return;
+    const entities = selectionRectangle && selectionRectangle.bottom > selectionRectangle.top
+      ? displayRows.slice(selectionRectangle.top, selectionRectangle.bottom + 1)
+        .filter(row => !row.id.startsWith("worksheet-row:")).map(rowEntity)
+      : [selectedEntity];
     if (editor && editor.value === editor.original) setEditor(null);
     rowCommandPendingRef.current = true;
     const intent = completionIntent();
     setCommitPending(true);
     setRowError(null);
     try {
-      const result = await onRemoveRows(witness, view.table.collection.key, selectionRectangle && selectionRectangle.bottom > selectionRectangle.top ? displayRows.slice(selectionRectangle.top, selectionRectangle.bottom + 1).map(rowEntity) : [selectedEntity]);
+      const result = await onRemoveRows(witness, view.table.collection.key, entities);
       if (result.kind === "refused") setRowError({ message: result.message });
       if (result.kind === "confirmed" && completionMayUpdateUi(intent)) {
         requestAnimationFrame(() => {
@@ -5251,6 +5293,23 @@ export function SheetShell(props: SheetShellProps) {
           });
         });
       }
+    } catch (error) { setRowError({ message: explain(error, "The row request could not be confirmed. Refresh before trying again.") }); }
+    finally { rowCommandPendingRef.current = false; setCommitPending(false); }
+  }
+
+  async function insertSelectedRow(): Promise<void> {
+    if (multiRowInsertReason) {
+      announceClipboard(multiRowInsertReason, true);
+      return;
+    }
+    if (!view || !witness || !onInsertRow || !rowInsertAnchor || insertionLimitReached || columnChangesBlocked || rowInsertBlocked()) return;
+    rowCommandPendingRef.current = true;
+    setCommitPending(true);
+    setRowError(null);
+    try {
+      const result = await onInsertRow(witness, view.table.collection.key, [], rowInsertAnchor);
+      if (result.kind === "confirmed") keepGridRows(result.addedEntities ?? []);
+      else if (result.kind === "refused") setRowError({ message: result.message });
     } catch (error) { setRowError({ message: explain(error, "The row request could not be confirmed. Refresh before trying again.") }); }
     finally { rowCommandPendingRef.current = false; setCommitPending(false); }
   }
@@ -5330,8 +5389,15 @@ export function SheetShell(props: SheetShellProps) {
     });
   }, [deferredWidths, widthPublishing, columnChangesBlocked, witness, table, columns, collectionIdentity, onSetColumnWidth]);
   // The toolbar button and the cell menu offer deleting rows, and disable it, under one condition.
+  const rowInsertAvailable = Boolean(table?.native_table_profile && onInsertRow);
+  const multiRowInsertReason = wholeRowRange && wholeRowRange.top !== wholeRowRange.bottom ? "Insert one row at a time for now" : undefined;
+  const rowInsertAnchor = wholeRowRange && !multiRowInsertReason && table && boundSelection
+    ? rowSource(table).byEntity(boundSelection.anchor.entity) && boundSelection.anchor.entity
+    : undefined;
   const rowDeleteAvailable = Boolean(table?.native_table_profile && onInsertRow && onRemoveRows);
-  const rowDeleteBlocked = controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity) || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft;
+  const rowDeleteBlocked = controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity)
+    || displayRows[selectionRectangle?.top ?? rowIndexByEntity.get(selectedEntity)!]?.id.startsWith("worksheet-row:") === true
+    || cellDraftActive || formulaDraftActive || rowDraftActive || anyNotesDraft;
   const columnChangeReason = "Finish the current input before changing columns.";
   useEffect(() => { setColumnDialog(null); setRuleDialog(null); setFormatDialog(null); setFormatCellsDialog(null); setColumnAnnouncement(null); }, [collectionIdentity]);
   useEffect(() => {
@@ -6279,7 +6345,10 @@ export function SheetShell(props: SheetShellProps) {
     const entity = rowEntity(row);
     const isSelectedRow = entity === selectedEntity;
     return <tr key={row.id || entity} className={isSelectedRow ? "ts-row ts-row--selected" : "ts-row"} aria-rowindex={gridWindowed ? index + 2 : undefined}>
-      <th scope="row" className="ts-row-head" onMouseDown={event => event.preventDefault()} onClick={event => selectHeader("row", index, event.shiftKey)}>{a1RowNumber(index, headerRow)}</th>
+      <th scope="row" className="ts-row-head" onMouseDown={event => event.preventDefault()} onClick={event => selectHeader("row", index, event.shiftKey)} onContextMenu={event => {
+        event.preventDefault();
+        openRowMenu(event.clientX, event.clientY, index);
+      }}>{a1RowNumber(index, headerRow)}</th>
       {columns.map((column) => renderCell(row, entity, column))}
     </tr>;
   }
