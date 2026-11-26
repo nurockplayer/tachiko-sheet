@@ -4,12 +4,12 @@ import type { TableColumn, TableRow } from "./projection-access.js";
 import { cellDisplay, fieldClipboardText, fieldDisplay, formatNumber, formatNumberFor, seedTextOf } from "./field-display.js";
 
 describe("field display", () => {
-  it("shows Work's formula error display with the failure marker and diagnostic", () => {
+  it("shows Work's formula error with the failure marker and diagnostic even without display", () => {
     const field: FieldProjection = {
       target: { entity: "e1", field: "result" }, address: "e1.result",
       stored: null, formula: { source: "1/0" },
       calculated: { status: "failure", code: "division_by_zero", message: "#DIV/0!" },
-      display: "#DIV/0!", diagnostics: [], editable_scalar: null,
+      diagnostics: [], editable_scalar: null,
     };
     expect(fieldDisplay(field)).toEqual({
       text: "#DIV/0!", tone: "warning", calculationFailed: true, title: "division_by_zero: #DIV/0!",
