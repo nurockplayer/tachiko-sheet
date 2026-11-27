@@ -4,6 +4,7 @@ import { canRenameColumns, IMPORTED_RENAME_UNAVAILABLE } from "./column-rename-a
 import { submitColumnIntent, type ColumnDialogState } from "./column-operations.js";
 
 const table = (): WorkbookView["table"] => ({
+  cell_styling: { status: "supported" },
   revision: "r1", collection: { id: "s", key: "table", display_name: "Table", headerless: false, data_start_row: 2, entity_count: 0 },
   native_table_profile: true, rows: [],
   columns: [{ id: "f", key: "column_1", display_name: "column_1", field_type: "text", required: false }],

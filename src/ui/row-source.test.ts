@@ -22,6 +22,7 @@ function row(entity: string, value: string): TableRow {
 
 function table(rows: TableRow[], revision = "rev-1"): Parameters<typeof rowSource>[0] {
   return {
+    cell_styling: { status: "supported" },
     revision,
     collection: { id: "col-1", key: "items", display_name: "Items", headerless: false, data_start_row: 2, entity_count: rows.length },
     columns: [{ id: "c-name", key: "name", display_name: "Name", field_type: "text", required: true }],

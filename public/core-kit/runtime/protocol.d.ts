@@ -153,6 +153,7 @@ export type ConstraintFailureProjection = {
 };
 export type CellAlignment = "left" | "center" | "right";
 export type ColumnProjection = {
+    hidden?: true;
     id: string;
     key: string;
     display_name: string;
@@ -173,6 +174,7 @@ export type ColumnProjection = {
     width?: number;
 };
 export type TableRowProjection = {
+    hidden?: true;
     id: string;
     key: string;
     /**
@@ -186,9 +188,16 @@ export type TableRowProjection = {
     /** Resolved styles in column order, as in imported rows. Omission means defaults. */
     styles?: SourceStyle[];
 };
+export type CellStylingCapability = {
+    status: "supported";
+} | {
+    status: "unsupported";
+    reason: "read_only_table";
+};
 export type TableProjection = {
     tracker_profile?: boolean;
     native_table_profile?: boolean;
+    cell_styling: CellStylingCapability;
     revision: string;
     collection: CollectionSummary;
     columns: ColumnProjection[];
@@ -277,6 +286,7 @@ export type TableWindowProjection = {
     /** Same profile flags as `TableProjection`; present only when true. */
     tracker_profile?: boolean;
     native_table_profile?: boolean;
+    cell_styling: CellStylingCapability;
     revision: string;
     collection: CollectionSummary;
     columns: ColumnProjection[];
@@ -662,6 +672,7 @@ export type TrackerCommand = {
     type: "insert_row";
     expected_revision: string;
     collection: string;
+    count?: number;
     position?: {
         before: string;
         after?: never;
@@ -746,6 +757,13 @@ export type TrackerCommand = {
     row_count: number;
     fields: string[];
     changes: CellStyleChange[];
+} | {
+    type: "set_table_visibility";
+    expected_revision: string;
+    collection: string;
+    entities: string[];
+    fields: string[];
+    hidden: boolean;
 } | {
     type: "set_column_width";
     expected_revision: string;
@@ -908,6 +926,12 @@ export type DesignerRequest = {
     name: string;
     columns: NewTableColumnInput[];
     profile?: "working_size";
+} | {
+    type: "range_to_table";
+    expected_revision: string;
+    range: SelectionStatisticsRange;
+    name: string;
+    has_header: boolean;
 } | {
     type: "duplicate_collection";
     expected_revision: string;

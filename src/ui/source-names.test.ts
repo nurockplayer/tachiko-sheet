@@ -29,6 +29,7 @@ describe("source names", () => {
 
 describe("Work explicit display-name presence", () => {
   const current = (explicit = false, name = "Current item"): import("../contracts.js").WorkbookView["table"] => ({
+    cell_styling: { status: "supported" },
     revision: "r1", collection: { id: "s1", key: "sheet", display_name: "Sheet", headerless: false, data_start_row: 2, entity_count: 0 }, rows: [],
     native_table_profile: true,
     columns: [
