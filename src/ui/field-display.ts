@@ -85,8 +85,10 @@ function baseDisplay(field: FieldProjection, format?: NumberFormat): FieldDispla
       };
     }
     if (calculated.status === "failure") {
+      // Work puts the spreadsheet error token in message even without display text.
+      const errorText = calculated.message.startsWith("#") ? calculated.message : CALCULATION_FAILED_TEXT;
       return {
-        text: CALCULATION_FAILED_TEXT,
+        text: field.display ?? errorText,
         calculationFailed: true,
         tone: "warning",
         title: `${calculated.code}: ${calculated.message}`,

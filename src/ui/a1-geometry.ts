@@ -44,15 +44,16 @@ export function a1GeometryFor(
   ownerEntity: string,
   references: { rows: readonly number[]; range: boolean },
   requestByteLimit: number,
+  headerRow = A1_HEADER_ROW,
 ): { headerRow: number; rows: string[]; columns: string[] } | null {
-  const full = a1Geometry(displayRows, columns);
+  const full = { ...a1Geometry(displayRows, columns), headerRow };
   const owner = full.rows.indexOf(ownerEntity);
   let geometry = full;
   if (!references.range && owner >= 0) {
-    const ownerRow = a1RowNumber(owner);
-    const first = Math.max(Math.min(ownerRow, ...references.rows), A1_HEADER_ROW + 1);
+    const ownerRow = a1RowNumber(owner, headerRow);
+    const first = Math.max(Math.min(ownerRow, ...references.rows), headerRow + 1);
     const last = Math.max(ownerRow, ...references.rows);
-    geometry = { ...full, headerRow: first - 1, rows: full.rows.slice(first - 2, last - 1) };
+    geometry = { ...full, headerRow: first - 1, rows: full.rows.slice(first - headerRow - 1, last - headerRow) };
   }
   return new TextEncoder().encode(JSON.stringify(geometry)).byteLength <= requestByteLimit ? geometry : null;
 }
