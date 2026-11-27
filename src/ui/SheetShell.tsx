@@ -5999,7 +5999,9 @@ export function SheetShell(props: SheetShellProps) {
     const resizable = !compactColumnActions && !salesCatalog;
     const gridColumnCount = columns.length + 1 + Number(adjacentColumn !== null);
     const gridTable = (
-      <table style={{ zoom: gridScale, width: sizedGrid ? undefined : `${gridZoom}%` }} className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table" onCopy={event => copyGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onCut={event => cutGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? firstBlankRow + 1 + Number(hasColumnTotals) + blankRowCount : undefined}>
+      <table style={{ zoom: gridScale, width: sizedGrid ? undefined : `${gridZoom}%` }} className={`ts-grid${salesCatalog ? " ts-grid--sales-catalog" : ""}${sizedGrid ? " ts-grid--sized" : ""}${dragSelecting ? " ts-grid--drag-selecting" : ""}`} role="grid" aria-label="Table"
+        aria-description={blankRowCount > 0 ? `${storedRowCount} stored ${storedRowCount === 1 ? "record" : "records"}. Blank grid rows are available for entry.` : undefined}
+        onCopy={event => copyGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onCut={event => cutGrid(clipboardPosition(event.target), event.clipboardData, () => event.preventDefault())} onPaste={pasteGrid} aria-busy={busy} aria-rowcount={gridWindowed ? firstBlankRow + 1 + Number(hasColumnTotals) + blankRowCount : undefined}>
         <thead>
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             {/* The gutter reads "Row" in the DOM (frozen seeds and accessible
@@ -6177,8 +6179,9 @@ export function SheetShell(props: SheetShellProps) {
         {Array.from({ length: blankRowCount }, (_, offset) => {
           const entity = blankRowEntity(offset);
           const index = firstBlankRow + offset;
+          const rowNumber = a1RowNumber(index, headerRow);
           return <tr key={entity} aria-rowindex={gridWindowed ? index + 2 + Number(hasColumnTotals) : undefined}>
-            <th scope="row" className="ts-row-head">{a1RowNumber(index, headerRow)}</th>
+            <th scope="row" className="ts-row-head" aria-label={`Blank grid row ${rowNumber}`}>{rowNumber}</th>
             {columns.map(column => renderCell(null, entity, column))}
             {adjacentColumn ? renderCell(null, entity, adjacentColumn) : null}
           </tr>;

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { installDistRoutes, LOCAL_ORIGIN } from "./dist-routes.mjs";
 import { openFolder, openReleasePlanExample } from "./home-entry.mjs";
+import { WORK_FIELD_CELL } from "./windowed-table-collector.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -214,9 +215,9 @@ try {
   assert.equal(await redo.isDisabled(), false, "unchanged navigation preserves Redo");
   // Submit a differently spelled but equal Number to retain the real Work
   // NoChange refusal oracle even though unchanged editors now only navigate.
-  const equalNumber = page.locator('table[aria-label="Table"] tbody tr').first().locator("td").last();
+  const equalNumber = page.locator('table[aria-label="Table"] tbody tr.ts-row').first().locator(WORK_FIELD_CELL).last();
   const numericValue = (await equalNumber.locator(".ts-cell-value").textContent()).trim();
-  assert.ok(Number.isFinite(Number(numericValue)));
+  assert.ok(numericValue !== "" && Number.isFinite(Number(numericValue)));
   await equalNumber.dblclick();
   await editor().fill(numericValue + ".0");
   await editor().press("Enter");
