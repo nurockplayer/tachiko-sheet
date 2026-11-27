@@ -115,7 +115,7 @@ export interface SheetRuntime {
   newBlankWorkbook(): Promise<WorkbookView>;
   writeCellAt(witness: ViewWitness, collection: string, row: number, column: number, input: string | ScalarValueEdit): Promise<ConfirmedPublication>;
   addTable(witness: ViewWitness, name: string, columns: NewTableColumn[]): Promise<ConfirmedPublication>;
-  insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[], before?: string): Promise<ConfirmedPublication>;
+  insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[], before?: string, count?: number): Promise<ConfirmedPublication>;
   editCells(witness: ViewWitness, edits: CellEdit[]): Promise<ConfirmedPublication>;
   pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]): Promise<ConfirmedPublication>;
   pasteCellsAt(witness: ViewWitness, collection: string, row: number, column: number, rows: PasteCellInput[][]): Promise<ConfirmedPublication>;
@@ -417,7 +417,7 @@ export interface SheetShellProps {
   onCopyFormula?(witness: ViewWitness, request: FormulaCopy): Promise<RowCommandOutcome>;
   onPasteCells?(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]): Promise<RowCommandOutcome>;
   onPasteCellsAt?(witness: ViewWitness, collection: string, row: number, column: number, rows: PasteCellInput[][]): Promise<RowCommandOutcome>;
-  onInsertRow?(witness: ViewWitness, collection: string, initializers: RowInitializer[], before?: string): Promise<RowCommandOutcome>;
+  onInsertRow?(witness: ViewWitness, collection: string, initializers: RowInitializer[], before?: string, count?: number): Promise<RowCommandOutcome>;
   onAddColumn?(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[] | undefined, required?: boolean): Promise<RowCommandOutcome>;
   onSetColumnRequiredness?(witness: ViewWitness, collection: string, field: string, required: boolean): Promise<RowCommandOutcome>;
   onSetColumnConstraint?(witness: ViewWitness, collection: string, field: string, constraint: FieldConstraintInput): Promise<RowCommandOutcome>;

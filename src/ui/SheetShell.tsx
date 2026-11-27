@@ -2480,10 +2480,9 @@ export function SheetShell(props: SheetShellProps) {
     const rows = selectionRectangle ? selectionRectangle.bottom - selectionRectangle.top + 1 : 0;
     const rowActions: CellMenuItem[] = [];
     if (wholeRowRange && rowInsertAvailable) rowActions.push({
-      label: "Insert row",
+      label: rows > 1 ? `Insert ${rows} rows` : "Insert row",
       disabled: !rowInsertAnchor || columnChangesBlocked || insertionLimitReached,
-      description: multiRowInsertReason,
-      run: command(() => { void insertSelectedRow(); }),
+      run: command(() => { void insertSelectedRows(); }),
     });
     if (rowDeleteAvailable) rowActions.push({
       label: rows > 1 ? `Delete ${rows} rows` : "Delete row",
@@ -4333,7 +4332,7 @@ export function SheetShell(props: SheetShellProps) {
       if ((insert && rowInsertAvailable) || (remove && rowDeleteAvailable)) {
         event.preventDefault();
         if (!event.repeat) {
-          if (insert) void insertSelectedRow();
+          if (insert) void insertSelectedRows();
           else if (!rowDeleteBlocked) void deleteRow();
         }
         return;
@@ -5480,17 +5479,14 @@ export function SheetShell(props: SheetShellProps) {
     finally { rowCommandPendingRef.current = false; setCommitPending(false); }
   }
 
-  async function insertSelectedRow(): Promise<void> {
-    if (multiRowInsertReason) {
-      announceClipboard(multiRowInsertReason, true);
-      return;
-    }
-    if (!view || !witness || !onInsertRow || !rowInsertAnchor || insertionLimitReached || columnChangesBlocked || rowInsertBlocked()) return;
+  async function insertSelectedRows(): Promise<void> {
+    if (!view || !witness || !onInsertRow || !wholeRowRange || !rowInsertAnchor || insertionLimitReached || columnChangesBlocked || rowInsertBlocked()) return;
     rowCommandPendingRef.current = true;
     setCommitPending(true);
     setRowError(null);
     try {
-      const result = await onInsertRow(witness, view.table.collection.key, [], rowInsertAnchor);
+      const count = wholeRowRange.bottom - wholeRowRange.top + 1;
+      const result = await onInsertRow(witness, view.table.collection.key, [], rowInsertAnchor, count);
       if (result.kind === "confirmed") keepGridRows(result.addedEntities ?? []);
       else if (result.kind === "refused") setRowError({ message: result.message });
     } catch (error) { setRowError({ message: explain(error, "The row request could not be confirmed. Refresh before trying again.") }); }
@@ -5573,9 +5569,10 @@ export function SheetShell(props: SheetShellProps) {
   }, [deferredWidths, widthPublishing, columnChangesBlocked, witness, table, columns, collectionIdentity, onSetColumnWidth]);
   // The toolbar button and the cell menu offer deleting rows, and disable it, under one condition.
   const rowInsertAvailable = Boolean(table?.native_table_profile && onInsertRow);
-  const multiRowInsertReason = wholeRowRange && wholeRowRange.top !== wholeRowRange.bottom ? "Insert one row at a time for now" : undefined;
-  const rowInsertAnchor = wholeRowRange && !multiRowInsertReason && table && boundSelection
-    ? rowSource(table).byEntity(boundSelection.anchor.entity) && boundSelection.anchor.entity
+  const topSelectedRow = wholeRowRange ? displayRows[wholeRowRange.top] : undefined;
+  const topSelectedEntity = topSelectedRow && rowEntity(topSelectedRow);
+  const rowInsertAnchor = topSelectedEntity && table && rowSource(table).byEntity(topSelectedEntity)
+    ? topSelectedEntity
     : undefined;
   const rowDeleteAvailable = Boolean(table?.native_table_profile && onInsertRow && onRemoveRows);
   const rowDeleteBlocked = controlsLocked || currentness !== "current" || !selectedEntity || !rowIndexByEntity.has(selectedEntity)
