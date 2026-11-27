@@ -40,7 +40,8 @@ try {
   const grid = page.getByRole("grid", { name: "Table" });
   async function assertRows() {
     const count = Number(await grid.getAttribute("aria-rowcount"));
-    assert.equal(count - 1 - await grid.locator('.ts-entry-row').count() - await grid.locator('.ts-totals-row').count(), 300);
+    const blankRows = grid.locator('tfoot tr').filter({ has: page.locator('[data-unallocated-entity^="table-space-row:"]') });
+    assert.equal(count - 1 - await grid.locator('.ts-entry-row').count() - await grid.locator('.ts-totals-row').count() - await blankRows.count(), 300);
     assert.match(await grid.locator('.ts-totals-row').textContent(), /300/);
   }
   await assertRows();

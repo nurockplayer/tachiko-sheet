@@ -9,6 +9,7 @@
 //
 // Usage: node tests/desktop/packaged-smoke.mjs <path to the e2e binary>
 import assert from "node:assert/strict";
+import { WORK_FIELD_CELL } from "../product/windowed-table-collector.mjs";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
@@ -183,7 +184,7 @@ function press(el, key) {
 const ready = () => document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy") === "false";
 const current = () => ready() && document.querySelector('[data-testid="currentness"]')?.getAttribute("data-currentness") === "current";
 const grid = () => document.querySelector('table[aria-label="Table"]');
-const cellAt = (row, column) => grid()?.querySelectorAll("tbody tr.ts-row")[row]?.querySelectorAll("td")[column] ?? null;
+const cellAt = (row, column) => grid()?.querySelectorAll("tbody tr.ts-row")[row]?.querySelectorAll("${WORK_FIELD_CELL}")[column] ?? null;
 `;
 
 // ---- journey steps -----------------------------------------------------------
@@ -340,7 +341,7 @@ async function main() {
   await importSmokeCsv();
   const rows = await evaluate(`
     await waitFor(() => ready() && grid()?.querySelectorAll("tbody tr.ts-row").length === 3, "three imported rows");
-    return [...grid().querySelectorAll("tbody tr.ts-row")].map((row) => [...row.querySelectorAll("td")].slice(0, 2).map((cell) => cell.textContent.trim()));
+    return [...grid().querySelectorAll("tbody tr.ts-row")].map((row) => [...row.querySelectorAll("${WORK_FIELD_CELL}")].map((cell) => cell.textContent.trim()));
   `);
   assert.deepEqual(rows, [["Alpha", "1"], ["Beta", "2"], ["Gamma", "3"]], `the imported grid shows the CSV rows: ${JSON.stringify(rows)}`);
   pass("a CSV imports through the native runtime and shows its three rows");

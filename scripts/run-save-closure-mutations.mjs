@@ -25,7 +25,7 @@ const implementationPaths = [
 const expectedSeeds = {
   'tests/product/web-save-closure-current.mjs': '31b43d889a4e0208e6dab1c2a94ca2749e3c3167bf736c23510fff2a5492b534',
   'tests/product/web-save-closure-prerequisites.mjs': 'b3e0f9a99b64db9d8bc0caa35e78fc7973f96896bd84f4d77eb5cec08bd9e704',
-  'tests/product/production-lifecycle.mjs': 'ee2963f5eebaf13a41e8c61324ccfc6a480ab8b5e1ab37163bf08807cf164db5',
+  'tests/product/production-lifecycle.mjs': 'a8e7b64145501ccec1d7a98348a0d86a5aa28e600e7c055f1aa6ff6f31d5c58f',
 };
 const workPin = '44f36dc7aa114cdc9c170e77336f946e2cc72b09';
 const kitManifest = 'fb8f46a0e5d0ec2c1b7439a9191026f4cf2054e5b7ae081fd11ec3772157cebc';

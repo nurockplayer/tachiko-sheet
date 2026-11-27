@@ -35,7 +35,8 @@ export async function runWindowedDraftCases({ page, ready, projection, checks })
     assert.equal(table.native_table_profile, true, "core admits the real native fixture");
     assert.equal(table.rows.length, 205);
     const grid = page.getByRole("grid", { name: "Table", exact: true });
-    assert.equal(Number(await grid.getAttribute("aria-rowcount")) - await grid.locator(".ts-totals-row").count(), 207, "header, 205 stored records and draft");
+    const blankRows = grid.getByRole("rowheader", { name: /^Blank grid row \d+$/ });
+    assert.equal(Number(await grid.getAttribute("aria-rowcount")), 207 + await grid.locator(".ts-totals-row").count() + await blankRows.count(), "header, 205 stored records, draft, totals and editable blank rows");
     assert.ok(await grid.locator("tbody .ts-row").count() < 205, "rows are actually windowed");
     // Traverse window boundaries and stay on the final stored row.
     await grid.locator("tbody .ts-row td").first().focus();

@@ -19,6 +19,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
+import { WORK_FIELD_CELL } from "./windowed-table-collector.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = path.resolve(process.env.SAVE_CLOSURE_DIST ?? path.join(root, "dist"));
@@ -143,7 +144,8 @@ async function visibleTable(tableName) {
   await page.waitForFunction((expected) => document.querySelector("#ts-active-table")?.value === expected, tableName);
   const table = page.locator('table[aria-label="Table"]');
   await table.waitFor();
-  return table.locator("tbody tr").evaluateAll((rows) => rows.map((row) => [...row.querySelectorAll("td")].map((cell) => cell.textContent?.trim())));
+  return table.locator("tbody tr.ts-row").evaluateAll((rows, cellSelector) => rows.map((row) =>
+    [...row.querySelectorAll(cellSelector)].map((cell) => cell.textContent?.trim())), WORK_FIELD_CELL);
 }
 async function assertResultRows(expected) {
   const table = page.getByRole("table", { name: "Cross-table groups", exact: true });

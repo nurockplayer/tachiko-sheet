@@ -251,7 +251,8 @@ try {
   const cell=page.locator('table[aria-label="Table"] tbody tr.ts-row').first().locator("td").first();
   await cell.dblclick(); await page.getByTestId("cell-editor").fill("=SUM(1,2)");
   await page.getByTestId("cell-editor").press("Enter"); await ready(page);
-  const before=await page.locator('table[aria-label="Table"]').textContent();
+  const tableRows = page.getByRole("grid", { name: "Table", exact: true }).locator('tr:not(:has([data-unallocated-entity^="table-space-row:"]))');
+  const before=await tableRows.allTextContents();
   const saveBefore=await page.getByTestId("save-status").textContent();
   const count=downloads.length;
   await page.getByRole("tab",{name:"Import & export",exact:true}).click();
@@ -264,7 +265,7 @@ try {
   assert.doesNotMatch(await alert.textContent(), /native_tables_export_refused|Details:/);
   assert.equal(await page.getByRole("dialog",{name:"Confirm download",exact:true}).count(),0);
   await page.getByRole("tab",{name:"Table",exact:true}).click();
-  assert.equal(await page.locator('table[aria-label="Table"]').textContent(),before);
+  assert.deepEqual(await tableRows.allTextContents(),before);
   assert.equal(await page.getByTestId("save-status").textContent(),saveBefore);
   assert.equal(downloads.length,count);
   checks.push("normal-UI formula-leading Text refusal is located; no download or work/save-state change");

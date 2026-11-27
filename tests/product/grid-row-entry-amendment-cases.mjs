@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { fillDraftCell, draftActions } from "./grid-row-entry-driver.mjs";
+import { WORK_FIELD_CELL } from "./windowed-table-collector.mjs";
 
 export async function runDraftTabAmendmentCases({ page, ready, projection, checks }) {
   const entry = () => page.locator(".ts-entry-row [data-entry-field]");
@@ -114,7 +115,7 @@ export async function runDraftTabAmendmentCases({ page, ready, projection, check
   const added = await projection(page);
   const names = new Map(added.columns.map(column => [column.id, column.key]));
   assert.deepEqual(added.rows.map(row => Object.fromEntries(row.fields.map(field => [names.get(field.target.field), field.stored.value]))), [{ item: "Retained", amount: 12, paid: false }]);
-  assert.equal(await page.locator("tbody .ts-row td").last().locator(".ts-cell-value").textContent(), "false", "published and draft boolean spellings match");
+  assert.equal(await page.locator(`tbody .ts-row ${WORK_FIELD_CELL}`).last().locator(".ts-cell-value").textContent(), "false", "published and draft boolean spellings match");
   await capture("after-add");
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready(page);
   assert.deepEqual((await projection(page)).rows, empty.rows);

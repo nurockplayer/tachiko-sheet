@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { homeImportInput, openFolder, openReleasePlanExample, waitForColdHome } from "./home-entry.mjs";
+import { WORK_FIELD_CELL } from "./windowed-table-collector.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
@@ -622,10 +623,10 @@ const cases = [
     const entryRow = page.locator(".ts-entry-row");
     assert.equal(await entryRow.count(), 1, "native fixture shows its entry row");
     const edges = [
-      ["Shift+Enter", rows.first().locator("td").first(), null],
-      ["Shift+Tab", rows.first().locator("td").first(), null],
-      ["Enter", rows.last().locator("td").last(), entryRow.locator("[data-entry-field]").last()],
-      ["Tab", rows.last().locator("td").last(), entryRow.locator("[data-entry-field]").first()],
+      ["Shift+Enter", rows.first().locator(WORK_FIELD_CELL).first(), null],
+      ["Shift+Tab", rows.first().locator(WORK_FIELD_CELL).first(), null],
+      ["Enter", rows.last().locator(WORK_FIELD_CELL).last(), entryRow.locator("[data-entry-field]").last()],
+      ["Tab", rows.last().locator(WORK_FIELD_CELL).last(), entryRow.locator("[data-entry-field]").first()],
     ];
     for (const [index, [key, target, destination]] of edges.entries()) {
       const before = await state(page), count = await dispatches(page), storedRows = await rows.count();

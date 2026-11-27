@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
+import { WORK_FIELD_CELL } from "./windowed-table-collector.mjs";
 import { homeImportInput, openReleasePlanExample, waitForColdHome } from "./home-entry.mjs";
 
 const dist = process.env.WORK_DIST;
@@ -337,6 +338,7 @@ const cases = [
     const after = await projection(page);
     assert.equal(after.columns.length, before.columns.length + 1, "typing to the right of the last column created no field");
     assert.deepEqual(after.columns.slice(0, ids.length).map((column) => column.id), ids, "existing field ids changed");
+    assert.equal(fieldAt(after, 0, ids.length)?.stored?.value, "Extra", "Work did not store the text beside the table");
   } },
   { id: "06", name: "Mixed values", tier: "A", run: async (page) => {
     await newTable(page, "Typed", [{ name: "Value", type: "number" }]);
@@ -624,6 +626,17 @@ const cases = [
     await page.keyboard.press("Enter");
     await waitForCellText(page, total, "6");
     assert.equal(await executeCount(page), before + 1, "Enter did not publish exactly one history transaction");
+
+    await page.getByTestId(total).click();
+    await page.keyboard.press("Control+c");
+    for (const blank of ["C5", "D2"]) {
+      await page.getByTestId(`table-space:${blank}`).click();
+      await page.keyboard.press("Control+v");
+      await page.getByText("Pasting a formula requires an existing cell. Nothing was pasted.", { exact: true }).waitFor();
+    }
+    const after = await projection(page);
+    assert.equal(after.rows.length, 2, "pasting a formula into a blank row allocated records");
+    assert.equal(after.columns.length, 3, "pasting a formula beside the table allocated a field");
 
     await page.getByRole("button", { name: "Close project", exact: true }).click();
     await page.getByRole("button", { name: "Close without saving", exact: true }).click();
@@ -2640,7 +2653,7 @@ const cases = [
     assert.deepEqual(missing, [], `commands not reachable from visible chrome: ${missing.join(", ")}`);
   } },
   { id: "N2", name: "Grid chrome", tier: "A", run: async (page) => {
-    await newTable(page, "Grid chrome", [{ name: "One" }, { name: "Two" }, { name: "Three" }]);
+    await newTable(page, "Grid chrome", [{ name: "One" }, { name: "Two" }, { name: "Three", type: "number" }]);
     // Inspect the new sheet before any grid click, focus or selection.
     const missing = await page.getByRole("grid", { name: "Table", exact: true }).evaluate((grid) => {
       const missing = [];
@@ -2664,6 +2677,59 @@ const cases = [
       return missing;
     });
     assert.deepEqual(missing, [], `new sheet does not show ${missing.join(", ")} at once`);
+
+    const before = await projection(page);
+    assert.equal(before.rows.length, 0, "opening the grid materialized blank rows");
+    const blank = page.getByTestId("table-space:B4");
+    await blank.click();
+    await page.keyboard.type("Apple");
+    await page.keyboard.press("Escape");
+    assert.equal((await projection(page)).rows.length, 0, "cancelling a blank cell edit materialized rows");
+
+    // Match the packaged named-table snapshot while preserving adjacent grid entry.
+    const values = ["Tea", "飲食", "4.5"];
+    await addRow(page, values, 1);
+    const readCells = (selector) => page.locator(selector).evaluateAll((cells) => cells.map((cell) => cell.textContent.trim()));
+    assert.deepEqual(await readCells("tbody tr.ts-row td"), [...values, ""]);
+    assert.deepEqual(await readCells(`tbody tr.ts-row ${WORK_FIELD_CELL}`), values);
+    assert.equal((await projection(page)).columns.length, 3, "the adjacent blank materialized a Work column");
+
+    await blank.click();
+    await page.keyboard.type("Apple");
+    await page.keyboard.press("Enter");
+    await settle(page);
+    const after = await projection(page);
+    assert.equal(after.rows.length, 3, "typing in row 4 did not extend the table to that row");
+    assert.equal(fieldAt(after, 2, 1)?.stored?.value, "Apple", "Work did not store the value in B4");
+    const savedCell = cellIdFor(after, 2, 1);
+    await saveCopy(page, "habits-N2");
+    await page.reload();
+    await waitForColdHome(page);
+    await page.getByRole("button", { name: "Open saved habits-N2", exact: true }).click();
+    await ready(page);
+    assert.equal(await page.getByTestId(savedCell).textContent(), "Apple", "B4 changed after Save and reopen");
+    assert.equal((await projection(page)).rows.length, 3, "reopen materialized additional blank rows");
+    assert.equal(await page.getByTestId("table-space:B6").textContent(), "", "the reopened grid did not show blank rows below the data");
+
+    await page.getByTestId(savedCell).click();
+    await page.keyboard.press("Control+c");
+    await page.getByTestId("table-space:B6").click();
+    await page.keyboard.press("Control+v");
+    await page.waitForFunction(() => !window.__habits.stale && window.__readObservedTable(window.__habits)?.rows.length === 5);
+    assert.equal(fieldAt(await projection(page), 4, 1)?.stored?.value, "Apple", "pasting below the table did not store the copied value in B6");
+
+    await page.getByTestId("table-space:D4").click();
+    await page.keyboard.press("Control+v");
+    await page.waitForFunction(() => !window.__habits.stale && window.__readObservedTable(window.__habits)?.columns.length === 4);
+    assert.equal(fieldAt(await projection(page), 2, 3)?.stored?.value, "Apple", "pasting beside the table did not store the copied value in D4");
+
+    await filterValues(page, "Two", ["Apple"]);
+    assert.equal(await page.locator("tbody tr.ts-row").count(), 2, "the filter did not hide rows");
+    assert.match(await page.getByTestId("row-view-status").textContent(), /Clear the filter to edit blank grid rows\./);
+    assert.equal(await page.locator('[data-unallocated-entity^="table-space-row:"]').count(), 0, "the filtered view still offered blank rows for editing");
+    await page.getByRole("button", { name: "Clear filter", exact: true }).click();
+    await page.getByTestId("table-space:B8").waitFor();
+    assert.equal((await projection(page)).rows.length, 5, "filtering changed the stored row count");
   } },
   { id: "N3", name: "Status bar statistics", tier: "A", run: async (page) => {
     await newTable(page, "Statistics", [{ name: "Amount", type: "number" }]);
