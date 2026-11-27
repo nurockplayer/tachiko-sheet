@@ -474,7 +474,12 @@ try {
   const salesBefore = await projection(page);
   assert.equal(await page.locator('.ts-grid tbody tr').count(), salesBefore.rows.length, "Sales data rows exclude the Add row draft");
   assert.equal(await page.locator('.ts-grid tfoot .ts-entry-row').count(), 1);
-  assert.equal(await page.getByRole("grid", { name: "Table", exact: true }).getByRole("row").count() - await page.locator(".ts-grid .ts-totals-row").count(), salesBefore.rows.length + 2, "accessible grid includes header, published rows and the client-only draft");
+  const salesGrid = page.getByRole("grid", { name: "Table", exact: true });
+  const blankRows = salesGrid.getByRole("row").filter({ has: page.getByRole("rowheader", { name: /^Blank grid row \d+$/ }) });
+  const blankRowCount = await blankRows.count();
+  assert.ok(blankRowCount > 0, "empty grid rows are accessible for entry and identified as blank");
+  assert.match(await salesGrid.getAttribute("aria-description"), new RegExp(`^${salesBefore.rows.length} stored records\\.`));
+  assert.equal(await salesGrid.getByRole("row").count() - await salesGrid.locator(".ts-totals-row").count() - blankRowCount, salesBefore.rows.length + 2, "accessible grid includes header, published rows and the client-only draft besides the blank rows");
   assert.equal(salesBefore.native_table_profile, true, "the current Sales example is a native table accepted by core");
   for (const column of salesBefore.columns) {
     await fillDraftCell(page, entry(page).locator(`[data-entry-field="${column.id}"]`), column.field_type === "number" ? "6" : column.key === "category" ? "ROW-PROBE" : "ROW-PROBE-CODE");

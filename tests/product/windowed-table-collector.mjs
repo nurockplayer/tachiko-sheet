@@ -1,7 +1,9 @@
+export const WORK_FIELD_CELL = "td[data-work-field]";
+
 // Runs entirely in the page: Playwright and the packaged WebKit harness use
 // the same DOM-only reader. No runtime calls or product windowing internals.
 // `draftRows` is 1 when the table shows its new-row line, which the grid counts in aria-rowcount.
-export async function collectWindowedRows({ rowCount, columnCount, draftRows = 0, timeoutMs = 60_000 }) {
+export async function collectWindowedRows({ rowCount, columnCount, cellSelector, draftRows = 0, timeoutMs = 60_000 }) {
   const records = new Map();
   // Bound the whole read below the shortest packaged caller's 240 s budget.
   // The per-batch deadline alone allowed hundreds of slow batches to run forever.
@@ -80,7 +82,7 @@ export async function collectWindowedRows({ rowCount, columnCount, draftRows = 0
         busy: grid.getAttribute("aria-busy"),
         projectBusy: document.querySelector('[data-testid="project-ready"]')?.getAttribute("aria-busy"),
         centreVisible: Boolean(centreBox && centreBox.top >= portTop + header - 1 && centreBox.bottom <= portTop + scroller.clientHeight + 1),
-        covered: covered.map(row => row?.querySelectorAll("td").length ?? null) };
+        covered: covered.map(row => row?.querySelectorAll(cellSelector).length ?? null) };
       const ready = lastFacts.busy === "false" && lastFacts.projectBusy === "false" &&
         Number(lastFacts.rowcount) === lastFacts.expectedRowcount && lastFacts.centreVisible &&
         lastFacts.covered.every(count => count === columnCount);
@@ -89,7 +91,7 @@ export async function collectWindowedRows({ rowCount, columnCount, draftRows = 0
       }
 
       const snapshot = covered.map((row, offset) => [first + offset,
-        [...row.querySelectorAll("td")].map(cell => ({ text: cell.textContent, target: cell.getAttribute("data-testid") }))]);
+        [...row.querySelectorAll(cellSelector)].map(cell => ({ text: cell.textContent, target: cell.getAttribute("data-testid") }))]);
       const signature = JSON.stringify([scroller.scrollTop, lastRange, snapshot]);
       lastFacts.phase = "settle";
       if (previous?.signature === signature && covered.every((row, index) => row === previous.nodes[index])) {

@@ -1,5 +1,6 @@
 // One real-host journey shared by the three packaged-app drivers. No kit calls.
 import assert from "node:assert/strict";
+import { WORK_FIELD_CELL } from "../product/windowed-table-collector.mjs";
 import { execFileSync } from "node:child_process";
 import { readFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
@@ -54,7 +55,7 @@ export async function formulaPersistence({ evaluate, downloads, coldOpen, quit }
     await waitFor(() => current() && cellAt(4, 3), "all Invoice rows");
     const names = [...document.querySelectorAll("#ts-active-table option")].map(el => el.textContent);
     const columns = [...grid().querySelectorAll(".ts-col-head")].map(el => el.textContent);
-    const values = [...grid().querySelectorAll("tbody tr.ts-row")].map(row => [...row.querySelectorAll("td")].map(el => el.textContent.trim()));
+    const values = [...grid().querySelectorAll("tbody tr.ts-row")].map(row => [...row.querySelectorAll("${WORK_FIELD_CELL}")].map(el => el.textContent.trim()));
     return { names, columns, values };
     `);
     const formulas = [];

@@ -4,6 +4,7 @@ import { fillDraftCell, draftActions } from "../product/grid-row-entry-driver.mj
 // This complements (and does not replace) the packaged WebKit lifecycle.
 // Run after build:desktop and building frame_harness; FRAME_HARNESS is required.
 import assert from "node:assert/strict";
+import { WORK_FIELD_CELL } from "../product/windowed-table-collector.mjs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -100,13 +101,13 @@ test("desktop New table: local copy, native portable reopen, bound Save and Clos
     assert.equal(await page.getByTestId("open-work-file").isDisabled(), false);
     return page;
   }
-  const snapshot = page => page.locator('table[aria-label="Table"]').evaluate(table => ({
+  const snapshot = page => page.locator('table[aria-label="Table"]').evaluate((table, cellSelector) => ({
     name: document.querySelector("#ts-active-table option:checked").textContent,
     columns: [...table.querySelectorAll(".ts-col-head")].map(el => el.textContent),
-    cells: [...table.querySelectorAll("tbody tr.ts-row td")].map(el => ({ id: el.dataset.testid, value: el.textContent.trim() })),
-  }));
+    cells: [...table.querySelectorAll(`tbody tr.ts-row ${cellSelector}`)].map(el => ({ id: el.dataset.testid, value: el.textContent.trim() })),
+  }), WORK_FIELD_CELL);
   async function edit(page, value) {
-    await page.locator('tbody tr.ts-row td').nth(2).dblclick();
+    await page.locator(`tbody tr.ts-row ${WORK_FIELD_CELL}`).nth(2).dblclick();
     const input = page.getByRole("textbox", { name: "Edit cell", exact: true });
     await input.fill(value); await input.press("Enter"); await ready(page);
   }

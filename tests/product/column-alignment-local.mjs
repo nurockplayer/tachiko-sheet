@@ -5,6 +5,7 @@ import path from "node:path";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { homeImportInput, waitForColdHome } from "./home-entry.mjs";
+import { WORK_FIELD_CELL } from "./windowed-table-collector.mjs";
 
 const dir = await mkdtemp(path.join(tmpdir(), "sheet-alignment-"));
 let context;
@@ -49,7 +50,7 @@ try {
   const draft = page.locator('.ts-entry-row [data-entry-field]').first(); await draft.focus();
   await draft.evaluate(node => { const data = new DataTransfer(); data.setData("text/plain", "hello\t123\t2026-11-07\ttrue"); node.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true })); });
   await draft.press("Enter"); await ready();
-  const cells = () => page.locator('tbody tr.ts-row').first().locator('.ts-cell');
+  const cells = () => page.locator('tbody tr.ts-row').first().locator(WORK_FIELD_CELL);
   const check = async expected => assert.deepEqual(await cells().evaluateAll(nodes => nodes.map(node => getComputedStyle(node).textAlign)), expected);
   const choose = async (column, value) => {
     await page.getByRole("columnheader", { name: column, exact: true }).hover();

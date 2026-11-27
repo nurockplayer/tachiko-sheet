@@ -62,7 +62,7 @@ async function compactHeader(page, width, desktop, expected) {
   assert.ok(state.height <= 36 && Math.abs(state.height - desktop) <= 2, `one-line compact header matches desktop: ${JSON.stringify(state)}`);
   assert.equal(state.interactive, 0, "compact headers have no interactive controls, including focusable labels");
   assert.ok(state.labels.every(label => label.width > 0 && label.overflow === "hidden" && label.ellipsis === "ellipsis" && label.wrap === "nowrap"));
-  assert.deepEqual(await page.locator('.ts-grid th[scope="col"]').allTextContents(), ["Row", ...expected], "frozen header text remains unchanged");
+  assert.deepEqual(await page.locator(".ts-grid :is(th.ts-gutter-head, th:has(.ts-col-head))").allTextContents(), ["Row", ...expected], "frozen header text remains unchanged");
   return state.height;
 }
 
@@ -144,7 +144,7 @@ export async function assertManyColumnHeaders(page, screens) {
   await dialog.getByLabel("Column 1 name", { exact: true }).fill("A long first column name that must wrap safely in the compact Column menu");
   for (let i = 1; i < 20; i++) await dialog.getByRole("button", { name: "Add column", exact: true }).click();
   await dialog.getByRole("button", { name: "Create table", exact: true }).click();
-  await page.waitForFunction(() => document.querySelectorAll(".ts-column-header").length === 20);
+  await page.waitForFunction(() => document.querySelectorAll(".ts-col-head").length === 20);
   await ready(page);
   let expected = await labels(page);
   const observations = [];
@@ -161,8 +161,8 @@ export async function assertManyColumnHeaders(page, screens) {
       if (profile === "Tachiko" && density === "Compact" && forcedColors === "none") await page.screenshot({ path: path.join(screens, `many-menu-${width}x844.png`) });
       await page.keyboard.press("Escape");
       await focusedSummary(page);
-      const middle = page.locator(".ts-entry-row .ts-cell").nth(9);
-      const field = await middle.getAttribute("data-work-field");
+      const middle = page.locator(".ts-entry-row [data-entry-field]").nth(9);
+      const field = await middle.getAttribute("data-entry-field");
       await middle.focus();
       await (await openMenu(page, expected[9])).getByRole("button", { name: `Rename “${expected[9]}”…`, exact: true }).click();
       let d = page.getByRole("dialog", { name: "Rename column", exact: true });
@@ -172,8 +172,8 @@ export async function assertManyColumnHeaders(page, screens) {
       await d.waitFor({ state: "detached" }); await ready(page); await focusedSummary(page);
       expected[9] = renamed;
       assert.deepEqual(await labels(page), expected, "only the focused middle column is renamed");
-      assert.equal(await middle.getAttribute("data-work-field"), field, "rename preserves field identity");
-      await page.locator(".ts-entry-row .ts-cell").last().focus();
+      assert.equal(await middle.getAttribute("data-entry-field"), field, "rename preserves field identity");
+      await page.locator(".ts-entry-row [data-entry-field]").last().focus();
       await (await openMenu(page, expected[19])).getByRole("button", { name: `Remove “${expected[19]}”…`, exact: true }).click();
       d = page.getByRole("dialog", { name: "Remove column", exact: true });
       await d.getByRole("button", { name: "Remove column", exact: true }).click();
