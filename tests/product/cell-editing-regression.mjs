@@ -9,15 +9,15 @@ import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { homeImportInput, openFolder, openReleasePlanExample, waitForColdHome } from "./home-entry.mjs";
 
-const url = process.env.WORK_CLIENT_URL ?? (process.env.WORK_DIST ? LOCAL_ORIGIN : null);
-if (!url) { console.error("BLOCKED: WORK_CLIENT_URL or WORK_DIST is required."); process.exit(78); }
+const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
+const url = process.env.WORK_CLIENT_URL ?? LOCAL_ORIGIN;
 const expected = JSON.parse(await readFile(new URL("../fixtures/expected.json", import.meta.url), "utf8"));
 const schemas = JSON.parse(await readFile(new URL("../fixtures/release-plan.roproj/schemas.json", import.meta.url), "utf8"));
 const fields = Object.fromEntries(schemas[0].fields.map((field) => [field.key, field.id]));
 const fixture = fileURLToPath(new URL("../fixtures/release-plan.roproj", import.meta.url));
-const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const messyCsv = path.join(root, "acceptance", "j3-interop", "fixtures", "messy.csv");
-const j4CanaryFolder = path.join(process.env.WORK_DIST ?? path.join(root, "dist-acceptance"), "examples", "j4-catalog-sales");
+const j4CanaryFolder = path.join(dist, "examples", "j4-catalog-sales");
 const cell = (page, key) => page.getByTestId(`cell:${expected.entity}:${fields[key]}`);
 const editor = (page) => page.getByTestId("cell-editor");
 const state = (page) => page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
@@ -1166,7 +1166,7 @@ for (const [name, run] of cases) {
     const context = await browser.newContext();
     let fixtureReady = false;
     try {
-      if (!process.env.WORK_CLIENT_URL) await installDistRoutes(context, process.env.WORK_DIST);
+      if (!process.env.WORK_CLIENT_URL) await installDistRoutes(context, dist);
       const page = await context.newPage(); page.setDefaultTimeout(5000);
       await open(page);
       fixtureReady = true;
