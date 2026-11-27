@@ -37,6 +37,7 @@ import {
 } from "./session.js";
 
 const TITLE = "Qualification workbook";
+const CELL_STYLING = { status: "supported" } as const;
 const COLLECTION: CollectionSummary = { id: "col-1", key: "tasks", display_name: "tasks", headerless: false, data_start_row: 2, entity_count: 1 };
 const COPY: CollectionSummary = { id: "col-2", key: "tasks-copy", display_name: "tasks copy", headerless: false, data_start_row: 2, entity_count: 1 };
 const IMPACT: FieldTarget = { entity: "e1", field: "impact" };
@@ -179,6 +180,7 @@ class FakeClient {
 
   #table(): TableProjection {
     return {
+      cell_styling: CELL_STYLING,
       revision: this.#revision,
       collection: COLLECTION,
       columns: [
@@ -417,6 +419,7 @@ class FakeClient {
     this.#requireRevision(revision);
     const table = count === 0 ? this.#table() : await this.queryTable(collection);
     return {
+      cell_styling: table.cell_styling,
       revision,
       collection: table.collection,
       columns: table.columns,
@@ -692,6 +695,7 @@ function installCatalog(
     if (!definition) throw new Error(`missing test table ${key}`);
     const rows = definition.rows ?? [];
     return {
+      cell_styling: CELL_STYLING,
       revision: windowRevision,
       collection: definition.collection,
       columns: definition.columns.map(column => ({ ...column, required: true, display_name: column.key })),
@@ -1573,6 +1577,7 @@ describe("createSheetRuntime", () => {
   it("refuses a catalog reply that names a different table", async () => {
     const { client, runtime, view } = await opened();
     client.hooks.queryTableWindow = async (revision, _collection, start) => ({
+      cell_styling: view.table.cell_styling,
       revision,
       collection: { ...view.table.collection, key: "other" },
       columns: view.table.columns,
@@ -1640,6 +1645,7 @@ describe("createSheetRuntime", () => {
         }),
       install: (client: FakeClient) => {
         client.hooks.queryTableWindow = async (_revision, _collection, start) => ({
+          cell_styling: CELL_STYLING,
           revision: "stale", collection: COLLECTION, columns_revision: "c1", total_rows: 0, unfiltered_rows: 0, start,
           columns: [
             { id: "f1", key: "impact", display_name: "impact", field_type: "number", required: true },
@@ -1664,7 +1670,7 @@ describe("createSheetRuntime", () => {
         ] });
         client.hooks.queryTableWindow = async (_revision, key, start) => {
           if (key === "inventory") throw new Error("unavailable table");
-          return { revision: "r1", collection: COLLECTION, columns_revision: "c1", total_rows: 0, unfiltered_rows: 0, start, columns: [
+          return { cell_styling: CELL_STYLING, revision: "r1", collection: COLLECTION, columns_revision: "c1", total_rows: 0, unfiltered_rows: 0, start, columns: [
             { id: "f1", key: "impact", display_name: "impact", field_type: "number", required: true },
             { id: "f2", key: "notes", display_name: "notes", field_type: "text", required: true },
           ], rows: [] };
@@ -2563,6 +2569,7 @@ describe("whole-table reads above Work's 1,000-row query", () => {
     client.calls.queryTableWindow.length = 0;
     client.hooks.queryTable = async () => { throw new FakeDesignerRuntimeError("use_window_query", client.currentRevision); };
     const windowOf = (revision: string, start: number, count: number): TableWindowProjection => ({
+      cell_styling: base.cell_styling,
       revision,
       collection: base.collection,
       columns: base.columns,
@@ -2664,6 +2671,7 @@ describe("table addition adapter", () => {
       collections: [COPY, COLLECTION],
     });
     client.hooks.queryTable = async key => ({
+      cell_styling: CELL_STYLING,
       revision: client.currentRevision, collection: key === COPY.key ? COPY : COLLECTION,
       columns: [{ id: "f1", key: "a", display_name: "A", field_type: "text", required: false }], rows: [],
     });
@@ -2723,6 +2731,7 @@ describe("table duplication adapter", () => {
       collections: [COLLECTION, COPY],
     });
     client.hooks.queryTable = async (key) => ({
+      cell_styling: CELL_STYLING,
       revision: client.currentRevision,
       collection: key === COPY.key ? COPY : COLLECTION,
       columns: [{ id: "f1", key: "impact", display_name: "impact", field_type: "number", required: true }],
@@ -2773,7 +2782,7 @@ describe("table duplication adapter", () => {
     });
     client.hooks.queryTable = async (key) => {
       if (key === COPY.key) throw new FakeDesignerRuntimeError("missing_collection", client.currentRevision);
-      return { revision: client.currentRevision, collection: COLLECTION, columns: [], rows: [] };
+      return { cell_styling: CELL_STYLING, revision: client.currentRevision, collection: COLLECTION, columns: [], rows: [] };
     };
 
     const undone = await runtime.trackerHistory(witnessOf(confirmed.view), "undo");

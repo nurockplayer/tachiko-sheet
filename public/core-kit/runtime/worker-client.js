@@ -171,6 +171,9 @@ export class WorkerDesignerClient {
     async newTableWorkingSize(name, columns) {
         return expectResponse("opened_window", await this.#command({ type: "new_table", occurrence_id: freshOccurrenceId(), name, columns, profile: "working_size" }));
     }
+    async rangeToTable(expectedRevision, range, name, hasHeader) {
+        return expectResponse("duplicated", await this.#command({ type: "range_to_table", expected_revision: expectedRevision, range, name, has_header: hasHeader }));
+    }
     async duplicateCollection(expectedRevision, collection, name, columnNames, toIndex) {
         const columns = columnNames === undefined ? {} : { column_names: columnNames };
         const copy = { expected_revision: expectedRevision, collection, name, ...columns };
@@ -226,6 +229,9 @@ export class WorkerDesignerClient {
     }
     async setCellStyleRange(expectedRevision, collection, row, rowCount, fields, changes) {
         return this.trackerCommand({ type: "set_cell_style_range", expected_revision: expectedRevision, collection, row, row_count: rowCount, fields, changes });
+    }
+    async setTableVisibility(expectedRevision, collection, entities, fields, hidden) {
+        return this.trackerCommand({ type: "set_table_visibility", expected_revision: expectedRevision, collection, entities, fields, hidden });
     }
     async setColumnWidth(expectedRevision, collection, field, width) {
         return this.trackerCommand({ type: "set_column_width", expected_revision: expectedRevision, collection, field, width });

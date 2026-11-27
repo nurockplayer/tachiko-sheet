@@ -145,6 +145,7 @@ function makeView(options: { columns?: boolean; titleValue?: string; titleDiagno
     revision: "rev-1",
     collections: [{ id: "col-1", key: "release_items", display_name: "release_items", headerless: false, data_start_row: 2, entity_count: rows.length }],
     table: {
+      cell_styling: { status: "supported" },
       revision: "rev-1",
       collection: { id: "col-1", key: "release_items", display_name: "release_items", headerless: false, data_start_row: 2, entity_count: rows.length },
       columns: options.columns === false ? [] : columns,

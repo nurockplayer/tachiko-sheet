@@ -8,8 +8,10 @@ export type ImportOptions = {
     header_rows?: (number | null)[];
     keep_summary_rows?: boolean;
 };
-/** Where the imported grid sat in the source sheet; omitted when the header is row 1 and no Total row was recognised. */
+/** Source grid layout. Hidden rows and columns use zero-based positions in the retained data. */
 export type SourceLayout = {
+    hidden_rows?: number[];
+    hidden_columns?: number[];
     rows_above_header?: number;
     summary_row?: {
         row: number;

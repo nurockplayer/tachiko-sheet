@@ -4,7 +4,7 @@ import type { WorkbookView } from "../contracts.js";
 import { applyViewHistory, confirmHistoryCommand, confirmScalarHistory, emptyLocalHistory, KNOWN_HISTORY_LIMIT, observeLocalHistory, recordViewHistory } from "./local-history.js";
 
 function view(occurrence = "occ-1", revision = "r0"): WorkbookView {
-  return { title: "Work", occurrence, revision, collections: [], table: { revision, collection: { key: "items", display_name: "items", id: "items", headerless: false, data_start_row: 2, entity_count: 0 }, columns: [], rows: [] } };
+  return { title: "Work", occurrence, revision, collections: [], table: { cell_styling: { status: "supported" }, revision, collection: { key: "items", display_name: "items", id: "items", headerless: false, data_start_row: 2, entity_count: 0 }, columns: [], rows: [] } };
 }
 function publication(base: string, resulting: string): PublicationProjection {
   return { base_revision: base, resulting_revision: resulting, entities: [], fields: [], affected_calculations: [], schemas: [], schema_fields: [] };

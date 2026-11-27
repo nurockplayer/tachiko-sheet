@@ -21,7 +21,7 @@ it.each([
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const collection = { id: "s1", key: "s1", display_name: "Original", headerless: false, data_start_row: 2, entity_count: 0 };
   const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1", requiresPortableSave: true,
-    collections: [collection], table: { revision: "r1", collection, columns: [], rows: [] } };
+    collections: [collection], table: { cell_styling: { status: "supported" }, revision: "r1", collection, columns: [], rows: [] } };
   const metadata = { version: 1 as const, sheets: [{ schema_id: "s1", name: "Original", has_header: true, columns: [], rows: [] }] };
   const source = { name: "book.xlsx", format: "xlsx", bytes: new Uint8Array([8, 7]).buffer, metadata, ledger: [] };
   const exported = { revision: "r1", bytes: new ArrayBuffer(1), ledger: [] };
@@ -130,9 +130,9 @@ it("offers Save a copy on a reader-only host after imported XLSX addTable and sa
   const collection = { id: "s1", key: "s1", display_name: "Original", headerless: false, data_start_row: 2, entity_count: 0 };
   const added = { id: "s2", key: "s2", display_name: "Added", headerless: false, data_start_row: 2, entity_count: 0 };
   const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1",
-    collections: [collection], table: { revision: "r1", collection, columns: [], rows: [] } };
+    collections: [collection], table: { cell_styling: { status: "supported" }, revision: "r1", collection, columns: [], rows: [] } };
   const next: WorkbookView = { ...view, revision: "r2", requiresPortableSave: true, openedFromWorkFile: true,
-    collections: [collection, added], table: { revision: "r2", collection: added, columns: [], rows: [] } };
+    collections: [collection, added], table: { cell_styling: { status: "supported" }, revision: "r2", collection: added, columns: [], rows: [] } };
   const metadata = { version: 1 as const, sheets: [{ schema_id: "s1", name: "Original", has_header: true, columns: [], rows: [] }] };
   const latest = { ...metadata, sheets: [...metadata.sheets, { ...metadata.sheets[0]!, schema_id: "s2", name: "Added" }] };
   const source = { name: "book.xlsx", format: "xlsx", bytes: new Uint8Array([8, 7]).buffer, metadata, ledger: [] };
@@ -165,7 +165,7 @@ it("allows imported exports and Save after an unknown cell edit and Refresh", as
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const collection = { id: "s1", key: "s1", display_name: "Original", headerless: false, data_start_row: 2, entity_count: 0 };
   const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1",
-    collections: [collection], table: { revision: "r1", collection, columns: [], rows: [] } };
+    collections: [collection], table: { cell_styling: { status: "supported" }, revision: "r1", collection, columns: [], rows: [] } };
   const metadata = { version: 1 as const, sheets: [{ schema_id: "s1", name: "Original", has_header: true, columns: [], rows: [] }] };
   const source = { name: "book.xlsx", format: "xlsx", bytes: new Uint8Array([8, 7]).buffer, metadata, ledger: [] };
   const exported = { revision: "r1", bytes: new ArrayBuffer(1), ledger: [] };
@@ -201,7 +201,7 @@ it("retains XLSX origin through a work-file download and reopen, and reads nativ
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const collection = { id: "s1", key: "s1", display_name: "Original", headerless: false, data_start_row: 2, entity_count: 0 };
   const metadata = { version: 1 as const, sheets: [{ schema_id: "s1", name: "Original", has_header: true, columns: [], rows: [] }] };
-  const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1", collections: [collection], table: { revision: "r1", collection, columns: [], rows: [] }, importMetadata: metadata };
+  const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1", collections: [collection], table: { cell_styling: { status: "supported" }, revision: "r1", collection, columns: [], rows: [] }, importMetadata: metadata };
   const bytes = new Uint8Array([8, 7]).buffer;
   const source = { name: "book.xlsx", format: "xlsx", bytes, metadata, ledger: [] };
   const runtime = {
@@ -238,7 +238,7 @@ it("saves XLSX origin after Refresh recovers an older saved copy without a compa
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const collection = { id: "s1", key: "s1", display_name: "Original", headerless: false, data_start_row: 2, entity_count: 0 };
   const metadata = { version: 1 as const, sheets: [{ schema_id: "s1", name: "Original", has_header: true, columns: [], rows: [] }] };
-  const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1", collections: [collection], table: { revision: "r1", collection, columns: [], rows: [] }, importMetadata: metadata };
+  const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1", collections: [collection], table: { cell_styling: { status: "supported" }, revision: "r1", collection, columns: [], rows: [] }, importMetadata: metadata };
   const bytes = new Uint8Array([8, 7]).buffer;
   const importedSource = { name: "book.xlsx", format: "xlsx", bytes, metadata, ledger: [] };
   const runtime = {
@@ -273,7 +273,7 @@ it.each(["xlsx", "csv", "native"] as const)("preserves %s work-file origin after
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const collection = { id: "s1", key: "s1", display_name: "Original", headerless: false, data_start_row: 2, entity_count: 0 };
   const metadata = { version: 1 as const, sheets: [{ schema_id: "s1", name: "Original", has_header: true, columns: [], rows: [] }] };
-  const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1", collections: [collection], table: { revision: "r1", collection, columns: [], rows: [] }, importMetadata: metadata };
+  const view: WorkbookView = { title: "Imported", occurrence: "o1", revision: "r1", collections: [collection], table: { cell_styling: { status: "supported" }, revision: "r1", collection, columns: [], rows: [] }, importMetadata: metadata };
   const bytes = new Uint8Array([8, 7]).buffer;
   const file = new File([bytes], "work.ro");
   const runtime = {

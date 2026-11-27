@@ -4,6 +4,7 @@ import { DRAFT_ROW } from "./row-entry-model.js";
 import { rowInsertFocusTarget } from "./row-insert-focus.js";
 
 const table = (entities: string[], fields = ["first", "second"]): WorkbookView["table"] => ({
+  cell_styling: { status: "supported" },
   revision: "after", collection: { id: "table", key: "table", display_name: "Table", headerless: false, data_start_row: 2, entity_count: entities.length },
   native_table_profile: true,
   columns: fields.map(id => ({ id, key: id, display_name: id, field_type: "text", required: true })),

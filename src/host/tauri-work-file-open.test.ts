@@ -54,7 +54,7 @@ it.each(["imported", "native", "pathless"] as const)("opens a %s .ro from the de
     : [{ id: "native", key: "native", display_name: "Native", headerless: false, data_start_row: 2, entity_count: 0 }];
   const view: WorkbookView = { title: "Book", occurrence: "o1", revision: "r1", openedFromWorkFile: true,
     ...(kind === "imported" ? { importMetadata: metadata } : {}), collections,
-    table: { revision: "r1", native_table_profile: true, collection: collections[0]!, columns: [], rows: [] } };
+    table: { cell_styling: { status: "supported" }, revision: "r1", native_table_profile: true, collection: collections[0]!, columns: [], rows: [] } };
   const runtime = {
     prepare: vi.fn(async () => {}), queryCapacity: vi.fn(async () => null),
     discoverKeyedGroupedSums: vi.fn(async () => []), openWorkFile: vi.fn(async () => view),

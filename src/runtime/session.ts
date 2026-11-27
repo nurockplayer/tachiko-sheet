@@ -442,6 +442,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     return { columnsRevision: first.columns_revision, display: true, table: {
       ...(first.tracker_profile ? { tracker_profile: true } : {}),
       ...(first.native_table_profile ? { native_table_profile: true } : {}),
+      cell_styling: first.cell_styling,
       revision: first.revision, collection: first.collection, columns: first.columns, rows,
       ...(first.column_totals ? { column_totals: first.column_totals } : {}),
     } };

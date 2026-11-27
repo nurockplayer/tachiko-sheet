@@ -7,7 +7,7 @@ import { ResultsPane, SalesTip } from "./ResultsPane.js";
 const view: WorkbookView = {
   title: "Sheet J4 Catalog Sales", occurrence: "occurrence-1", revision: "revision-1",
   collections: [{ id: "sales", key: "sales", display_name: "sales", headerless: false, data_start_row: 2, entity_count: 1 }],
-  table: { revision: "revision-1", collection: { id: "sales", key: "sales", display_name: "sales", headerless: false, data_start_row: 2, entity_count: 1 }, columns: [], rows: [] },
+  table: { cell_styling: { status: "supported" }, revision: "revision-1", collection: { id: "sales", key: "sales", display_name: "sales", headerless: false, data_start_row: 2, entity_count: 1 }, columns: [], rows: [] },
 };
 const report = { definitionId: "definition-1", type: "bar" as const, title: "Sales by product", categoryLabel: "Product", valueLabel: "Revenue", legendVisible: false };
 const grouped: KeyedGroupedSumResult = { definitionId: "definition-1", revision: "revision-1", groups: [{ category: "PEN", value: 800 }], diagnostics: [] };
