@@ -6363,7 +6363,7 @@ export function SheetShell(props: SheetShellProps) {
               onChange={changeFormulaDraft}
               onKeyDown={onFormulaKeyDown}
             />
-            <div className="ts-grid-scroll" ref={gridScrollRef} tabIndex={-1} onKeyDown={event => { if (event.target === event.currentTarget) visibilityShortcut(event, null); }} onWheelCapture={cancelPasteReveal} onTouchMoveCapture={cancelPasteReveal} onScroll={() => { if (gridWindowed) onGridScroll(); schedulePasteReveal(); repositionOpenColumnMenu(); }}>
+            <div className="ts-grid-scroll" ref={gridScrollRef} tabIndex={onSetTableVisibility && (!displayRows.length || !columns.length) ? -1 : undefined} onKeyDown={event => { if (event.target === event.currentTarget) visibilityShortcut(event, null); }} onWheelCapture={cancelPasteReveal} onTouchMoveCapture={cancelPasteReveal} onScroll={() => { if (gridWindowed) onGridScroll(); schedulePasteReveal(); repositionOpenColumnMenu(); }}>
               {/* React removes old keyed rows/spacers before adding their replacements.
                   Reserve the full extent outside the table so WebKit cannot clamp
                   scrollTop against a temporarily shorter table during that commit.
