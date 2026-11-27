@@ -32,9 +32,6 @@ export function a1Geometry(
   };
 }
 
-/** Bytes of row ids one request may carry: Work's wire limit is 65,536 bytes for the whole request. */
-const A1_GEOMETRY_ROW_BYTES = 60_000;
-
 /**
  * The geometry one formula needs: the displayed rows from its first to its last
  * address, including its own row, with the header row moved to just above them,
@@ -46,6 +43,7 @@ export function a1GeometryFor(
   columns: readonly { id: string }[],
   ownerEntity: string,
   references: { rows: readonly number[]; range: boolean },
+  requestByteLimit: number,
   headerRow = A1_HEADER_ROW,
 ): { headerRow: number; rows: string[]; columns: string[] } | null {
   const full = { ...a1Geometry(displayRows, columns), headerRow };
@@ -57,5 +55,5 @@ export function a1GeometryFor(
     const last = Math.max(ownerRow, ...references.rows);
     geometry = { ...full, headerRow: first - 1, rows: full.rows.slice(first - headerRow - 1, last - headerRow) };
   }
-  return new TextEncoder().encode(JSON.stringify(geometry.rows)).length <= A1_GEOMETRY_ROW_BYTES ? geometry : null;
+  return new TextEncoder().encode(JSON.stringify(geometry)).byteLength <= requestByteLimit ? geometry : null;
 }
