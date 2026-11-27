@@ -1189,6 +1189,13 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     }, true);
   }
 
+  function setTableVisibility(witness: ViewWitness, collection: string, entities: string[], fields: string[], hidden: boolean) {
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.setTableVisibility, "row and column visibility");
+      return command.call(client, revision, collection, entities, fields, hidden);
+    }, true);
+  }
+
   function setCellStyle(witness: ViewWitness, collection: string, rows: CellStyleRows, fields: string[], changes: CellStyleChange[]) {
     return confirmedMutation(witness, (client, revision) => {
       if ("entities" in rows) {
@@ -1635,10 +1642,6 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
         if (!hasFailureCode(kit, error, "capacity_exceeded")) throw error;
         source = await inspectLosslessWorkingSize(kit, client, bytes, format, options, error);
       }
-      // Work preserves visibility, but the Sheet grid still displays every row and column.
-      if (source.sheets.some(({ layout }) => layout?.hidden_rows?.length || layout?.hidden_columns?.length)) {
-        throw new Error("Sheet cannot open spreadsheets with hidden rows or columns.");
-      }
       return source;
     });
   }
@@ -1896,7 +1899,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   return {
     get requestByteLimit() { return requestByteLimit; },
     prepare,
-    addTable, newTable, newBlankWorkbook, writeCellAt, insertRow, editCells, pasteCells, pasteCellsAt, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setCellStyle, setColumnWidth, queryCapacity, querySelectionStatistics, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, moveCollection, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    addTable, newTable, newBlankWorkbook, writeCellAt, insertRow, editCells, pasteCells, pasteCellsAt, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setCellStyle, setColumnWidth, setTableVisibility, queryCapacity, querySelectionStatistics, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, moveCollection, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };

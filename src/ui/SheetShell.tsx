@@ -67,6 +67,7 @@ import { submitColumnIntent, type ColumnDialogState, type ColumnDraft } from "./
 import { NewTableDialog } from "./NewTableDialog.js";
 import { TemplatePicker } from "./TemplatePicker.js";
 import { A1_HEADER_ROW, a1ColumnLetter, a1GeometryFor, a1RowNumber } from "./a1-geometry.js";
+import { visibilityAxis, visibilityGap, visibilityTargets } from "./grid-visibility.js";
 import { A1_TOO_MANY_ROWS, a1EditorStillCurrent, a1GoToTarget, a1NoteText, a1References, a1ReferencedRanges, a1RefusalText, cycleA1Reference, isTachikoFormulaSource, utf8SpanToUtf16 } from "./a1-formula.js";
 import type { A1TranslationNote } from "../../public/core-kit/runtime/protocol.js";
 import { ShortcutHelpDialog } from "./ShortcutHelpDialog.js";
@@ -605,7 +606,7 @@ export function SheetShell(props: SheetShellProps) {
     onAddColumn,
     onSetColumnRequiredness,
     onSetColumnConstraint,
-    onSetColumnNumberFormat, onSetColumnDateFormat, onSetColumnAlignment, onSetCellStyle, onSetColumnWidth,
+    onSetColumnNumberFormat, onSetColumnDateFormat, onSetColumnAlignment, onSetCellStyle, onSetColumnWidth, onSetTableVisibility,
     onRenameColumn,
     onRemoveColumn,
     onMoveColumn,
@@ -901,7 +902,7 @@ export function SheetShell(props: SheetShellProps) {
     if (gridWindowed) syncGridWindow();
   }, [gridZoom]);
   const [cellSelection, setCellSelection] = useState<{ identity: string; revision: string; anchor: GridPosition; end: GridPosition; fromFillHandle?: boolean; wholeColumns?: boolean; wholeRows?: boolean } | null>(null);
-  const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition; activeCell?: GridPosition; pasteSpecial?: boolean; column?: string; trigger?: HTMLElement } | null>(null);
+  const [cellMenu, setCellMenu] = useState<{ x: number; y: number; position: GridPosition; activeCell?: GridPosition; pasteSpecial?: boolean; row?: true; column?: string; trigger?: HTMLElement } | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   // The live grid focus for async continuations: a translation that returns
   // after the user moved to another cell must not touch the editor it left.
@@ -1323,7 +1324,7 @@ export function SheetShell(props: SheetShellProps) {
   const worksheet = Boolean(table?.collection.headerless && onWriteCellAt && !importedSourceName && !interop?.metadata);
   const headerRow = worksheet ? 0 : A1_HEADER_ROW;
   // These addresses describe unallocated grid space, never canonical entities.
-  const columns = useMemo<TableColumn[]>(() => {
+  const sheetColumns = useMemo<TableColumn[]>(() => {
     if (!table) return [];
     const stored = tableColumns(table).map(column => ({
       ...column, display_name: names.column(table.collection.id, column.id) ?? column.display_name,
@@ -1332,11 +1333,13 @@ export function SheetShell(props: SheetShellProps) {
       id: `worksheet-column:${stored.length + offset}`, key: "", display_name: a1ColumnLetter(stored.length + offset), field_type: "auto", required: false,
     }))] : stored;
   }, [table, names, worksheet]);
+  const columnAxis = useMemo(() => visibilityAxis(sheetColumns, column => column.id), [sheetColumns]);
+  const columns = columnAxis.visible;
   const insertionLimitReached = Boolean(table?.native_table_profile && nativeInsertionLimitReached(rowSource(table).total));
   const hasDraftRow = Boolean(table?.native_table_profile && onInsertRow && !insertionLimitReached);
   const tableSpace = Boolean(table?.native_table_profile && onWriteCellAt && !worksheet && !importedSourceName && !interop?.metadata);
   const adjacentColumn: TableColumn | null = tableSpace ? {
-    id: "table-space-column", key: "", display_name: a1ColumnLetter(columns.length), field_type: "auto", required: false,
+    id: "table-space-column", key: "", display_name: a1ColumnLetter(sheetColumns.length), field_type: "auto", required: false,
   } : null;
   const [gridViewportRows, setGridViewportRows] = useState(3);
   const boundRowDraft = rowDraft?.occurrence === view?.occurrence && rowDraft?.collection === table?.collection.id ? rowDraft : null;
@@ -1346,7 +1349,7 @@ export function SheetShell(props: SheetShellProps) {
     ? gridViews.byCollection[table.collection.key]
     : undefined;
   const gridSettings = useMemo<RowViewSettings>(() => {
-    const ids = new Set(columns.map((column) => column.id));
+    const ids = new Set(sheetColumns.map((column) => column.id));
     const widths = rawGridSettings?.widths;
     const keptWidths = widths ? Object.entries(widths).filter(([field]) => ids.has(field)) : undefined;
     return {
@@ -1358,7 +1361,7 @@ export function SheetShell(props: SheetShellProps) {
         : keptWidths.length === Object.keys(widths!).length ? widths
         : keptWidths.length > 0 ? Object.fromEntries(keptWidths) : undefined,
     };
-  }, [columns, rawGridSettings]);
+  }, [sheetColumns, rawGridSettings]);
   const [phoneLayout, setPhoneLayout] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(max-width: 599px)").matches);
   useEffect(() => {
     const phone = window.matchMedia("(max-width: 599px)");
@@ -1375,14 +1378,16 @@ export function SheetShell(props: SheetShellProps) {
   const displaySignature = rowViewDisplaySignature(gridSettings);
   // A confirmed insertion is already in the installed projection, so its kept
   // entry is committed with the confirmation rather than by a later effect.
-  const displayRows = useMemo(() => {
+  const sheetRows = useMemo<TableRow[]>(() => {
     if (!table) return [];
     const source = rowSource(table).allRowsForNow();
-    const stored = rowViewOrder(source, columns, gridSettings);
+    const stored = rowViewOrder(source, sheetColumns, gridSettings);
     return worksheet ? [...stored, ...Array.from({ length: Math.max(30, stored.length + 1) - stored.length }, (_, offset) => ({
       id: `worksheet-row:${source.length + offset}`, key: "", fields: [],
     }))] : stored;
-  }, [columns, gridSettings, table, worksheet]);
+  }, [sheetColumns, gridSettings, table, worksheet]);
+  const rowAxis = useMemo(() => visibilityAxis(sheetRows, rowEntity), [sheetRows]);
+  const displayRows = rowAxis.visible;
   const storedRowCount = table ? rowSource(table).total : 0;
   const firstBlankRow = displayRows.length + Number(hasDraftRow);
   const blankRowsFiltered = tableSpace && hasDraftRow && Boolean(gridSettings.filters?.length);
@@ -1399,7 +1404,7 @@ export function SheetShell(props: SheetShellProps) {
     if (!beside && !below) return null;
     const row = below ? storedRowCount + 1 + Number(position.entity.slice("table-space-row:".length))
       : rowSource(table).indexOf(position.entity);
-    const column = beside ? columns.length : columns.findIndex(field => field.id === position.field);
+    const column = beside ? sheetColumns.length : columnAxis.indices.get(position.field) ?? -1;
     return row >= 0 && column >= 0 ? { row, column } : null;
   }
 
@@ -1471,8 +1476,8 @@ export function SheetShell(props: SheetShellProps) {
   const formulaState = { ...formulaBarState({
     viewIdentity: viewKey ?? "",
     table,
-    columns,
-    displayRows,
+    columns: sheetColumns,
+    displayRows: sheetRows,
     headerRow,
     focus: focusedPosition,
     currentness,
@@ -1698,7 +1703,7 @@ export function SheetShell(props: SheetShellProps) {
     const column = columns.find((candidate) => candidate.id === field);
     if (!column) return;
     // The header draws its A1 letter before the name; fit both or the name clips.
-    const displayName = `${a1ColumnLetter(columns.indexOf(column))} ${column.display_name}`;
+    const displayName = `${a1ColumnLetter(columnAxis.indices.get(column.id)!)} ${column.display_name}`;
     // Measure in the body cells' font, the one the widest value is drawn in.
     const sample = gridScrollRef.current?.querySelector("td.ts-cell") ?? th;
     // Built from longhands: Chromium returns an empty `font` shorthand when a
@@ -1993,9 +1998,12 @@ export function SheetShell(props: SheetShellProps) {
     const pastedPosition = draft || unallocated ? position : { entity: rowEntity(displayRows[start.row]!), field: columns[start.column]!.id };
     const pasteBlocked = controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen;
     const pasteRowCount = worksheet ? displayRows.filter(row => !row.id.startsWith("worksheet-row:")).length : displayRows.length;
-    const pasteColumns = worksheet ? tableColumns(table) : columns;
+    const pasteColumns = worksheet ? columns.filter(column => !column.id.startsWith("worksheet-column:")) : columns;
     const positional = Boolean(unallocated) || (worksheet && !draft && (start.row + decoded.length > pasteRowCount ||
       start.column + (decoded[0]?.length ?? 0) > pasteColumns.length));
+    const storedStart = unallocated ?? (positional ? {
+      row: rowAxis.indices.get(pastedPosition.entity)!, column: columnAxis.indices.get(pastedPosition.field)!,
+    } : start);
     if (worksheet && decoded.some(row => row.some(value => value.trimStart().startsWith("=")))) {
       announceClipboard(`${worksheetFormulaLimitation} Nothing was pasted.`, true);
       return;
@@ -2031,10 +2039,11 @@ export function SheetShell(props: SheetShellProps) {
       announceClipboard("Clear the sort and filter to paste into unused worksheet cells.", true);
       return;
     }
+    const routeColumns = positional ? sheetColumns : pasteColumns;
     const route = routePaste(decoded, { native: Boolean(table.native_table_profile), draft,
       positional,
       blocked: pasteBlocked,
-      pendingDraft: rowDraftActive, start, rowCount: pasteRowCount, storedRowCount: rowSource(table).allRowsForNow().length, columnTypes: pasteColumns.map(column => column.field_type), columnRequired: pasteColumns.map(column => column.required),
+      pendingDraft: rowDraftActive, start: storedStart, rowCount: pasteRowCount, storedRowCount: rowSource(table).allRowsForNow().length, columnTypes: routeColumns.map(column => column.field_type), columnRequired: routeColumns.map(column => column.required),
       editable: (r, c) => {
         const row = displayRows[r], column = columns[c];
         const slot = row && column ? currentEditorSlot({ entity: rowEntity(row), field: column.id }) : null;
@@ -2046,6 +2055,13 @@ export function SheetShell(props: SheetShellProps) {
       },
     });
     if (route.kind === "refused") { announceClipboard(route.message, true); return; }
+    if (route.kind === "publish" && (positional
+      ? rowSource(table).allRowsForNow().slice(storedStart.row, storedStart.row + decoded.length).some(row => row.hidden) ||
+        sheetColumns.slice(storedStart.column, storedStart.column + decoded[0]!.length).some(column => column.hidden)
+      : sheetColumns.length !== columns.length || (!draft && sheetRows.length !== displayRows.length))) {
+      announceClipboard("Unhide the rows or columns in the pasted block before pasting into unused cells.", true);
+      return;
+    }
     if (route.kind === "draft") {
       const values = { ...boundRowDraft?.values };
       route.rows[0]!.forEach((value, index) => { values[columns[start.column + index]!.id] = value; });
@@ -2089,7 +2105,7 @@ export function SheetShell(props: SheetShellProps) {
     const publish = route.kind === "edit"
       ? () => onEditCells!(witness, edits)
       : positional
-        ? () => onPasteCellsAt!(witness, table.collection.key, start.row, start.column, route.rows)
+        ? () => onPasteCellsAt!(witness, table.collection.key, storedStart.row, storedStart.column, route.rows)
         : () => onPasteCells!(witness, table.collection.key, anchor ? rowEntity(anchor) : null, columns[start.column]!.id, route.rows);
     void publish().then(result => {
       if (liveOccurrenceRef.current !== intent.occurrence || clipboardIdentityRef.current !== collectionIdentity) return;
@@ -2333,12 +2349,74 @@ export function SheetShell(props: SheetShellProps) {
     setCellMenu({ x, y, position, activeCell, column: field, trigger });
   }
 
-  function openRowMenu(x: number, y: number, index: number): void {
-    if (historyInteractionLocked || !columns.length) return;
-    const position = { entity: rowEntity(displayRows[index]!), field: columns[0]!.id };
+  function openRowMenu(x: number, y: number, index: number, trigger: HTMLElement): void {
+    if (historyInteractionLocked) return;
+    const position = { entity: rowEntity(displayRows[index]!), field: columns[0]?.id ?? "" };
     const inside = wholeRowRange && index >= wholeRowRange.top && index <= wholeRowRange.bottom;
     if (!inside) selectHeader("row", index, false);
-    setCellMenu({ x, y, position, activeCell: inside && boundSelection ? boundSelection.anchor : position });
+    setCellMenu({ x, y, position, activeCell: position.field ? (inside && boundSelection ? boundSelection.anchor : position) : undefined, row: true, trigger });
+  }
+
+  function gridVisibilityTargets(axis: "row" | "column", position: GridPosition, hidden: boolean): string[] {
+    const area = selectionRectangle;
+    if (axis === "row") {
+      const first = area ? displayRows[area.top] : undefined;
+      const last = area ? displayRows[area.bottom] : undefined;
+      const entity = displayRows.length ? position.entity : undefined;
+      return visibilityTargets(rowAxis, first ? rowEntity(first) : entity, last ? rowEntity(last) : entity, hidden)
+        .filter(id => !id.startsWith("worksheet-row:"));
+    }
+    return visibilityTargets(columnAxis, area ? columns[area.left]?.id : position.field, area ? columns[area.right]?.id : position.field, hidden)
+      .filter(id => !id.startsWith("worksheet-column:"));
+  }
+
+  function visibilityBlocked(): boolean {
+    return columnChangesBlocked || editor !== null || modalInteractionOpen || props.appearancePreference.getSnapshot().composing;
+  }
+
+  async function changeVisibility(axis: "row" | "column", ids: string[], hidden: boolean): Promise<void> {
+    if (!onSetTableVisibility || !witness || !table || visibilityBlocked() || !ids.length) return;
+    const intent = completionIntent();
+    const active = document.activeElement;
+    const result = await onSetTableVisibility(witness, table.collection.key, axis === "row" ? ids : [], axis === "column" ? ids : [], hidden);
+    if (result.kind === "refused") announceClipboard(result.message, true);
+    if (result.kind !== "confirmed") return;
+    requestAnimationFrame(() => {
+      if (!completionMayUpdateUi(intent) || active?.isConnected && active !== gridScrollRef.current) return;
+      const grid = gridScrollRef.current;
+      withAppFocus(() => (grid?.querySelector<HTMLElement>("td[tabindex='0']") ?? grid)?.focus());
+    });
+  }
+
+  function visibilityShortcut(event: ReactKeyboardEvent<HTMLElement>, position: GridPosition | null): void {
+    if (!onSetTableVisibility || !event.ctrlKey || event.altKey || event.metaKey || isComposingEvent(event)) return;
+    const axis = event.code === "Digit9" || event.key === "9" || event.key === "(" ? "row"
+      : event.code === "Digit0" || event.key === "0" || event.key === ")" ? "column" : null;
+    if (!axis) return;
+    event.preventDefault();
+    const hidden = !event.shiftKey;
+    const ids = position ? gridVisibilityTargets(axis, position, hidden)
+      : axis === "row" ? visibilityTargets(rowAxis, undefined, undefined, hidden) : visibilityTargets(columnAxis, undefined, undefined, hidden);
+    if (!event.repeat) void changeVisibility(axis, ids, hidden);
+  }
+
+  function visibilityMenuItems(axis: "row" | "column", position: GridPosition): CellMenuItem[] {
+    if (!onSetTableVisibility) return [];
+    return [true, false].map(hidden => {
+      const ids = gridVisibilityTargets(axis, position, hidden);
+      return { label: `${hidden ? "Hide" : "Unhide"} ${axis}s`, disabled: visibilityBlocked() || !ids.length, run: () => {
+        closeCellMenu();
+        void changeVisibility(axis, ids, hidden);
+      } };
+    });
+  }
+
+  function renderFullyHiddenAxis(axis: "row" | "column"): ReactNode {
+    if (!onSetTableVisibility || (axis === "row" ? displayRows.length : columns.length)) return null;
+    const ids = axis === "row" ? sheetRows.map(rowEntity) : sheetColumns.map(column => column.id);
+    if (!ids.length) return null;
+    return <button type="button" className="ts-hidden-axis" aria-label={`Unhide ${axis}s`} title={`Unhide ${axis}s`}
+      disabled={visibilityBlocked()} onClick={() => void changeVisibility(axis, ids, false)}>{axis === "row" ? "═" : "║"}</button>;
   }
 
   /** The filter editor lives in the column's disclosure: its heading's, or the compact toolbar that follows the focused cell. */
@@ -2412,6 +2490,7 @@ export function SheetShell(props: SheetShellProps) {
       disabled: rowDeleteBlocked,
       run: command(() => { void deleteRow(); }),
     });
+    if (cellMenu?.row) rowActions.push(...visibilityMenuItems("row", position));
     if (rowActions.length) rowActions.push("separator");
     return [
       { label: "Cut", shortcut: menuShortcut("X", mac), disabled: blocked, run: command(() => { document.execCommand("cut"); }) },
@@ -2432,7 +2511,7 @@ export function SheetShell(props: SheetShellProps) {
   function columnMenuItems(field: string, header: HTMLElement): CellMenuItem[] {
     const column = columns.find(candidate => candidate.id === field);
     if (!column || !table || !view) return [];
-    const index = columns.indexOf(column);
+    const index = columnAxis.indices.get(field)!;
     const position = { entity: displayRows.length ? rowEntity(displayRows[0]!) : "", field };
     const trigger = header.querySelector<HTMLElement>('summary[data-column-action="…"]') ?? header;
     const command = (action: () => void) => () => { closeCellMenu(); action(); };
@@ -2454,10 +2533,11 @@ export function SheetShell(props: SheetShellProps) {
     const items: CellMenuItem[] = displayRows.length ? [...cellItems.slice(0, 4), "separator", ...cellItems.slice(4)] : cellItems.slice(4);
     if (resizable) items.push("separator", { label: "AutoFit column width", disabled: columnChangesBlocked, run: command(() => autoFitColumn(field, header)) });
     const actions: CellMenuItem[] = [];
+    actions.push(...visibilityMenuItems("column", position));
     if (table.native_table_profile && renameAvailable) actions.push({ label: "Rename…", disabled: columnChangesBlocked, run: command(() => openColumnDialog("rename", trigger, field)) });
     if (table.native_table_profile && onRemoveColumn) actions.push({ label: "Remove…", disabled: columnChangesBlocked, run: command(() => openColumnDialog("remove", trigger, field)) });
     if (table.native_table_profile && onMoveColumn) for (const [offset, label] of [[-1, "Move left"], [1, "Move right"]] as const) {
-      actions.push({ label, disabled: columnChangesBlocked || index + offset < 0 || index + offset >= columns.length, run: command(() => { void moveColumn(field, offset, trigger); }) });
+      actions.push({ label, disabled: columnChangesBlocked || index + offset < 0 || index + offset >= sheetColumns.length, run: command(() => { void moveColumn(field, offset, trigger); }) });
     }
     if (table.native_table_profile && onSetColumnRequiredness && canChangeRequiredness(table, field)) actions.push({ label: column.required ? "Allow blanks" : "Require a value", disabled: columnChangesBlocked, run: command(() => { void changeRequiredness(field, trigger); }) });
     if (table.native_table_profile && onSetColumnConstraint && columnRuleKind(column.field_type) !== null) actions.push({ label: "Rule…", disabled: columnChangesBlocked, run: command(() => setRuleDialog({ field, trigger, collection: table.collection.id, occurrence: view.occurrence })) });
@@ -2546,7 +2626,7 @@ export function SheetShell(props: SheetShellProps) {
     };
     focusWrittenCellRef.current = ({ row, column }) => {
       const record = table && rowSource(table).rowAt(row);
-      const field = columns[column];
+      const field = sheetColumns[column];
       if (record && field) focusCell(rowEntity(record), field.id);
     };
     settleFormulaHandoff();
@@ -3390,9 +3470,9 @@ export function SheetShell(props: SheetShellProps) {
     const draftText = into === "bar" ? formulaBarDraftValue(formulaState, formulaDraft) : editor?.value ?? "";
     // A draft that already has [brackets] keeps them; any other draft is A1, the addresses the grid shows.
     if (!onTranslateA1Formula || isTachikoFormulaSource(draftText)) return { token, into };
-    const rowIndex = row ? rowIndexByEntity.get(rowEntity(row)) : undefined;
-    const columnIndex = columns.findIndex((candidate) => candidate.id === column.id);
-    if (rowIndex === undefined || columnIndex < 0) return { token, into };
+    const rowIndex = row ? rowAxis.indices.get(rowEntity(row)) : undefined;
+    const columnIndex = columnAxis.indices.get(column.id);
+    if (rowIndex === undefined || columnIndex === undefined) return { token, into };
     return { token: `${a1ColumnLetter(columnIndex)}${a1RowNumber(rowIndex)}`, into };
   }
 
@@ -3457,8 +3537,8 @@ export function SheetShell(props: SheetShellProps) {
           code: refusal.code,
           message: refusal.message,
           spanText: source.slice(start, end),
-          lastRow: a1RowNumber(displayRows.length - 1),
-          lastColumn: a1ColumnLetter(columns.length - 1),
+          lastRow: a1RowNumber(sheetRows.length - 1),
+          lastColumn: a1ColumnLetter(sheetColumns.length - 1),
         }),
         hint,
       ].filter(Boolean).join(" "),
@@ -3594,7 +3674,7 @@ export function SheetShell(props: SheetShellProps) {
     // formula with no address commits exactly as it did before translation.
     const references = a1References(source);
     if (onTranslateA1Formula && table && state.editable && !isTachikoFormulaSource(source) && (references.rows.length > 0 || references.range)) {
-      const geometry = a1GeometryFor(displayRows, columns, state.target.entity, references, requestByteLimit);
+      const geometry = a1GeometryFor(sheetRows, sheetColumns, state.target.entity, references, requestByteLimit);
       if (!geometry) {
         setFormulaRefusal({ identity: state.identity, message: A1_TOO_MANY_ROWS });
         return;
@@ -3762,18 +3842,23 @@ export function SheetShell(props: SheetShellProps) {
    */
   function goToAddress(text: string): boolean {
     tabRunStartRef.current = null;
-    const target = a1GoToTarget(text, displayRows.length, columns.length, headerRow);
+    const target = a1GoToTarget(text, sheetRows.length, sheetColumns.length, headerRow);
     if (!target) {
       announceClipboard(`“${text.trim()}” isn't a cell in this table.`, true, true);
       return false;
     }
-    const anchor = { entity: rowEntity(displayRows[target.anchor.row]), field: columns[target.anchor.column].id };
-    focusCell(anchor.entity, anchor.field, target.anchor.row);
+    const anchor = { entity: rowEntity(sheetRows[target.anchor.row]!), field: sheetColumns[target.anchor.column]!.id };
+    const end = { entity: rowEntity(sheetRows[target.end.row]!), field: sheetColumns[target.end.column]!.id };
+    if (!formulaCellIsDisplayed(anchor) || !formulaCellIsDisplayed(end)) {
+      announceClipboard("Unhide the row or column before going to that cell.", true, true);
+      return false;
+    }
+    focusCell(anchor.entity, anchor.field);
     if (target.top === target.bottom && target.left === target.right) {
       setCellSelection(null);
     } else {
       // A range keeps its first address as the active cell, even when reversed.
-      extendSelection(anchor, { entity: rowEntity(displayRows[target.end.row]), field: columns[target.end.column].id });
+      extendSelection(anchor, end);
     }
     return true;
   }
@@ -3934,7 +4019,6 @@ export function SheetShell(props: SheetShellProps) {
       setLocalError(`${worksheetFormulaLimitation} The draft was kept.`);
       return false;
     }
-    const at = address(editor);
     const unallocated = tableSpaceAddress(editor);
     const storedRow = table ? rowSource(table).byEntity(editor.entity) : undefined;
     const storedColumn = table?.columns.find(column => column.id === editor.field);
@@ -3950,7 +4034,7 @@ export function SheetShell(props: SheetShellProps) {
       try {
         // Positional allocation follows source order, even when existing rows are sorted.
         const row = unallocated?.row ?? (storedRow ? rowSource(table).indexOf(editor.entity) : Number(editor.entity.slice("worksheet-row:".length)));
-        const column = unallocated?.column ?? (storedColumn ? table.columns.indexOf(storedColumn) : at.column);
+        const column = unallocated?.column ?? columnAxis.indices.get(editor.field)!;
         const outcome = await onWriteCellAt(witness, table.collection.key, row, column, input);
         if (outcome.kind !== "confirmed") {
           setLocalError("message" in outcome ? outcome.message : "The cell could not be confirmed. Refresh the work before continuing.");
@@ -4006,8 +4090,8 @@ export function SheetShell(props: SheetShellProps) {
       // other formula commits exactly as it did before translation.
       if (witness && table && references && (worksheet || tableAdmitsFormulas(table)) && onTranslateA1Formula && !isTachikoFormulaSource(formulaSource) && (references.rows.length > 0 || references.range)) {
         const geometry = a1GeometryFor(
-          worksheet ? displayRows.filter(row => !row.id.startsWith("worksheet-row:")) : displayRows,
-          worksheet ? columns.slice(0, tableColumns(table).length) : columns,
+          worksheet ? sheetRows.filter(row => !row.id.startsWith("worksheet-row:")) : sheetRows,
+          worksheet ? sheetColumns.slice(0, tableColumns(table).length) : sheetColumns,
           slot.target.entity, references, requestByteLimit, headerRow,
         );
         if (!geometry) {
@@ -4222,12 +4306,14 @@ export function SheetShell(props: SheetShellProps) {
     position: GridPosition,
   ): void {
     if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
+    visibilityShortcut(event, position);
+    if (event.defaultPrevented) return;
     const draft = entity === DRAFT_ROW;
     const unallocated = tableSpaceAddress(position);
     if (tableSpace && !editor && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
       const row = draft ? displayRows.length : entity.startsWith("table-space-row:")
         ? firstBlankRow + Number(entity.slice("table-space-row:".length)) : rowIndexByEntity.get(entity) ?? -1;
-      const column = unallocated?.column ?? address(position).column;
+      const column = position.field === adjacentColumn?.id ? columns.length : address(position).column;
       if ((unallocated || (draft && event.key === "ArrowDown") || (adjacentColumn && column === columns.length - 1 && event.key === "ArrowRight")) &&
           ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
         const nextRow = row + (event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0);
@@ -4455,7 +4541,7 @@ export function SheetShell(props: SheetShellProps) {
     }
     if (draft && (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey && position.field === columns.at(-1)?.id))) {
       const mayPublish = Boolean(view && witness && onInsertRow) && !rowInsertBlocked();
-      const action = draftKeyAction(event.key, event.shiftKey, position.field === columns.at(-1)?.id, draftReadiness(columns, boundRowDraft?.values ?? {}), mayPublish);
+      const action = draftKeyAction(event.key, event.shiftKey, position.field === columns.at(-1)?.id, draftReadiness(sheetColumns, boundRowDraft?.values ?? {}), mayPublish);
       if (action === "leave") {
         if (mayPublish) showMissingRowHint();
         // Keep the native Tab destination even when publication is blocked.
@@ -4532,7 +4618,7 @@ export function SheetShell(props: SheetShellProps) {
       const position = { entity: editor.entity, field: editor.field };
       const unallocated = tableSpaceAddress(position);
       const mayPublish = Boolean(view && witness && onInsertRow) && !rowInsertBlocked();
-      const action = draftKeyAction(event.key, event.shiftKey, editor.field === columns.at(-1)?.id, draftReadiness(columns, boundRowDraft?.values ?? {}), mayPublish);
+      const action = draftKeyAction(event.key, event.shiftKey, editor.field === columns.at(-1)?.id, draftReadiness(sheetColumns, boundRowDraft?.values ?? {}), mayPublish);
       if (editor.entity === DRAFT_ROW) {
         if (action === "leave") {
           if (mayPublish) showMissingRowHint();
@@ -4609,8 +4695,8 @@ export function SheetShell(props: SheetShellProps) {
   function showMissingRowHint(): TableColumn | undefined {
     const values = boundRowDraft?.values ?? {};
     if (!hasDraftInput(values) || !table) return undefined;
-    const missing = firstMissingDraftColumn(columns, values);
-    if (missing) setRowError({ message: `Add ${missing.display_name} to add this row.`, fields: [missing.id], missing: true });
+    const missing = firstMissingDraftColumn(sheetColumns, values);
+    if (missing) setRowError({ message: missing.hidden ? `Unhide ${missing.display_name} to add this row.` : `Add ${missing.display_name} to add this row.`, fields: [missing.id], missing: true });
     return missing;
   }
 
@@ -5257,7 +5343,7 @@ export function SheetShell(props: SheetShellProps) {
     if (!table) return null;
     const unallocated = tableSpaceAddress(state);
     if (unallocated) {
-      const column = columns[unallocated.column] ?? adjacentColumn!;
+      const column = sheetColumns[unallocated.column] ?? adjacentColumn!;
       return { target: state, kind: column.field_type as EditableKind, original: "", blank: true, formula: false, required: column.required };
     }
     const row = displayRows.find(candidate => rowEntity(candidate) === state.entity);
@@ -5326,7 +5412,7 @@ export function SheetShell(props: SheetShellProps) {
       if (redirectMissing) focusDraftAfterRender(missing.id, completionIntent());
       return;
     }
-    const initializers = draftInitializers(columns, draft.values);
+    const initializers = draftInitializers(sheetColumns, draft.values);
     if (!initializers) return;
     if (editor?.entity === DRAFT_ROW || (editor && editor.value === editor.original)) setEditor(null);
     rowCommandPendingRef.current = true;
@@ -5605,10 +5691,10 @@ export function SheetShell(props: SheetShellProps) {
 
   async function moveColumn(field: string, offset: -1 | 1, trigger: HTMLElement) {
     if (!view || !table || !witness || !onMoveColumn || columnChangesBlocked || props.appearancePreference.getSnapshot().composing) return;
-    const from = columns.findIndex(column => column.id === field);
+    const from = columnAxis.indices.get(field) ?? -1;
     const to = from + offset;
-    if (from < 0 || to < 0 || to >= columns.length) return;
-    const displayName = columns[from].display_name;
+    if (from < 0 || to < 0 || to >= sheetColumns.length) return;
+    const displayName = sheetColumns[from]!.display_name;
     const intent = completionIntent();
     setColumnAnnouncement(null);
     const result = await onMoveColumn(witness, table.collection.key, field, to);
@@ -6007,9 +6093,12 @@ export function SheetShell(props: SheetShellProps) {
           <tr aria-rowindex={gridWindowed ? 1 : undefined}>
             {/* The gutter reads "Row" in the DOM (frozen seeds and accessible
                 readback); the A1 row number is drawn by CSS, like the letters. */}
-            <th scope="col" className="ts-gutter-head" data-row-number={A1_HEADER_ROW} aria-label="Row 1 (column names)"><span className="ts-visually-hidden">Row</span></th>
-            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${frozenColumnClass(column.id)}${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} data-column-letter={a1ColumnLetter(index)} style={(columnWidths[column.id] ?? (sizedGrid ? drawnColumnWidths[column.id] : undefined)) !== undefined ? { width: columnWidths[column.id] ?? drawnColumnWidths[column.id] } : undefined} onMouseDown={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) event.preventDefault(); }} onClick={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) selectHeader("column", index, event.shiftKey); }} onContextMenu={event => { if ((event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) return; event.preventDefault(); openColumnMenu(event.clientX, event.clientY, index, event.currentTarget); }}>
-              <div className="ts-column-heading" data-column-letter={a1ColumnLetter(index)}><span className="ts-col-head" tabIndex={!compactColumnActions ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions ? event => {
+            <th scope="col" className="ts-gutter-head" data-row-number={A1_HEADER_ROW} aria-label="Row 1 (column names)"><span className="ts-visually-hidden">Row</span>
+              {renderFullyHiddenAxis("row")}
+              {renderFullyHiddenAxis("column")}
+            </th>
+            {columns.map((column, index) => <th key={column.id} scope="col" className={`ts-column-header${frozenColumnClass(column.id)}${focusedKey?.endsWith(`\u0000${column.id}`) ? " ts-column-header--focused" : ""}`} aria-label={column.display_name} data-column-letter={a1ColumnLetter(columnAxis.indices.get(column.id)!)} data-hidden-gap={visibilityGap(columnAxis, column.id)} style={(columnWidths[column.id] ?? (sizedGrid ? drawnColumnWidths[column.id] : undefined)) !== undefined ? { width: columnWidths[column.id] ?? drawnColumnWidths[column.id] } : undefined} onMouseDown={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) event.preventDefault(); }} onClick={event => { if (!(event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) selectHeader("column", index, event.shiftKey); }} onContextMenu={event => { if ((event.target as Element).closest("details, button, input, select, textarea, a, [role='separator']")) return; event.preventDefault(); openColumnMenu(event.clientX, event.clientY, index, event.currentTarget); }}>
+              <div className="ts-column-heading" data-column-letter={a1ColumnLetter(columnAxis.indices.get(column.id)!)}><span className="ts-col-head" tabIndex={!compactColumnActions ? 0 : undefined} onDoubleClick={!compactColumnActions && renameAvailable ? event => openColumnDialog("rename", event.currentTarget, column.id) : undefined} onKeyDown={!compactColumnActions ? event => {
                 if (isComposingEvent(event) || props.appearancePreference.getSnapshot().composing) return;
                 if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); event.stopPropagation(); const header = event.currentTarget.closest("th")!; const rect = header.getBoundingClientRect(); openColumnMenu(rect.left, rect.bottom, index, header); }
                 else if (renameAvailable && (event.key === "F2" || event.key === "Enter")) { event.preventDefault(); openColumnDialog("rename", event.currentTarget, column.id); }
@@ -6164,7 +6253,7 @@ export function SheetShell(props: SheetShellProps) {
           </tr> : null}
         {hasDraftRow ? <>
           <tr className="ts-entry-row" aria-label="New row" aria-rowindex={gridWindowed ? displayRows.length + (hasColumnTotals ? 3 : 2) : undefined}>
-            <th scope="row" className="ts-row-head" aria-label="New row">{tableSpace ? a1RowNumber(displayRows.length, headerRow) : "+"}</th>
+            <th scope="row" className="ts-row-head" aria-label="New row">{tableSpace ? a1RowNumber(sheetRows.length, headerRow) : "+"}</th>
             {columns.map(column => renderCell(null, DRAFT_ROW, column))}
             {adjacentColumn ? <td /> : null}
           </tr>
@@ -6180,7 +6269,7 @@ export function SheetShell(props: SheetShellProps) {
         {Array.from({ length: blankRowCount }, (_, offset) => {
           const entity = blankRowEntity(offset);
           const index = firstBlankRow + offset;
-          const rowNumber = a1RowNumber(index, headerRow);
+          const rowNumber = a1RowNumber(sheetRows.length + 1 + offset, headerRow);
           return <tr key={entity} aria-rowindex={gridWindowed ? index + 2 + Number(hasColumnTotals) : undefined}>
             <th scope="row" className="ts-row-head" aria-label={`Blank grid row ${rowNumber}`}>{rowNumber}</th>
             {columns.map(column => renderCell(null, entity, column))}
@@ -6274,7 +6363,7 @@ export function SheetShell(props: SheetShellProps) {
               onChange={changeFormulaDraft}
               onKeyDown={onFormulaKeyDown}
             />
-            <div className="ts-grid-scroll" ref={gridScrollRef} onWheelCapture={cancelPasteReveal} onTouchMoveCapture={cancelPasteReveal} onScroll={() => { if (gridWindowed) onGridScroll(); schedulePasteReveal(); repositionOpenColumnMenu(); }}>
+            <div className="ts-grid-scroll" ref={gridScrollRef} tabIndex={-1} onKeyDown={event => { if (event.target === event.currentTarget) visibilityShortcut(event, null); }} onWheelCapture={cancelPasteReveal} onTouchMoveCapture={cancelPasteReveal} onScroll={() => { if (gridWindowed) onGridScroll(); schedulePasteReveal(); repositionOpenColumnMenu(); }}>
               {/* React removes old keyed rows/spacers before adding their replacements.
                   Reserve the full extent outside the table so WebKit cannot clamp
                   scrollTop against a temporarily shorter table during that commit.
@@ -6283,7 +6372,7 @@ export function SheetShell(props: SheetShellProps) {
                 ? <div className="ts-grid-extent" style={{ minHeight: gridWindowScrollHeight(displayRows.length, gridRowHeight, gridHeaderHeight, gridFooterHeight) * gridScale }}>{gridTable}</div>
                 : gridTable}
             </div>
-        {cellMenu ? <CellContextMenu x={cellMenu.x} y={cellMenu.y} items={cellMenu.column && cellMenu.trigger ? columnMenuItems(cellMenu.column, cellMenu.trigger) : cellMenu.pasteSpecial ? pasteSpecialItems(cellMenu.position) : cellMenuItems(cellMenu.position)} label={cellMenu.column ? "Column actions" : undefined} onClose={closeCellMenu} /> : null}
+        {cellMenu ? <CellContextMenu x={cellMenu.x} y={cellMenu.y} items={cellMenu.column && cellMenu.trigger ? columnMenuItems(cellMenu.column, cellMenu.trigger) : cellMenu.pasteSpecial ? pasteSpecialItems(cellMenu.position) : !cellMenu.position.field ? visibilityMenuItems("row", cellMenu.position) : cellMenuItems(cellMenu.position)} label={cellMenu.column ? "Column actions" : undefined} onClose={closeCellMenu} /> : null}
         <p className="ts-hint ts-column-status" role="status" aria-live="polite">{columnAnnouncement}</p>
         <p className="ts-hint ts-clipboard-status" role="status" aria-live="polite" aria-atomic="true">{clipboardMessage && (!clipboardMessage.refused || clipboardMessage.polite) ? clipboardMessage.text : null}</p>
         {clipboardMessage?.refused && !clipboardMessage.polite ? <p className="ts-dialog-error ts-row-error ts-clipboard-status" role="alert" aria-live="assertive" aria-atomic="true">{clipboardMessage.text}</p> : null}
@@ -6461,10 +6550,10 @@ export function SheetShell(props: SheetShellProps) {
     const entity = rowEntity(row);
     const isSelectedRow = entity === selectedEntity;
     return <tr key={row.id || entity} className={isSelectedRow ? "ts-row ts-row--selected" : "ts-row"} aria-rowindex={gridWindowed ? index + 2 : undefined}>
-      <th scope="row" className="ts-row-head" onMouseDown={event => event.preventDefault()} onClick={event => selectHeader("row", index, event.shiftKey)} onContextMenu={event => {
+      <th scope="row" className="ts-row-head" data-hidden-gap={visibilityGap(rowAxis, entity)} onMouseDown={event => event.preventDefault()} onClick={event => selectHeader("row", index, event.shiftKey)} onContextMenu={event => {
         event.preventDefault();
-        openRowMenu(event.clientX, event.clientY, index);
-      }}>{a1RowNumber(index, headerRow)}</th>
+        openRowMenu(event.clientX, event.clientY, index, event.currentTarget);
+      }}>{a1RowNumber(rowAxis.indices.get(entity)!, headerRow)}</th>
       {columns.map((column) => renderCell(row, entity, column))}
       {adjacentColumn ? renderCell(row, entity, adjacentColumn) : null}
     </tr>;
@@ -6650,10 +6739,12 @@ export function SheetShell(props: SheetShellProps) {
     const rangeSelected = !draft && selectionRectangle && coordinate.row >= selectionRectangle.top && coordinate.row <= selectionRectangle.bottom && coordinate.column >= selectionRectangle.left && coordinate.column <= selectionRectangle.right;
     // The outlined cells of the formula being typed. A1 rows follow the
     // displayed order, so a sorted view outlines the row the formula uses.
-    const referencedRow = draft ? 0 : a1RowNumber(coordinate.row);
+    const sheetRowIndex = rowAxis.indices.get(entity) ?? -1;
+    const sheetColumnIndex = columnAxis.indices.get(column.id) ?? -1;
+    const referencedRow = draft ? 0 : a1RowNumber(sheetRowIndex);
     const formulaReferenced = !worksheet && !draft && referencedRanges.length > 0
       && referencedRanges.some((range) => referencedRow >= range.top && referencedRow <= range.bottom
-        && coordinate.column >= range.left && coordinate.column <= range.right);
+        && sheetColumnIndex >= range.left && sheetColumnIndex <= range.right);
     // The fill handle sits on the active range's lower-right cell, or on the
     // focused cell when there is no range.
     const fillHandleCorner = !draft && !unallocated && !editor && !controlsLocked && Boolean(table?.native_table_profile)
@@ -6673,7 +6764,7 @@ export function SheetShell(props: SheetShellProps) {
     if (fillPreviewed) classes.push("ts-cell--fill-preview");
     if (editing) classes.push("ts-cell--editing");
     if (focusedKey === key) classes.push("ts-cell--focused");
-    const cellStyle = row?.styles?.[columns.findIndex(item => item.id === column.id)];
+    const cellStyle = row?.styles?.[sheetColumnIndex];
     const borderSides = cellStyle?.border_sides ?? (cellStyle?.border ? ["top", "right", "bottom", "left"] : []);
     return (
       <td
@@ -6684,8 +6775,8 @@ export function SheetShell(props: SheetShellProps) {
         }}
         className={classes.join(" ")}
         style={{ textAlign: column.style?.alignment ?? (column.field_type === "number" || column.field_type === "date" ? "right" : column.field_type === "boolean" ? "center" : "left"), fontWeight: cellStyle?.bold ? 700 : undefined, fontStyle: cellStyle?.italic ? "italic" : undefined, backgroundColor: cellStyle?.fill ? `#${cellStyle.fill}` : undefined, borderTop: borderSides.includes("top") ? "1px solid black" : undefined, borderRight: borderSides.includes("right") ? "1px solid black" : undefined, borderBottom: borderSides.includes("bottom") ? "1px solid black" : undefined, borderLeft: borderSides.includes("left") ? "1px solid black" : undefined }}
-        data-testid={unallocated ? `table-space:${a1ColumnLetter(unallocated.column)}${a1RowNumber(unallocated.row, headerRow)}` : worksheet ? `worksheet:${a1ColumnLetter(coordinate.column)}${a1RowNumber(coordinate.row, headerRow)}` : `cell:${entity}:${column.id}`}
-        data-address={worksheet ? `${a1ColumnLetter(coordinate.column)}${a1RowNumber(coordinate.row, headerRow)}` : undefined}
+        data-testid={unallocated ? `table-space:${a1ColumnLetter(unallocated.column)}${a1RowNumber(unallocated.row, headerRow)}` : worksheet ? `worksheet:${a1ColumnLetter(sheetColumnIndex)}${a1RowNumber(sheetRowIndex, headerRow)}` : `cell:${entity}:${column.id}`}
+        data-address={worksheet ? `${a1ColumnLetter(sheetColumnIndex)}${a1RowNumber(sheetRowIndex, headerRow)}` : undefined}
         data-entry-field={draft ? column.id : undefined}
         aria-label={draft ? `New row ${column.display_name} (${column.field_type === "boolean" ? "Yes/No" : column.field_type === "number" ? "Number" : column.field_type === "date" ? "Date" : "Text"})` : undefined}
         aria-description={draft ? undefined : display.description}
@@ -6849,7 +6940,7 @@ export function SheetShell(props: SheetShellProps) {
       <div role="tabpanel" id={panelId("brief")} aria-labelledby={tabId("brief")} className="ts-panel ts-brief-panel">
         {currentness === "current" ? null : <p className="ts-notice">{freshnessNotice(currentness)}</p>}
         <h1 className="ts-content-heading">Brief</h1>
-        <p className="ts-content-meta">{displayIndex === undefined ? "Same record as Table" : `Row ${a1RowNumber(displayIndex)} · same record as Table`}</p>
+        <p className="ts-content-meta">{displayIndex === undefined ? "Same record as Table" : `Row ${a1RowNumber(rowAxis.indices.get(entity)!)} · same record as Table`}</p>
         <div className="ts-brief-layout">
           <section className="ts-brief-facts" aria-labelledby="brief-facts-heading">
             <h2 className="ts-content-heading" id="brief-facts-heading">Linked facts</h2>
@@ -6923,9 +7014,9 @@ export function SheetShell(props: SheetShellProps) {
 
   function cleanupTargetLabel(target: FieldTarget): string {
     const displayIndex = rowIndexByEntity.get(target.entity);
-    const name = columns.find(candidate => candidate.id === target.field)?.display_name ?? target.field;
+    const name = sheetColumns.find(candidate => candidate.id === target.field)?.display_name ?? target.field;
     const row = table ? rowSource(table).byEntity(target.entity) : undefined;
-    return displayIndex === undefined ? hiddenRowTargetLabel(row ? rowLabel(row, columns) : "", name) : `Row ${a1RowNumber(displayIndex)}, ${name}`;
+    return displayIndex === undefined ? hiddenRowTargetLabel(row ? rowLabel(row, sheetColumns) : "", name) : `Row ${a1RowNumber(rowAxis.indices.get(target.entity)!)}, ${name}`;
   }
 
   function renderInteropPanel(): ReactNode {

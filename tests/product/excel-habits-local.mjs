@@ -2593,26 +2593,74 @@ const cases = [
     assert.equal(source.collection.id, original.collection.id, "reordering changed the source identity");
     await waitForCellText(page, cellIdFor(source, 0, 4), "10");
   } },
-  { id: "52", name: "Hide rows or columns", tier: "C", run: async (page) => {
-    await example(page);
+  { id: "52", name: "Hide rows or columns", tier: "C", budgetMs: 60_000, run: async (page) => {
+    await newTable(page, "Visibility", ["Base", "Input", "Result"].map(name => ({ name, type: "number" })));
+    await addRow(page, ["1", "10", "0"], 1);
+    await addRow(page, ["2", "20", "0"], 2);
+    await addRow(page, ["3", "30", "0"], 3);
     const table = await projection(page);
-    const id = (row, column) => cellIdFor(table, row, column);
-    await page.getByTestId(id(1, 1)).click();
-    await page.keyboard.press("Control+9");
-    await settle(page);
-    const hidden = await page.getByTestId(id(1, 0)).evaluate((node) => {
-      const row = node.closest("tr");
-      const style = getComputedStyle(row);
-      return row.hidden || style.display === "none" || style.visibility === "hidden";
-    });
-    assert.ok(hidden, "Ctrl+9 did not hide the selected row");
-    await page.keyboard.press("Control+0");
-    await settle(page);
-    const columnHidden = await page.getByTestId(id(0, 1)).evaluate((node) => {
-      const style = getComputedStyle(node);
-      return style.display === "none" || style.visibility === "hidden";
-    });
-    assert.ok(columnHidden, "Ctrl+0 did not hide the selected column");
+    const grid = page.getByRole("grid", { name: "Table", exact: true });
+    const row = grid.getByRole("rowheader", { name: "3", exact: true });
+    const column = grid.getByRole("columnheader", { name: "Input", exact: true });
+    const input = page.getByTestId(cellIdFor(table, 1, 1));
+    const result = cellIdFor(table, 0, 2);
+    const undo = page.getByRole("button", { name: "Undo", exact: true });
+
+    await input.click();
+    for (const [digit, header, neighbor] of [["9", row, "rows"], ["0", column, "columns"]]) {
+      await page.keyboard.press(`Control+${digit}`);
+      await header.waitFor({ state: "hidden" });
+      await input.waitFor({ state: "hidden" });
+      await page.keyboard.press(`Control+Shift+${digit}`);
+      await header.waitFor();
+      await undo.click();
+      await header.waitFor({ state: "hidden" });
+      await undo.click();
+      await header.waitFor();
+      await header.click({ button: "right" });
+      await page.getByRole("menuitem", { name: `Hide ${neighbor}`, exact: true }).click();
+      await header.waitFor({ state: "hidden" });
+      if (digit === "9") await page.getByTestId(cellIdFor(table, 0, 1)).click();
+    }
+
+    await grid.locator('th[scope="row"][data-hidden-gap~="after"]').filter({ hasText: /^2$/ }).waitFor();
+    await grid.locator('th[data-column-letter="C"][data-hidden-gap~="before"]').waitFor();
+    await replaceCell(page, result, "=B3*2");
+    await waitForCellText(page, result, "40");
+    await saveCopy(page, "habits-52");
+    await home(page);
+    await page.getByRole("button", { name: "Open saved habits-52", exact: true }).click();
+    await ready(page);
+    await waitForCellText(page, result, "40");
+    assert.equal(await row.count(), 0, "the hidden row returned after reopening the saved work");
+    assert.equal(await column.count(), 0, "the hidden column returned after reopening the saved work");
+
+    await page.getByRole("tab", { name: "Import & export", exact: true }).click();
+    await page.getByRole("button", { name: "Prepare XLSX", exact: true }).click();
+    const download = page.waitForEvent("download");
+    await page.getByRole("dialog", { name: "Confirm download", exact: true }).getByRole("button", { name: "Download", exact: true }).click();
+    const file = await (await download).path();
+    const xml = sheetXml(file);
+    assert.match(xml, /<row\b(?=[^>]*\br="3")(?=[^>]*\bhidden="1")/);
+    assert.match(xml, /<col\b(?=[^>]*\bmin="2")(?=[^>]*\bmax="2")(?=[^>]*\bhidden="1")/);
+
+    await home(page);
+    await (await homeImportInput(page)).setInputFiles({ name: "visibility.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: await readFile(file) });
+    const preview = page.getByRole("dialog", { name: "Review import preview", exact: true });
+    await preview.getByRole("button", { name: "Import file", exact: true }).click();
+    await ready(page);
+    await grid.locator('th[data-column-letter="C"][data-hidden-gap~="before"]').waitFor();
+    assert.equal(await row.count(), 0, "XLSX import showed the hidden row");
+    assert.equal(await column.count(), 0, "XLSX import showed the hidden column");
+    for (const [header, axis] of [[grid.getByRole("rowheader", { name: "2", exact: true }), "rows"], [grid.locator('th[data-column-letter="C"]'), "columns"]]) {
+      await header.click({ button: "right" });
+      await page.getByRole("menuitem", { name: `Unhide ${axis}`, exact: true }).click();
+      await settle(page);
+    }
+    await row.waitFor();
+    await column.waitFor();
+    const imported = await projection(page);
+    await waitForCellText(page, cellIdFor(imported, 1, 1), "20");
   } },
   { id: "53", name: "Chart from totals", tier: "B", budgetMs: 60_000, waitMs: 10_000, note: "Bar, line and pie of a column's totals. Not stored with the work, and not a chart placed on the sheet.", run: async (page) => {
     await newTable(page, "Spending", [{ name: "Category" }, { name: "Amount", type: "number" }]);

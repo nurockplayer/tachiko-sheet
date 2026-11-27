@@ -1834,6 +1834,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.setColumnWidth(witness, collection, field, width), "column");
   }
 
+  function setTableVisibility(witness: ViewWitness, collection: string, entities: string[], fields: string[], hidden: boolean) {
+    return changeRows(witness, () => runtime.setTableVisibility(witness, collection, entities, fields, hidden));
+  }
+
   function setCellStyle(witness: ViewWitness, collection: string, rows: CellStyleRows, fields: string[], changes: CellStyleChange[]) {
     return changeRows(witness, () => runtime.setCellStyle(witness, collection, rows, fields, changes));
   }
@@ -2489,6 +2493,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onSetColumnRequiredness={copies.createWorkFile ? setColumnRequiredness : undefined}
           onSetColumnConstraint={copies.createWorkFile ? setColumnConstraint : undefined}
           onSetColumnWidth={copies.createWorkFile ? setColumnWidth : undefined}
+          onSetTableVisibility={copies.createWorkFile ? setTableVisibility : undefined}
           onSetCellStyle={copies.createWorkFile ? setCellStyle : undefined}
           onSetColumnAlignment={copies.createWorkFile ? setColumnAlignment : undefined}
           onSetColumnDateFormat={copies.createWorkFile ? setColumnDateFormat : undefined}
