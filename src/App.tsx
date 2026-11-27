@@ -41,6 +41,7 @@ import {
   type NewTableColumn,
   type RowInitializer,
   type CellEdit,
+  type CellMove,
   type CellStyleRows,
   type CommitOutcome,
   type CreateCopyOutcome,
@@ -1806,6 +1807,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.editCells(witness, edits));
   }
 
+  function moveCells(witness: ViewWitness, moves: CellMove[]) {
+    return changeRows(witness, () => runtime.moveCells(witness, moves));
+  }
+
   function writeCellAt(witness: ViewWitness, collection: string, row: number, column: number, input: string | ScalarValueEdit) {
     return changeRows(witness, () => runtime.writeCellAt(witness, collection, row, column, input));
   }
@@ -2483,6 +2488,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onNewBlankWorkbook={newBlankWorkbook}
           onWriteCellAt={writeCellAt}
           onEditCells={editCells}
+          onMoveCells={moveCells}
           onCopyFormula={copyFormula}
           onPasteCells={pasteCells}
           onPasteCellsAt={pasteCellsAt}

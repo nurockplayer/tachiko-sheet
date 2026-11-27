@@ -459,25 +459,32 @@ describe("headerless worksheets use the existing grid", () => {
     ["column", "Delete", null], ["column", "Cut", null],
     ["row", "Delete", "headerless.csv"], ["row", "Cut", "headerless.csv"],
     ["column", "Delete", "headerless.csv"], ["column", "Cut", "headerless.csv"],
-  ] as const)("clears stored cells on whole-%s %s (source %s)", async (axis, action, importedSourceName) => {
+  ] as const)("handles whole-%s %s (source %s)", async (axis, action, importedSourceName) => {
     const view = makeView();
     view.table.native_table_profile = true;
     view.table.columns = view.table.columns.slice(0, 2).map(column => ({ ...column, required: false }));
     view.table.rows = view.table.rows.map(row => ({ ...row, fields: row.fields.slice(0, 2) }));
-    const ui = await mount(view, { importedSourceName });
+    const onMoveCells = vi.fn<NonNullable<SheetShellProps["onMoveCells"]>>(async () => ({ kind: "confirmed" }));
+    const ui = await mount(view, { importedSourceName, onMoveCells });
     await act(async () => ui.container.querySelector<HTMLElement>(axis === "row" ? "tbody .ts-row-head" : "thead .ts-column-header")!.click());
-    if (action === "Delete") await ui.key("Delete");
-    else {
+    if (action === "Delete") {
+      await ui.key("Delete");
+      const targets = axis === "row" ? [{ entity: entityA, field: "c-title" }, { entity: entityA, field: "c-impact" }]
+        : [{ entity: entityA, field: "c-title" }, { entity: entityB, field: "c-title" }];
+      expect(ui.onEditCells).toHaveBeenCalledExactlyOnceWith(expect.anything(), targets.map(target => ({ target, input: { kind: "clear" } })));
+    } else {
       const event = new Event("cut", { bubbles: true, cancelable: true });
       const setData = vi.fn();
       Object.defineProperty(event, "clipboardData", { value: { setData } });
       await act(async () => { document.activeElement!.dispatchEvent(event); });
       expect(event.defaultPrevented).toBe(true);
       expect(setData).toHaveBeenCalledWith("text/plain", expect.stringContaining("Alpha work"));
+      expect(ui.container.querySelectorAll(".ts-cell--copied")).toHaveLength(2);
+      expect(ui.onEditCells).not.toHaveBeenCalled();
+      expect(onMoveCells).not.toHaveBeenCalled();
+      await ui.key("Escape");
+      expect(ui.container.querySelectorAll(".ts-cell--copied")).toHaveLength(0);
     }
-    const targets = axis === "row" ? [{ entity: entityA, field: "c-title" }, { entity: entityA, field: "c-impact" }]
-      : [{ entity: entityA, field: "c-title" }, { entity: entityB, field: "c-title" }];
-    expect(ui.onEditCells).toHaveBeenCalledExactlyOnceWith(expect.anything(), targets.map(target => ({ target, input: { kind: "clear" } })));
     expect(ui.onWrite).not.toHaveBeenCalled();
   });
 

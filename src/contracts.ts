@@ -90,6 +90,7 @@ export type NewTableColumn = { name: string; field_type: "text" | "number" | "da
 export type ColumnInitializer = { entity: string; input: ScalarValueEdit };
 /** Cell and row payloads are tracker scalars; formula text never rides them. */
 export type CellEdit = { target: FieldTarget; input: ScalarValueEdit | { kind: "clear" } };
+export type CellMove = { from: FieldTarget; to: FieldTarget };
 export type RowInitializer = { field: string; input: ScalarValueEdit };
 /** Refusals retain the draft; recovery must never replay a dispatched command. */
 export type RowCommandOutcome =
@@ -117,6 +118,7 @@ export interface SheetRuntime {
   addTable(witness: ViewWitness, name: string, columns: NewTableColumn[]): Promise<ConfirmedPublication>;
   insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[], before?: string, count?: number): Promise<ConfirmedPublication>;
   editCells(witness: ViewWitness, edits: CellEdit[]): Promise<ConfirmedPublication>;
+  moveCells(witness: ViewWitness, moves: CellMove[]): Promise<ConfirmedPublication>;
   pasteCells(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]): Promise<ConfirmedPublication>;
   pasteCellsAt(witness: ViewWitness, collection: string, row: number, column: number, rows: PasteCellInput[][]): Promise<ConfirmedPublication>;
   addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[] | undefined, required?: boolean): Promise<ConfirmedPublication>;
@@ -414,6 +416,7 @@ export interface SheetShellProps {
   onNewBlankWorkbook?(): Promise<boolean>;
   onWriteCellAt?(witness: ViewWitness, collection: string, row: number, column: number, input: string | ScalarValueEdit): Promise<RowCommandOutcome>;
   onEditCells?(witness: ViewWitness, edits: CellEdit[]): Promise<RowCommandOutcome>;
+  onMoveCells?(witness: ViewWitness, moves: CellMove[]): Promise<RowCommandOutcome>;
   onCopyFormula?(witness: ViewWitness, request: FormulaCopy): Promise<RowCommandOutcome>;
   onPasteCells?(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]): Promise<RowCommandOutcome>;
   onPasteCellsAt?(witness: ViewWitness, collection: string, row: number, column: number, rows: PasteCellInput[][]): Promise<RowCommandOutcome>;

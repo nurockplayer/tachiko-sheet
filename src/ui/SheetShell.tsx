@@ -613,6 +613,7 @@ export function SheetShell(props: SheetShellProps) {
     onPasteCells,
     onPasteCellsAt,
     onEditCells,
+    onMoveCells,
     onCopyFormula,
     onRemoveRows,
     onRenameTable,
@@ -1508,7 +1509,12 @@ export function SheetShell(props: SheetShellProps) {
   const clipboardIdentityRef = useRef(collectionIdentity);
   clipboardIdentityRef.current = collectionIdentity;
   const copiedFormulaRef = useRef<CopiedFormula & { identity: string | null } | null>(null);
-  const [copiedArea, setCopiedArea] = useState<{ identity: string | null; revision: string | undefined; area: CellRectangle } | null>(null);
+  const [copiedArea, setCopiedArea] = useState<{
+    identity: string | null;
+    revision: string | undefined;
+    area: CellRectangle;
+    cut?: { text: string; entities: string[]; fields: string[] };
+  } | null>(null);
   const [pasteRebind, setPasteRebind] = useState<typeof copiedArea>(null);
   useEffect(() => { setCopiedArea(null); }, [displaySignature]);
   // The clipboard's text can't say who wrote it, so the copy is only trusted until
@@ -1517,7 +1523,8 @@ export function SheetShell(props: SheetShellProps) {
   useEffect(() => {
     const forget = (event: Event) => {
       copiedFormulaRef.current = null;
-      if (!clipboardPosition(event.target)) setCopiedArea(null);
+      const fromGrid = clipboardPosition(event.target);
+      setCopiedArea(current => current?.cut || !fromGrid ? null : current);
     };
     const blur = () => { copiedFormulaRef.current = null; setCopiedArea(null); };
     window.addEventListener("copy", forget, true);
@@ -1913,10 +1920,13 @@ export function SheetShell(props: SheetShellProps) {
     return cell?.dataset.workEntity && cell.dataset.workField ? { entity: cell.dataset.workEntity, field: cell.dataset.workField } : null;
   }
 
-  function clipboardRows(position: GridPosition): string[][] {
+  function clipboardRows(position: GridPosition, cutArea?: CellRectangle): string[][] {
     const point = address(position);
-    const area = position.entity === DRAFT_ROW ? null : selectionRectangle ?? rectangle(point, point);
-    return area ? displayRows.slice(area.top, area.bottom + 1).map(row => columns.slice(area.left, area.right + 1).map(column => fieldClipboardText(fieldForColumn(row, column.id))))
+    const area = cutArea ?? (position.entity === DRAFT_ROW ? null : selectionRectangle ?? rectangle(point, point));
+    return area ? displayRows.slice(area.top, area.bottom + 1).map(row => columns.slice(area.left, area.right + 1).map(column => {
+      const field = fieldForColumn(row, column.id);
+      return cutArea && field?.formula ? `=${field.formula.source}` : fieldClipboardText(field);
+    }))
       : [[boundRowDraft?.values[position.field] ?? ""]];
   }
 
@@ -1939,6 +1949,15 @@ export function SheetShell(props: SheetShellProps) {
     } catch { announceClipboard("Copy could not access the clipboard. Select the cells and try Copy again.", true); }
   }
 
+  function allocatedMoveTargets(area: CellRectangle) {
+    if (area.top < 0 || area.left < 0 || area.bottom < area.top || area.right < area.left ||
+      area.bottom >= displayRows.length || area.right >= columns.length) return null;
+    const rows = displayRows.slice(area.top, area.bottom + 1);
+    const fields = columns.slice(area.left, area.right + 1).map(column => column.id);
+    if (rows.some(row => row.id.startsWith("worksheet-row:")) || fields.some(field => field.startsWith("worksheet-column:"))) return null;
+    return { entities: rows.map(rowEntity), fields };
+  }
+
   function cutGrid(position: GridPosition | null, clipboardData: DataTransfer | null, preventDefault: () => void): void {
     setClipboardMessage(null);
     if (!position || !table || currentness !== "current" || props.appearancePreference.getSnapshot().composing) return;
@@ -1947,27 +1966,29 @@ export function SheetShell(props: SheetShellProps) {
     if (controlsLocked || rowCommandPendingRef.current || currentness !== "current" || editor || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || modalInteractionOpen) {
       announceClipboard("Finish the current edit or operation before cutting cells.", true, true); return;
     }
-    const at = address(position), area = selectionRectangle ?? rectangle(at, at);
+    if (!witness || !onMoveCells || !table.native_table_profile) {
+      announceClipboard("Cutting cells is not available in this view.", true, true); return;
+    }
+    const at = address(position);
+    const selection = selectionRectangle ?? rectangle(at, at);
+    const area = worksheet ? {
+      ...selection,
+      bottom: Math.min(selection.bottom, displayRows.findIndex(row => row.id.startsWith("worksheet-row:")) - 1),
+      right: Math.min(selection.right, columns.findIndex(column => column.id.startsWith("worksheet-column:")) - 1),
+    } : selection;
+    const targets = allocatedMoveTargets(area);
+    if (!targets) { announceClipboard("Select existing cells to cut.", true, true); return; }
     try {
-      const allocatedArea = worksheet ? { ...area,
-        bottom: Math.min(area.bottom, displayRows.findIndex(row => row.id.startsWith("worksheet-row:")) - 1),
-        right: Math.min(area.right, table.columns.length - 1),
-      } : area;
-      const edits = allocatedArea.bottom < allocatedArea.top || allocatedArea.right < allocatedArea.left ? []
-        : clearCellEdits(displayRows, columns, allocatedArea, Boolean(table.native_table_profile), "cut");
-      if (!view || !witness || !onEditCells) { announceClipboard("Cutting cells is not available in this view.", true, true); return; }
-      const rows = clipboardRows(position);
-      const text = encodeTsv(rows);
+      const rows = clipboardRows(position, area);
+      const text = encodeTsv(rows) || '""';
       const tooLarge = cutBlockRefusal(rows.length, text);
       if (tooLarge) { announceClipboard(tooLarge, true, true); return; }
       if (!clipboardData) throw new Error("No clipboard data");
       clipboardData.setData("text/plain", text);
-      if (!edits.length) { setCopiedArea(null); announceClipboard(`Copied ${rows.length} row${rows.length === 1 ? "" : "s"}.`); return; }
-      const cutArea = { identity: collectionIdentity, revision: view?.revision, area };
-      setCopiedArea(cutArea);
-      keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
-      void publishCells(() => onEditCells(witness, edits), edits.length, "Cut", "cut").finally(() => setCopiedArea(current => current === cutArea ? null : current));
-    } catch (error) { announceClipboard(error instanceof CellClearRefusal ? (error.message === FORMULA_BAR_GUIDANCE ? `${error.message} Nothing was cut.` : error.message) : explain(error, "Cut could not access the clipboard."), true, true); }
+      setCopiedArea({ identity: collectionIdentity, revision: witness.revision, area, cut: { text, ...targets } });
+      const count = targets.entities.length * targets.fields.length;
+      announceClipboard(`Cut ${count} cell${count === 1 ? "" : "s"}. Choose a destination to paste or press Esc to cancel.`, false, true);
+    } catch (error) { announceClipboard(explain(error, "Cut could not access the clipboard."), true, true); }
   }
 
   function pasteGrid(event: React.ClipboardEvent<HTMLTableElement>): void {
@@ -1977,26 +1998,52 @@ export function SheetShell(props: SheetShellProps) {
     if (!position || !view || !witness || !table) return;
     event.preventDefault();
     if (props.appearancePreference.getSnapshot().composing) return;
-    let decoded: string[][];
-    try {
-      if (!event.clipboardData || !Array.from(event.clipboardData.types).includes("text/plain")) {
-        announceClipboard("The clipboard has no plain text to paste. Copy cells or text and try again.", true); return;
-      }
-      decoded = decodeTsv(event.clipboardData.getData("text/plain"));
-    } catch (error) { announceClipboard(error instanceof ClipboardRefusal ? error.message : explain(error, "The clipboard could not be read. Nothing was pasted."), true); return; }
-    pasteDecoded(position, decoded);
+    if (!event.clipboardData || !Array.from(event.clipboardData.types).includes("text/plain")) {
+      announceClipboard("The clipboard has no plain text to paste. Copy cells or text and try again.", true); return;
+    }
+    pasteText(position, event.clipboardData.getData("text/plain"));
   }
 
-  /** The decoded block a paste writes: the same work whether the event or the cell menu started it. */
-  function pasteDecoded(position: GridPosition, decoded: string[][], valuesOnly = false): void {
+  function pasteText(position: GridPosition, text: string, valuesOnly = false): void {
     if (!view || !witness || !table) return;
     const pasteSource = boundCopiedArea ? copiedArea : null;
     const draft = position.entity === DRAFT_ROW;
     const unallocated = tableSpaceAddress(position);
     const at = address(position);
     const start = unallocated ?? (draft ? { row: displayRows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at);
-    const pastedPosition = draft || unallocated ? position : { entity: rowEntity(displayRows[start.row]!), field: columns[start.column]!.id };
     const pasteBlocked = controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen;
+    if (pasteSource?.cut) {
+      const cut = pasteSource.cut;
+      if (!valuesOnly && cut.text.replaceAll("\r\n", "\n") === text.replaceAll("\r\n", "\n")) {
+        if (pasteBlocked || rowDraftActive) { announceClipboard("Finish the current edit or operation before pasting.", true); return; }
+        const to = draft || unallocated ? null : allocatedMoveTargets({
+          top: start.row, left: start.column,
+          bottom: start.row + cut.entities.length - 1, right: start.column + cut.fields.length - 1,
+        });
+        if (!to || !onMoveCells) { announceClipboard("Choose an existing range large enough for the cut cells.", true, true); return; }
+        if (start.row === pasteSource.area.top && start.column === pasteSource.area.left) {
+          setCopiedArea(null);
+          announceClipboard("The selected cells are unchanged.", false, true);
+          return;
+        }
+        const moves = cut.entities.flatMap((entity, row) => cut.fields.map((field, column) => ({
+          from: { entity, field }, to: { entity: to.entities[row]!, field: to.fields[column]! },
+        })));
+        const intent = completionIntent();
+        keepGridRows(to.entities);
+        void publishCells(() => onMoveCells(witness, moves), moves.length, "Moved", "move").then(confirmed => {
+          if (!confirmed) return;
+          setCopiedArea(current => current === pasteSource ? null : current);
+          revealPastedCell(moves[0]!.to, intent);
+        });
+        return;
+      }
+      setCopiedArea(null);
+    }
+    let decoded: string[][];
+    try { decoded = decodeTsv(text); }
+    catch (error) { announceClipboard(error instanceof ClipboardRefusal ? error.message : explain(error, "The clipboard could not be read. Nothing was pasted."), true); return; }
+    const pastedPosition = draft || unallocated ? position : { entity: rowEntity(displayRows[start.row]!), field: columns[start.column]!.id };
     const pasteRowCount = worksheet ? displayRows.filter(row => !row.id.startsWith("worksheet-row:")).length : displayRows.length;
     const pasteColumns = worksheet ? columns.filter(column => !column.id.startsWith("worksheet-column:")) : columns;
     const positional = Boolean(unallocated) || (worksheet && !draft && (start.row + decoded.length > pasteRowCount ||
@@ -2022,7 +2069,7 @@ export function SheetShell(props: SheetShellProps) {
           keepGridRows(rowViewBlockRows(displayRows, area.top, area.bottom - area.top + 1).map(rowEntity));
           const intent = completionIntent();
           void publishCells(() => onCopyFormula!(witness, plan.request), plan.count, "Updated", "paste").then(confirmed => {
-            if (confirmed && pasteSource) setPasteRebind(pasteSource);
+            if (confirmed && pasteSource && !pasteSource.cut) setPasteRebind(pasteSource);
             if (confirmed) revealPastedCell(pastedPosition, intent);
           });
           return;
@@ -2109,7 +2156,7 @@ export function SheetShell(props: SheetShellProps) {
         : () => onPasteCells!(witness, table.collection.key, anchor ? rowEntity(anchor) : null, columns[start.column]!.id, route.rows);
     void publish().then(result => {
       if (liveOccurrenceRef.current !== intent.occurrence || clipboardIdentityRef.current !== collectionIdentity) return;
-      if (result.kind === "confirmed" && pasteSource) setPasteRebind(pasteSource);
+      if (result.kind === "confirmed" && pasteSource && !pasteSource.cut) setPasteRebind(pasteSource);
       // Appended rows stay visible under the active filter, as Add row does.
       if (result.kind === "confirmed") {
         keepGridRows(result.addedEntities ?? []);
@@ -2195,7 +2242,7 @@ export function SheetShell(props: SheetShellProps) {
 
   useLayoutEffect(() => { correctPasteReveal(); });
 
-  async function publishCells(run: () => Promise<RowCommandOutcome>, count: number, verb: "Cleared" | "Filled" | "Cut" | "Updated", noun: "clear" | "fill" | "cut" | "paste"): Promise<boolean> {
+  async function publishCells(run: () => Promise<RowCommandOutcome>, count: number, verb: "Cleared" | "Filled" | "Moved" | "Updated", noun: "clear" | "fill" | "move" | "paste"): Promise<boolean> {
     const intent = completionIntent();
     rowCommandPendingRef.current = true;
     setCommitPending(true); setLocalError(null); setClipboardMessage(null);
@@ -2307,8 +2354,8 @@ export function SheetShell(props: SheetShellProps) {
     }
   }
 
-  const pasteDecodedRef = useRef(pasteDecoded);
-  pasteDecodedRef.current = pasteDecoded;
+  const pasteTextRef = useRef(pasteText);
+  pasteTextRef.current = pasteText;
   const pasteTargetRef = useRef({ identity: collectionIdentity, revision: view?.revision, selection: boundSelection });
   pasteTargetRef.current = { identity: collectionIdentity, revision: view?.revision, selection: boundSelection };
 
@@ -2449,18 +2496,13 @@ export function SheetShell(props: SheetShellProps) {
       announceClipboard(valuesOnly ? "The clipboard can't be read here, so Paste values isn't available. Nothing was pasted." : `The clipboard can't be read here. Press ${mac ? "⌘V" : "Ctrl+V"} to paste.`, true);
       return;
     }
-    let decoded: string[][];
-    try { decoded = decodeTsv(text); } catch (error) {
-      announceClipboard(error instanceof ClipboardRefusal ? error.message : explain(error, "The clipboard could not be read. Nothing was pasted."), true);
-      return;
-    }
     // The read can take a while. Paste only where it was asked for, on the latest render's draft and busy checks.
     const live = pasteTargetRef.current;
     if (live.identity !== target.identity || live.revision !== target.revision || live.selection !== target.selection || focusedCell() !== focusAtRead) {
       announceClipboard("The table or selection changed while reading the clipboard. Nothing was pasted.", true);
       return;
     }
-    pasteDecodedRef.current(position, decoded, valuesOnly);
+    pasteTextRef.current(position, text, valuesOnly);
   }
 
   function pasteSpecialItems(position: GridPosition): CellMenuItem[] {
@@ -4408,7 +4450,14 @@ export function SheetShell(props: SheetShellProps) {
       }
       return;
     }
-    if (!draft && event.key === "Escape") { event.preventDefault(); if (boundCopiedArea) setCopiedArea(null); else setCellSelection(null); return; }
+    if (event.key === "Escape" && (boundCopiedArea || !draft)) {
+      event.preventDefault();
+      if (boundCopiedArea) {
+        setCopiedArea(null);
+        if (copiedArea?.cut) announceClipboard("Cut cancelled.", false, true);
+      } else setCellSelection(null);
+      return;
+    }
     const mod = (event.ctrlKey || event.metaKey) && !event.altKey;
     const arrowKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key);
     const selectionIdentity = view && collectionIdentity && displayRows.length > 0 && columns.length > 0 ? { view, identity: collectionIdentity } : null;

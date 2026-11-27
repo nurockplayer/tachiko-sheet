@@ -37,6 +37,7 @@ import {
   type NewTableColumn,
   type RowInitializer,
   type CellEdit,
+  type CellMove,
   type CellStyleRows,
   type PasteCellInput,
   type ColumnInitializer,
@@ -1142,6 +1143,15 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     });
   }
 
+  function moveCells(witness: ViewWitness, moves: CellMove[]) {
+    const inputs = moves.map(({ from, to }) => ({ from: { ...from }, to: { ...to } }));
+    // Refresh the rows because a move also changes stored styles and formula references.
+    return confirmedMutation(witness, (client, revision) => {
+      const command = capability(client.trackerCommand, "cell move");
+      return command.call(client, { type: "move_cells", expected_revision: revision, moves: inputs });
+    }, false, true);
+  }
+
   function writeCellAt(witness: ViewWitness, collection: string, row: number, column: number, input: string | ScalarValueEdit) {
     return confirmedMutation(witness, (client, revision) =>
       capability(client.writeCellAt, "worksheet cell entry").call(client, revision, collection, row + 1, column + 1, typeof input === "string" ? { kind: "auto", input } : input));
@@ -1900,7 +1910,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   return {
     get requestByteLimit() { return requestByteLimit; },
     prepare,
-    addTable, newTable, newBlankWorkbook, writeCellAt, insertRow, editCells, pasteCells, pasteCellsAt, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setCellStyle, setColumnWidth, setTableVisibility, queryCapacity, querySelectionStatistics, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, moveCollection, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    addTable, newTable, newBlankWorkbook, writeCellAt, insertRow, editCells, moveCells, pasteCells, pasteCellsAt, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setCellStyle, setColumnWidth, setTableVisibility, queryCapacity, querySelectionStatistics, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, moveCollection, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };
