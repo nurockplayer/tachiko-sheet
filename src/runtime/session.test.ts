@@ -2039,6 +2039,15 @@ describe("native table and row adapter", () => {
     expect(client.calls.newTable).toEqual([]);
   });
 
+  it("sends one Work command for a counted blank row insert", async () => {
+    const { runtime, client, view } = await opened();
+    await runtime.insertRow(witnessOf(view), COLLECTION.key, [], "e1", 2);
+    expect(client.calls.trackerCommand).toEqual([{
+      type: "insert_row", expected_revision: view.revision, collection: COLLECTION.key,
+      initializers: [], position: { before: "e1" }, count: 2,
+    }]);
+  });
+
   it("snapshots row initializers and removal identities before the serialized dispatch", async () => {
     const { runtime, client, view } = await opened();
     const inputs = [{ field: "f1", input: { kind: "number" as const, input: "" } }];

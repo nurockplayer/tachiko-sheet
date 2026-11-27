@@ -1297,27 +1297,46 @@ const cases = [
     await settle(page);
     const shifted = await currentIds();
     assert.deepEqual(shifted.filter((_, index) => index !== 1), ids, "Ctrl+Shift+= inserts above");
+    await undo();
 
-    await headers.nth(0).click();
-    await headers.nth(1).click({ modifiers: ["Shift"] });
+    const selectTwoRows = async () => {
+      await headers.nth(2).click();
+      await headers.nth(1).click({ modifiers: ["Shift"] });
+    };
+    await selectTwoRows();
     await page.keyboard.press("Control+=");
-    await page.getByText("Insert one row at a time for now", { exact: true }).waitFor();
-    assert.deepEqual(await currentIds(), shifted, "multi-row insert did not publish");
-    await headers.nth(1).click({ button: "right" });
-    const insertItem = page.getByRole("menuitem", { name: "Insert row", exact: true });
-    assert.equal(await insertItem.getAttribute("aria-disabled"), "true");
-    assert.equal(await insertItem.getAttribute("aria-description"), "Insert one row at a time for now");
-    await page.keyboard.press("Escape");
+    await settle(page);
+    const multi = await currentIds();
+    assert.deepEqual([multi[0], ...multi.slice(3)], ids, "Ctrl+= inserts two rows above the top of a backwards selection");
+    assert.equal(new Set(multi).size, ids.length + 2, "both inserted rows have fresh identities");
+    for (const entity of multi.slice(1, 3)) {
+      for (const column of original.columns) {
+        assert.equal((await page.getByTestId(`cell:${entity}:${column.id}`).textContent()).trim(), "");
+      }
+    }
+    await waitForCellText(page, formula, "40");
+    await undo();
+    assert.deepEqual(await currentIds(), ids, "one Undo removes both inserted rows");
+
+    await selectTwoRows();
+    await headers.nth(2).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Insert 2 rows", exact: true }).click();
+    await settle(page);
+    const multiMenu = await currentIds();
+    assert.deepEqual([multiMenu[0], ...multiMenu.slice(3)], ids, "row menu inserts two rows above the selection");
+
+    await headers.nth(1).click();
+    await headers.nth(2).click({ modifiers: ["Shift"] });
     await page.keyboard.press("Control+-");
     await settle(page);
-    assert.deepEqual(await currentIds(), ids.slice(1), "Ctrl+- deletes both selected rows");
+    assert.deepEqual(await currentIds(), ids, "Ctrl+- deletes both selected rows");
     await undo();
-    assert.deepEqual(await currentIds(), shifted, "one Undo restores both deleted row identities");
+    assert.deepEqual(await currentIds(), multiMenu, "one Undo restores both deleted row identities");
 
-    await headers.nth(3).click({ button: "right" });
+    await headers.nth(4).click({ button: "right" });
     await page.getByRole("menuitem", { name: "Delete row", exact: true }).click();
     await settle(page);
-    const finalIds = [ids[0], shifted[1], ids[1], ids[3]];
+    const finalIds = [...multiMenu.slice(0, 4), ids[3]];
     assert.deepEqual(await currentIds(), finalIds);
     await saveCopy(page, "habit-23-rows");
     await home(page);
@@ -1325,7 +1344,7 @@ const cases = [
     await waitForCellText(page, formula, "40");
     const reopened = await projection(page);
     assert.deepEqual(projectedIds(reopened.rows), finalIds, "save and reopen preserve the structural edits");
-    await replaceCell(page, cellIdFor(reopened, 2, 0), "25");
+    await replaceCell(page, cellIdFor(reopened, 3, 0), "25");
     await waitForCellText(page, formula, "50");
   } },
   { id: "24", name: "Workbook sheets", tier: "A", note: "Native and imported add/rename/delete; standalone .ro names/order and XLSX re-import are exercised by the same journey as workbook-tabs step 8.", budgetMs: 120_000, run: async () => {
