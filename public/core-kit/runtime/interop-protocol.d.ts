@@ -1,4 +1,4 @@
-import type { FieldProjection, FieldTarget, OpenedProjection, OpenedWindowProjection, StoredValueProjection } from "./protocol.ts";
+import type { FieldProjection, FieldTarget, OccurrenceProjection, OpenedProjection, OpenedWindowProjection, StoredValueProjection } from "./protocol.ts";
 export type SpreadsheetFormat = "csv" | "xlsx";
 export type ImportFieldType = "text" | "number" | "boolean" | "date";
 /** `header_rows` (1-based header row per sheet; missing or null = detect) and `keep_summary_rows` are XLSX only; CSV refuses them. */
@@ -173,6 +173,9 @@ export type SpreadsheetOperation = {
     metadata: InteropMetadata;
     format: SpreadsheetFormat;
     collection: string;
+} | {
+    type: "export_xlsx_overwrite";
+    expected: OccurrenceProjection;
 } | {
     type: "export_native_tables";
     expected_revision: string;
