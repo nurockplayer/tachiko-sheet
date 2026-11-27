@@ -1086,9 +1086,7 @@ const cases = [
     assert.equal(await dispatches(page), count + 1, "the bracket formula publishes once");
     await valueIs(`cell:${third}:${fields.impact}`, String(bracketProduct));
   }],
-  ["a 2,000-row table refuses references that span too many rows", async (page) => {
-    // A range over every row needs the whole collection in one request, which
-    // the sheet refuses before Work reads it; nearby addresses still translate.
+  ["a 2,000-row table commits a whole-column formula", async (page) => {
     page.setDefaultTimeout(60000);
     const csv = ["Name,Amount,Total", ...Array.from({ length: 2000 }, (_, index) => `Row ${index + 1},${index + 1},${(index + 1) * 2}`)].join("\n");
     const folder = await mkdtemp(path.join(tmpdir(), "a1-large-"));
@@ -1129,8 +1127,6 @@ const cases = [
     const totalId = await total.getAttribute("data-testid");
     let count = await dispatches(page);
 
-    // Working-size imports now accept formulas; these nearby references are
-    // successful controls before the unchanged whole-column refusal below.
     await total.click();
     await bar.fill("=1+2");
     await bar.press("Enter");
@@ -1146,16 +1142,13 @@ const cases = [
     assert.equal(await error.count(), 0);
     assert.equal(await dispatches(page), count + 1, "the translated formula reaches Work exactly once");
 
-    // A range over the whole column does not fit one request.
     count = await dispatches(page);
     await total.click();
     await bar.fill("=SUM(B2:B2001)");
     await bar.press("Enter");
-    await error.waitFor();
-    assert.equal((await error.textContent()).trim(),
-      "This formula's cell references span too many rows for a table this large. Use references closer to this row; ranges over a whole column need a smaller table for now.");
-    assert.equal(await dispatches(page), count, "the refusal publishes nothing");
-    await bar.press("Escape");
+    await page.waitForFunction(id => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === "2001000", totalId);
+    assert.equal(await error.count(), 0);
+    assert.equal(await dispatches(page), count + 1, "the whole-column formula reaches Work exactly once");
     await rm(folder, { recursive: true, force: true });
   }],
 ];
