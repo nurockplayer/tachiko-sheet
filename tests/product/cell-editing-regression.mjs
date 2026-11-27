@@ -9,15 +9,15 @@ import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { homeImportInput, openFolder, openReleasePlanExample, waitForColdHome } from "./home-entry.mjs";
 
-const url = process.env.WORK_CLIENT_URL ?? (process.env.WORK_DIST ? LOCAL_ORIGIN : null);
-if (!url) { console.error("BLOCKED: WORK_CLIENT_URL or WORK_DIST is required."); process.exit(78); }
+const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const dist = process.env.WORK_DIST ?? path.join(root, "dist-acceptance");
+const url = process.env.WORK_CLIENT_URL ?? LOCAL_ORIGIN;
 const expected = JSON.parse(await readFile(new URL("../fixtures/expected.json", import.meta.url), "utf8"));
 const schemas = JSON.parse(await readFile(new URL("../fixtures/release-plan.roproj/schemas.json", import.meta.url), "utf8"));
 const fields = Object.fromEntries(schemas[0].fields.map((field) => [field.key, field.id]));
 const fixture = fileURLToPath(new URL("../fixtures/release-plan.roproj", import.meta.url));
-const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const messyCsv = path.join(root, "acceptance", "j3-interop", "fixtures", "messy.csv");
-const j4CanaryFolder = path.join(process.env.WORK_DIST ?? path.join(root, "dist-acceptance"), "examples", "j4-catalog-sales");
+const j4CanaryFolder = path.join(dist, "examples", "j4-catalog-sales");
 const cell = (page, key) => page.getByTestId(`cell:${expected.entity}:${fields[key]}`);
 const editor = (page) => page.getByTestId("cell-editor");
 const state = (page) => page.evaluate(() => window.__tachikoAcceptance.runtimeSnapshot());
@@ -1086,9 +1086,7 @@ const cases = [
     assert.equal(await dispatches(page), count + 1, "the bracket formula publishes once");
     await valueIs(`cell:${third}:${fields.impact}`, String(bracketProduct));
   }],
-  ["a 2,000-row table refuses references that span too many rows", async (page) => {
-    // A range over every row needs the whole collection in one request, which
-    // the sheet refuses before Work reads it; nearby addresses still translate.
+  ["a 2,000-row table commits a whole-column formula", async (page) => {
     page.setDefaultTimeout(60000);
     const csv = ["Name,Amount,Total", ...Array.from({ length: 2000 }, (_, index) => `Row ${index + 1},${index + 1},${(index + 1) * 2}`)].join("\n");
     const folder = await mkdtemp(path.join(tmpdir(), "a1-large-"));
@@ -1129,8 +1127,6 @@ const cases = [
     const totalId = await total.getAttribute("data-testid");
     let count = await dispatches(page);
 
-    // Working-size imports now accept formulas; these nearby references are
-    // successful controls before the unchanged whole-column refusal below.
     await total.click();
     await bar.fill("=1+2");
     await bar.press("Enter");
@@ -1146,16 +1142,13 @@ const cases = [
     assert.equal(await error.count(), 0);
     assert.equal(await dispatches(page), count + 1, "the translated formula reaches Work exactly once");
 
-    // A range over the whole column does not fit one request.
     count = await dispatches(page);
     await total.click();
     await bar.fill("=SUM(B2:B2001)");
     await bar.press("Enter");
-    await error.waitFor();
-    assert.equal((await error.textContent()).trim(),
-      "This formula's cell references span too many rows for a table this large. Use references closer to this row; ranges over a whole column need a smaller table for now.");
-    assert.equal(await dispatches(page), count, "the refusal publishes nothing");
-    await bar.press("Escape");
+    await page.waitForFunction(id => document.querySelector(`[data-testid="${id}"]`)?.textContent.trim() === "2001000", totalId);
+    assert.equal(await error.count(), 0);
+    assert.equal(await dispatches(page), count + 1, "the whole-column formula reaches Work exactly once");
     await rm(folder, { recursive: true, force: true });
   }],
 ];
@@ -1173,7 +1166,7 @@ for (const [name, run] of cases) {
     const context = await browser.newContext();
     let fixtureReady = false;
     try {
-      if (!process.env.WORK_CLIENT_URL) await installDistRoutes(context, process.env.WORK_DIST);
+      if (!process.env.WORK_CLIENT_URL) await installDistRoutes(context, dist);
       const page = await context.newPage(); page.setDefaultTimeout(5000);
       await open(page);
       fixtureReady = true;

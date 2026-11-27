@@ -610,7 +610,7 @@ const cases = [
     assert.equal(selected, 6, `Shift+arrows selected ${selected} cells instead of B2:D3`);
     assert.equal(await page.getByTestId(start).getAttribute("aria-selected"), "true", "the anchor cell is not selected");
   } },
-  { id: "18", name: "Ordinary formulas", tier: "A", run: async (page) => {
+  { id: "18", name: "Ordinary formulas", tier: "A", waitMs: 20_000, budgetMs: 90_000, run: async (page) => {
     await newTable(page, "Formula", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);
     await addRow(page, ["2", "3"], 1);
     await addRow(page, ["3", "3"], 2);
@@ -624,6 +624,25 @@ const cases = [
     await page.keyboard.press("Enter");
     await waitForCellText(page, total, "6");
     assert.equal(await executeCount(page), before + 1, "Enter did not publish exactly one history transaction");
+
+    await page.getByRole("button", { name: "Close project", exact: true }).click();
+    await page.getByRole("button", { name: "Close without saving", exact: true }).click();
+    await waitForColdHome(page);
+    await (await homeImportInput(page)).setInputFiles({
+      name: "large-formulas.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("Item,Amount,Result\nfirst,2,0\n" + "middle,0,0\n".repeat(9_998) + "last,5,0\n"),
+    });
+    const dialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
+    await dialog.getByRole("button", { name: "Import file", exact: true }).click();
+    await ready(page);
+    const large = await projection(page);
+    assert.equal(large.rows.length, 10_000);
+    for (const [row, formula, result] of [[0, "=SUM(B2:B10001)", "7"], [1, "=1+2", "3"]]) {
+      const target = cellIdFor(large, row, 2);
+      await replaceCell(page, target, formula);
+      await waitForCellText(page, target, result);
+    }
   } },
   { id: "19", name: "Point-and-click formula references", tier: "A", budgetMs: 60_000, waitMs: 10_000, run: async (page) => {
     await newTable(page, "Refs", [{ name: "Qty", type: "number" }, { name: "Price", type: "number" }, { name: "Total", type: "number" }]);

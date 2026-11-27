@@ -243,6 +243,8 @@ export function a1RefusalText(input: {
       return "This formula would depend on its own result.";
     case "invalid_geometry":
       return "To use cell references like B3, show this row first: clear the filter and try again.";
+    case "request_too_large":
+      return A1_TOO_MANY_ROWS;
     case "stale_revision":
       return "The table changed while the formula was checked. Press Enter to check it again.";
     default:
