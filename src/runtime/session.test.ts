@@ -230,6 +230,7 @@ class FakeClient {
       return hook();
     }
     this.#requireRevision(request.expected_revision);
+    if (request.type === "move_cells") return this.#publish(request.moves[0]!.to);
     if (request.type === "edit_cells" || request.type === "insert_row" || request.type === "paste_cells" || request.type === "remove_table_rows" || request.type === "add_column" || request.type === "set_column_requiredness" || request.type === "rename_column" || request.type === "remove_column" || request.type === "move_column") return this.#publish(IMPACT);
     const available = request.type === "undo" ? this.#undoCount : this.#redoCount;
     if (available < 1) throw new FakeDesignerRuntimeError("no_history", this.#revision);

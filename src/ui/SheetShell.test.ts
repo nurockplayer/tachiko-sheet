@@ -563,22 +563,35 @@ describe("headerless worksheets use the existing grid", () => {
     const view = makeView();
     view.table.native_table_profile = true;
     view.table.rows[0]!.styles = [{ bold: true, italic: true, fill: "ffcc00", border: true, number_format: null, wrap: false, alignment: null }];
-    const ui = await mount(view, { importedSourceName: "headerless.xlsx" });
+    const onMoveCells = vi.fn<NonNullable<SheetShellProps["onMoveCells"]>>(async () => ({ kind: "confirmed" }));
+    const ui = await mount(view, { importedSourceName: "headerless.xlsx", onMoveCells });
     await ui.focus("A2");
     expect(ui.cell("A2").style.fontWeight).toBe("700");
     expect(ui.cell("A2").style.fontStyle).toBe("italic");
     expect(ui.cell("A2").style.backgroundColor).toBe("#ffcc00");
-    const clipboardData = { types: ["text/plain"], setData: vi.fn(), getData: () => "Pasted" };
-    for (const name of ["copy", "cut", "paste"]) {
+    let clipboardText = "";
+    const clipboardData = { types: ["text/plain"], setData: vi.fn((_type: string, text: string) => { clipboardText = text; }), getData: () => clipboardText };
+    async function dispatchClipboard(name: string, address: string) {
       const event = new Event(name, { bubbles: true, cancelable: true });
       Object.defineProperty(event, "clipboardData", { value: clipboardData });
-      await act(async () => { ui.cell("A2").dispatchEvent(event); });
+      await act(async () => { ui.cell(address).dispatchEvent(event); });
       expect(event.defaultPrevented).toBe(true);
     }
+    await dispatchClipboard("copy", "A2");
+    await dispatchClipboard("cut", "A2");
     expect(clipboardData.setData).toHaveBeenCalledWith("text/plain", "Alpha work");
+    expect(ui.onEditCells).not.toHaveBeenCalled();
+    await ui.focus("A3");
+    await dispatchClipboard("paste", "A3");
+    expect(onMoveCells).toHaveBeenCalledExactlyOnceWith(expect.anything(), [{
+      from: { entity: entityA, field: "c-title" }, to: { entity: entityB, field: "c-title" },
+    }]);
+    clipboardText = "Pasted";
+    await ui.focus("A2");
+    await dispatchClipboard("paste", "A2");
     expect(ui.onEditCells).toHaveBeenCalledWith(expect.anything(), [{ target: { entity: entityA, field: "c-title" }, input: { kind: "text", value: "Pasted" } }]);
     for (const key of ["Delete", "Backspace"]) { await ui.focus("A2"); await ui.key(key); }
-    expect(ui.onEditCells).toHaveBeenCalledTimes(4);
+    expect(ui.onEditCells).toHaveBeenCalledTimes(3);
     await ui.key("f", { ctrlKey: true });
     expect(ui.container.querySelector('[role="search"]')).not.toBeNull();
   });
