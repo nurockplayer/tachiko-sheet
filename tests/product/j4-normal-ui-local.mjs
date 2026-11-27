@@ -366,9 +366,12 @@ async function verifyPhoneOpenReport(page, width) {
   assert.equal(await openReport.count(), 1, `one Open report action is available at phone width ${width}`);
   const compositionBox = await composition.boundingBox();
   assert.ok(compositionBox, `Table composition is mounted at ${width}`);
+  const reportBox = await openReport.boundingBox();
+  assert.ok(reportBox, `Open report is laid out at ${width}`);
+  const wheelDistance = reportBox.y + reportBox.height / 2 - (compositionBox.y + compositionBox.height / 2);
   // Scroll the outer composition from its padding, outside the editable grid's scrollport.
   await page.mouse.move(compositionBox.x + 8, compositionBox.y + compositionBox.height / 2);
-  await page.mouse.wheel(0, 520);
+  await page.mouse.wheel(0, wheelDistance);
   await page.waitForFunction(() => (document.querySelector(".ts-table-composition")?.scrollTop ?? 0) > 0);
   await page.waitForFunction(() => {
     const button = [...document.querySelectorAll(".ts-results-pane button")].find((node) => node.textContent?.trim() === "Open report");
