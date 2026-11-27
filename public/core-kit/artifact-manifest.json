@@ -1,7 +1,7 @@
 {
   "schema": "tachiko-experimental-designer-client-kit-manifest-v1",
   "sourceRepository": "nurockplayer/tachiko-work",
-  "sourceCommit": "44f36dc7aa114cdc9c170e77336f946e2cc72b09",
+  "sourceCommit": "0b12f8b332d54d7b0825be4ccb21671f4ab87223",
   "stability": "experimental",
   "entry": "experimental-client.js",
   "capabilities": [
@@ -75,6 +75,7 @@
     "inspectImportedProjectWorkingSize",
     "openImportedProjectWorkingSize",
     "exportSpreadsheet",
+    "exportSpreadsheetOverwrite",
     "exportNativeTrackerSpreadsheet",
     "exportNativeBudgetSpreadsheet",
     "exportNativeTablesSpreadsheet",
@@ -109,7 +110,7 @@
     },
     {
       "path": "designer_runtime.wasm",
-      "sha256": "d4b10f7b04c7c5ed226c0f0111c4273271240d01ccdd7b6d5fb71101379b8210"
+      "sha256": "684bb938f980f07c7defb36ce22e0aaef7238a92d3db9a271f420b3d2121727b"
     },
     {
       "path": "experimental-client.d.ts",
@@ -153,7 +154,7 @@
     },
     {
       "path": "runtime/client.d.ts",
-      "sha256": "3b74dc64aab8ee913b0ce562afb4c06d298777be1fa8599530dd85ecaf8209e9"
+      "sha256": "fa1f8ff86fb59d12297fa2e5e2fec41a52dc56e46cd6e2c586117abf29775265"
     },
     {
       "path": "runtime/client.js",
@@ -161,7 +162,7 @@
     },
     {
       "path": "runtime/interop-protocol.d.ts",
-      "sha256": "cec793da4b2cd73a1a36d7ed7ccb3d3c29db008ebc4bd0c40078adf9644be67a"
+      "sha256": "a8f9ab770905d19a4ba7fc72c47b6c027e3e91d22f22a4ca2caf492a9c631cac"
     },
     {
       "path": "runtime/interop-protocol.js",
@@ -185,11 +186,11 @@
     },
     {
       "path": "runtime/worker-client.d.ts",
-      "sha256": "656e698a86e5a51afcf556e025a0cb0793fc47f8c0a343357e115bbafe1dd127"
+      "sha256": "deeb0fc22079b0a98e6405010dd7a564862a85f1f1197e81a1ce8ab016d7d9e8"
     },
     {
       "path": "runtime/worker-client.js",
-      "sha256": "c24fabd7baebd208f7e3b18b8ec72a643fab5c513adf8c0cb6d1cb0d7e6c244d"
+      "sha256": "a3e837601d5f54926b0792f11ce506a79009b86503e28008d6ee4a610d1f004f"
     },
     {
       "path": "runtime/worker-runtime.d.ts",

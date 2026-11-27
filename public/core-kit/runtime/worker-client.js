@@ -103,6 +103,12 @@ export class WorkerDesignerClient {
             throw new Error("Expected spreadsheet export.");
         return reply.export;
     }
+    async exportSpreadsheetOverwrite(expected) {
+        const reply = await this.#spreadsheet({ type: "export_xlsx_overwrite", expected });
+        if (reply.status !== "spreadsheet_exported")
+            throw new Error("Expected XLSX overwrite export.");
+        return reply.export;
+    }
     async exportNativeTablesSpreadsheet(expectedRevision, collection, format) {
         const reply = await this.#spreadsheet({ type: "export_native_tables", expected_revision: expectedRevision, collection, format });
         if (reply.status !== "spreadsheet_exported")
