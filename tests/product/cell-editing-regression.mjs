@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { homeImportInput, openFolder, openReleasePlanExample, waitForColdHome } from "./home-entry.mjs";
+import { WORK_FIELD_CELL } from "./windowed-table-collector.mjs";
 
 const url = process.env.WORK_CLIENT_URL ?? (process.env.WORK_DIST ? LOCAL_ORIGIN : null);
 if (!url) { console.error("BLOCKED: WORK_CLIENT_URL or WORK_DIST is required."); process.exit(78); }
@@ -622,10 +623,10 @@ const cases = [
     const entryRow = page.locator(".ts-entry-row");
     assert.equal(await entryRow.count(), 1, "native fixture shows its entry row");
     const edges = [
-      ["Shift+Enter", rows.first().locator("td").first(), null],
-      ["Shift+Tab", rows.first().locator("td").first(), null],
-      ["Enter", rows.last().locator("td").last(), entryRow.locator("[data-entry-field]").last()],
-      ["Tab", rows.last().locator("td").last(), entryRow.locator("[data-entry-field]").first()],
+      ["Shift+Enter", rows.first().locator(WORK_FIELD_CELL).first(), null],
+      ["Shift+Tab", rows.first().locator(WORK_FIELD_CELL).first(), null],
+      ["Enter", rows.last().locator(WORK_FIELD_CELL).last(), entryRow.locator("[data-entry-field]").last()],
+      ["Tab", rows.last().locator(WORK_FIELD_CELL).last(), entryRow.locator("[data-entry-field]").first()],
     ];
     for (const [index, [key, target, destination]] of edges.entries()) {
       const before = await state(page), count = await dispatches(page), storedRows = await rows.count();
