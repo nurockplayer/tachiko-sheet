@@ -1628,12 +1628,18 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
     return enqueue(async () => {
       const { kit, client } = await loadKitOnce();
       const inspect = capability(client.inspectSpreadsheet, "spreadsheet inspection");
+      let source: SourceWorkbook;
       try {
-        return await dispatch(kit, () => inspect.call(client, bytes.slice(0), format, options));
+        source = await dispatch(kit, () => inspect.call(client, bytes.slice(0), format, options));
       } catch (error) {
         if (!hasFailureCode(kit, error, "capacity_exceeded")) throw error;
-        return inspectLosslessWorkingSize(kit, client, bytes, format, options, error);
+        source = await inspectLosslessWorkingSize(kit, client, bytes, format, options, error);
       }
+      // Work preserves visibility, but the Sheet grid still displays every row and column.
+      if (source.sheets.some(({ layout }) => layout?.hidden_rows?.length || layout?.hidden_columns?.length)) {
+        throw new Error("Sheet cannot open spreadsheets with hidden rows or columns.");
+      }
+      return source;
     });
   }
 
