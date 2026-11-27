@@ -358,7 +358,7 @@ describe("headerless worksheets use the existing grid", () => {
     expect(ui.onCommit).not.toHaveBeenCalled();
     expect(onTranslateA1Formula).not.toHaveBeenCalled();
     expect(ui.container.querySelector<HTMLInputElement>('[data-testid="cell-editor"]')?.value).toBe("=A2");
-    expect(ui.container.textContent).toContain("Formulas and cell references are unavailable in blank worksheets because automatically created columns cannot store formulas.");
+    expect(ui.container.textContent).toContain("Enter worksheet formulas directly in a cell that has a value.");
     expect(ui.container.querySelector<HTMLInputElement>('[data-testid="formula-bar-input"]')?.readOnly).toBe(true);
     expect(ui.container.querySelector(".ts-cell--formula-ref")).toBeNull();
   });
@@ -2876,6 +2876,7 @@ describe("formula completion boundaries", () => {
   });
   it("only offers formulas where commit accepts them", () => {
     expect(cellEditorFormulaSource({ entity: "row", kind: "number", value: "=SU" })).toBe("SU");
+    expect(cellEditorFormulaSource({ entity: "row", kind: "auto", value: "=SU" })).toBe("SU");
     expect(cellEditorFormulaSource({ entity: "row", kind: "text", value: "=SU" })).toBeNull();
     expect(cellEditorFormulaSource({ entity: DRAFT_ROW, kind: "number", value: "=SU" })).toBeNull();
   });

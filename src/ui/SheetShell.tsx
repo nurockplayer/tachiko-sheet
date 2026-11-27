@@ -192,7 +192,7 @@ interface CellEditorProps {
 }
 
 export function cellEditorFormulaSource(editor: { entity: string; kind: string; value: string }): string | null {
-  return editor.entity !== DRAFT_ROW && editor.kind === "number" ? inCellFormulaSource(editor.value) : null;
+  return editor.entity !== DRAFT_ROW && (editor.kind === "number" || editor.kind === "auto") ? inCellFormulaSource(editor.value) : null;
 }
 
 export function formulaOptionsUi(ui: CellOptionsUi & { key: string } | null, key: string, cellKey: string): CellOptionsUi {
@@ -1430,7 +1430,7 @@ export function SheetShell(props: SheetShellProps) {
   }, [focusedKey]);
   // Reads only the focused instance's own projected formula (#129): never a
   // column-level rule, a computed-column claim or a neighbour's value.
-  const worksheetFormulaLimitation = "Formulas and cell references are unavailable in blank worksheets because automatically created columns cannot store formulas.";
+  const worksheetFormulaLimitation = "Enter worksheet formulas directly in a cell that has a value.";
   const formulaState = { ...formulaBarState({
     viewIdentity: viewKey ?? "",
     table,
@@ -3865,16 +3865,21 @@ export function SheetShell(props: SheetShellProps) {
       setLocalError(null);
       return true;
     }
-    if (worksheet && editor.value.trimStart().startsWith("=")) {
+    const formulaSource = cellEditorFormulaSource(editor);
+    const references = formulaSource === null ? null : a1References(formulaSource);
+    const blankWorksheetFormula = worksheet && slot.blank && editor.value.trimStart().startsWith("=");
+    // Work can allocate an Auto formula atomically. A1 translation still
+    // requires an existing target and the displayed grid geometry.
+    if (blankWorksheetFormula && (editor.kind !== "auto" || !references || references.rows.length > 0 || references.range)) {
       setLocalError(`${worksheetFormulaLimitation} The draft was kept.`);
       return false;
     }
     const at = address(editor);
     const storedRow = table ? rowSource(table).byEntity(editor.entity) : undefined;
     const storedColumn = table?.columns.find(column => column.id === editor.field);
-    if (worksheet && onWriteCellAt && witness && table && (!storedRow || !storedColumn || slot.blank || editor.kind === "auto")) {
+    if (worksheet && (formulaSource === null || blankWorksheetFormula) && onWriteCellAt && witness && table && (!storedRow || !storedColumn || slot.blank || editor.kind === "auto")) {
       if (formulaDraftActive) { setLocalError("Apply or cancel the formula you are editing before changing this cell."); return false; }
-      const input = editor.kind === "auto" ? editor.value : editor.kind === "boolean"
+      const input = editor.kind === "auto" ? formulaSource === null ? editor.value : `=${formulaSource}` : editor.kind === "boolean"
         ? parseBooleanDraft(editor.value) === null ? null : { kind: "boolean" as const, value: parseBooleanDraft(editor.value)! }
         : scalarEditOf(editor.kind, editor.value);
       if (input === null) { setLocalError("Enter true or false for this boolean cell. The draft was kept."); return false; }
@@ -3918,7 +3923,6 @@ export function SheetShell(props: SheetShellProps) {
         return accepted;
       }
     }
-    const formulaSource = cellEditorFormulaSource(editor);
     if (formulaSource !== null) {
       // Same rule as the formula bar: a first formula withdraws the native row
       // profile, which would hide the entry row while its draft blocks Save.
@@ -3937,9 +3941,12 @@ export function SheetShell(props: SheetShellProps) {
       let notes: A1TranslationNote[] = [];
       // Only text naming an address or a range can need Work's geometry; any
       // other formula commits exactly as it did before translation.
-      const references = a1References(formulaSource);
-      if (witness && table && tableAdmitsFormulas(table) && onTranslateA1Formula && !isTachikoFormulaSource(formulaSource) && (references.rows.length > 0 || references.range)) {
-        const geometry = a1GeometryFor(displayRows, columns, slot.target.entity, references);
+      if (witness && table && references && (worksheet || tableAdmitsFormulas(table)) && onTranslateA1Formula && !isTachikoFormulaSource(formulaSource) && (references.rows.length > 0 || references.range)) {
+        const geometry = a1GeometryFor(
+          worksheet ? displayRows.filter(row => !row.id.startsWith("worksheet-row:")) : displayRows,
+          worksheet ? columns.slice(0, tableColumns(table).length) : columns,
+          slot.target.entity, references, headerRow,
+        );
         if (!geometry) {
           focusRejectedEditorRef.current = intent;
           setLocalError(A1_TOO_MANY_ROWS);
