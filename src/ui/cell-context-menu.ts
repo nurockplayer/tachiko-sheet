@@ -1,5 +1,5 @@
 /** One row of the cell context menu; `"separator"` draws a rule instead of a command. */
-export type CellMenuItem = { label: string; shortcut?: string; disabled?: boolean; run(): void } | "separator";
+export type CellMenuItem = { label: string; shortcut?: string; disabled?: boolean; description?: string; run(): void } | "separator";
 
 function isCommand(item: CellMenuItem | undefined): item is Exclude<CellMenuItem, "separator"> {
   return item !== undefined && item !== "separator";

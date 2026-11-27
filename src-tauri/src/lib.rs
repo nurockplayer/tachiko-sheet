@@ -786,9 +786,14 @@ fn app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
                 if !submenu.items()?.is_empty() {
                     submenu.append(&PredefinedMenuItem::separator(app)?)?;
                 }
+                // On Windows and Linux, let Ctrl+= and Ctrl+- reach the grid.
+                #[cfg(target_os = "macos")]
+                let (zoom_in, zoom_out) = ("CmdOrCtrl+=", "CmdOrCtrl+-");
+                #[cfg(not(target_os = "macos"))]
+                let (zoom_in, zoom_out) = ("CmdOrCtrl+Alt+=", "CmdOrCtrl+Alt+-");
                 for (id, label, accelerator) in [
-                    (ZOOM_IN, "Zoom In", "CmdOrCtrl+="),
-                    (ZOOM_OUT, "Zoom Out", "CmdOrCtrl+-"),
+                    (ZOOM_IN, "Zoom In", zoom_in),
+                    (ZOOM_OUT, "Zoom Out", zoom_out),
                     (ZOOM_RESET, "Actual Size", "CmdOrCtrl+0"),
                 ] {
                     submenu.append(&MenuItem::with_id(app, id, label, true, Some(accelerator))?)?;

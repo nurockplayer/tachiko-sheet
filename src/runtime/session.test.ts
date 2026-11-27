@@ -2020,10 +2020,10 @@ describe("native table and row adapter", () => {
   it("snapshots row initializers and removal identities before the serialized dispatch", async () => {
     const { runtime, client, view } = await opened();
     const inputs = [{ field: "f1", input: { kind: "number" as const, input: "" } }];
-    const inserted = runtime.insertRow(witnessOf(view), COLLECTION.key, inputs);
+    const inserted = runtime.insertRow(witnessOf(view), COLLECTION.key, inputs, "e1");
     inputs[0]!.input.input = "0";
     const next = await inserted;
-    expect(client.calls.trackerCommand[0]).toMatchObject({ initializers });
+    expect(client.calls.trackerCommand[0]).toMatchObject({ initializers, position: { before: "e1" } });
     const entities = ["e1"];
     const removed = runtime.removeRows(witnessOf(next.view), COLLECTION.key, entities);
     entities[0] = "different-entity";
