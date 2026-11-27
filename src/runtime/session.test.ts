@@ -1338,7 +1338,7 @@ describe("createSheetRuntime", () => {
   it.each([
     { layout: { hidden_rows: [0] }, workingSize: false },
     { layout: { hidden_columns: [0] }, workingSize: true },
-  ])("refuses XLSX visibility that Sheet cannot display: $layout", async ({ layout, workingSize }) => {
+  ])("passes through XLSX visibility: $layout", async ({ layout, workingSize }) => {
     const { client, runtime, view } = await opened();
     const inspect = vi.fn(async (_bytes: ArrayBuffer, _format: string, _options: unknown, profile?: string) => {
       if (workingSize && !profile) throw new FakeDesignerRuntimeError("capacity_exceeded", client.currentRevision);
@@ -1347,7 +1347,7 @@ describe("createSheetRuntime", () => {
     Object.assign(client, { inspectSpreadsheet: inspect });
 
     await expect(runtime.inspectSpreadsheet(new ArrayBuffer(4), "xlsx", { delimiter: ",", header: true }))
-      .rejects.toThrow("Sheet cannot open spreadsheets with hidden rows or columns.");
+      .resolves.toMatchObject({ sheets: [{ layout }] });
     expect(await runtime.read()).toEqual(view);
   });
 

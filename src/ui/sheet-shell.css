@@ -1605,6 +1605,12 @@ g[data-chart-mark]:hover .ts-chart-hit { fill: var(--ts-surface-sunken); }
   text-align: center;
 }
 
+.ts-grid .ts-row-head[data-hidden-gap~="before"] { border-top: 3px double currentColor; }
+.ts-grid .ts-row-head[data-hidden-gap~="after"] { border-bottom: 3px double currentColor; }
+.ts-grid .ts-column-header[data-hidden-gap~="before"] { border-inline-start: 3px double currentColor; }
+.ts-grid .ts-column-header[data-hidden-gap~="after"] { border-inline-end: 3px double currentColor; }
+.ts-hidden-axis { padding: 0 2px; color: inherit; background: transparent; border: 0; cursor: pointer; }
+
 .ts-gutter-head {
   z-index: 3;
 }

@@ -125,6 +125,7 @@ export interface SheetRuntime {
   /** Read Work's capacity accounting for a revision; null when the kit lacks the capability. */
   queryCapacity(expectedRevision?: string): Promise<CapacityProjection | null>;
   setColumnWidth(witness: ViewWitness, collection: string, field: string, width: number | null): Promise<ConfirmedPublication>;
+  setTableVisibility(witness: ViewWitness, collection: string, entities: string[], fields: string[], hidden: boolean): Promise<ConfirmedPublication>;
   setCellStyle(witness: ViewWitness, collection: string, rows: CellStyleRows, fields: string[], changes: CellStyleChange[]): Promise<ConfirmedPublication>;
   setColumnAlignment(witness: ViewWitness, collection: string, field: string, alignment: CellAlignment | null): Promise<ConfirmedPublication>;
   setColumnDateFormat(witness: ViewWitness, collection: string, field: string, format: DateFormat | null): Promise<ConfirmedPublication>;
@@ -421,6 +422,7 @@ export interface SheetShellProps {
   onSetColumnRequiredness?(witness: ViewWitness, collection: string, field: string, required: boolean): Promise<RowCommandOutcome>;
   onSetColumnConstraint?(witness: ViewWitness, collection: string, field: string, constraint: FieldConstraintInput): Promise<RowCommandOutcome>;
   onSetColumnWidth?(witness: ViewWitness, collection: string, field: string, width: number | null): Promise<RowCommandOutcome>;
+  onSetTableVisibility?(witness: ViewWitness, collection: string, entities: string[], fields: string[], hidden: boolean): Promise<RowCommandOutcome>;
   onSetCellStyle?(witness: ViewWitness, collection: string, rows: CellStyleRows, fields: string[], changes: CellStyleChange[]): Promise<RowCommandOutcome>;
   onSetColumnAlignment?(witness: ViewWitness, collection: string, field: string, alignment: CellAlignment | null): Promise<RowCommandOutcome>;
   onSetColumnDateFormat?(witness: ViewWitness, collection: string, field: string, format: DateFormat | null): Promise<RowCommandOutcome>;

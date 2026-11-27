@@ -724,6 +724,28 @@ describe("keyboard history queue", () => {
     );
   });
 
+  it("shows and applies the focused field's fill after hiding the preceding column", async () => {
+    const view = makeView();
+    view.table.native_table_profile = true;
+    view.table.columns[0]!.hidden = true;
+    const style = { bold: false, italic: false, border: false, number_format: null, wrap: false, alignment: null };
+    view.table.rows[0]!.styles = [{ ...style, fill: "FF0000" }, { ...style, fill: "0000FF" }];
+    const onSetCellStyle = vi.fn(async () => ({ kind: "confirmed" as const }));
+    const ui = await mount({ onSetCellStyle });
+    await ui.update({ view });
+    const cell = ui.container.querySelector<HTMLElement>(`[data-testid="cell:${entityA}:c-impact"]`)!;
+    await act(async () => cell.focus());
+    expect(ui.container.querySelector<HTMLInputElement>('[aria-label="Fill colour"]')!.value).toBe("#0000ff");
+
+    const apply = [...ui.container.querySelectorAll<HTMLButtonElement>('[aria-label="Format"] button')]
+      .find(button => button.textContent === "Apply fill")!;
+    await act(async () => apply.click());
+    expect(onSetCellStyle).toHaveBeenCalledExactlyOnceWith(
+      { occurrence: view.occurrence, revision: view.revision }, view.table.collection.key,
+      { row: 1, rowCount: 1 }, ["c-impact"], [{ kind: "fill", color: "#0000FF" }],
+    );
+  });
+
   it("sends large contiguous formatting selections as one stored row range", async () => {
     const view = makeView();
     view.table.native_table_profile = true;
