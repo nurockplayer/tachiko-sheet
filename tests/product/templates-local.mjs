@@ -8,6 +8,7 @@ import path from "node:path";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome } from "./home-entry.mjs";
+import { WORK_FIELD_CELL } from "./windowed-table-collector.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) {
@@ -22,8 +23,8 @@ const ready = page => page.locator('[data-testid="project-ready"][aria-busy="fal
 async function grid(page) {
   const table = page.locator('table[aria-label="Table"]');
   await table.waitFor();
-  return table.locator("tbody tr.ts-row").evaluateAll(rows => rows.map(row =>
-    [...row.querySelectorAll("td")].map(cell => cell.textContent.trim())));
+  return table.locator("tbody tr.ts-row").evaluateAll((rows, cellSelector) => rows.map(row =>
+    [...row.querySelectorAll(cellSelector)].map(cell => cell.textContent.trim())), WORK_FIELD_CELL);
 }
 
 async function open(page, label) {

@@ -10,6 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright-core";
 import { LOCAL_ORIGIN, installDistRoutes } from "./dist-routes.mjs";
 import { waitForColdHome, homeImportInput, openReleasePlanExample } from "./home-entry.mjs";
+import { WORK_FIELD_CELL } from "./windowed-table-collector.mjs";
 
 const dist = process.env.WORK_DIST;
 if (!dist) { console.error("BLOCKED: WORK_DIST must name a built product."); process.exit(78); }
@@ -41,23 +42,23 @@ async function chooseColumnAction(name, action) {
 // Raw replies supply fixture metadata only, never post-edit value/revision evidence.
 const tableMetadata = () => page.evaluate(() => window.__clipboardEvidence.records.flatMap(record => record.tables).at(-1));
 async function displayed() {
-  const snapshot = await page.evaluate(() => {
-    const cells = [...document.querySelectorAll('.ts-grid .ts-cell[data-work-revision]')];
-    const columns = [...(document.querySelector('.ts-grid tr.ts-row, .ts-entry-row')?.querySelectorAll('.ts-cell') ?? [])]
+  const snapshot = await page.evaluate(cellSelector => {
+    const cells = [...document.querySelectorAll(`.ts-grid ${cellSelector}[data-work-revision]`)];
+    const columns = [...(document.querySelector('.ts-grid tr.ts-row, .ts-entry-row')?.querySelectorAll(cellSelector) ?? [])]
       .map(node => ({ id: node.dataset.workField }));
     return {
       revision: cells[0]?.dataset.workRevision,
       revisions: [...new Set(cells.map(node => node.dataset.workRevision))],
       columns,
       rows: [...document.querySelectorAll('.ts-grid tbody tr.ts-row')].map(row => {
-        const cells = [...row.querySelectorAll('.ts-cell')];
+        const cells = [...row.querySelectorAll(cellSelector)];
         return { id: cells[0].dataset.workEntity, cells: cells.map(node => ({
           field: node.dataset.workField,
           text: node.querySelector('.ts-cell-value')?.textContent ?? node.querySelector('.ts-cell-input')?.value,
         })) };
       }),
     };
-  });
+  }, WORK_FIELD_CELL);
   assert.ok(snapshot.revision, "grid exposes its application revision");
   assert.deepEqual(snapshot.revisions, [snapshot.revision], "every displayed cell has the same application revision");
   delete snapshot.revisions;
