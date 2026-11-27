@@ -582,6 +582,7 @@ export function SheetShell(props: SheetShellProps) {
   const hostCopy = useHostCopy();
   const hostFiles = useHostFiles();
   const {
+    requestByteLimit,
     view,
     busy,
     dirty,
@@ -3534,7 +3535,7 @@ export function SheetShell(props: SheetShellProps) {
     // formula with no address commits exactly as it did before translation.
     const references = a1References(source);
     if (onTranslateA1Formula && table && state.editable && !isTachikoFormulaSource(source) && (references.rows.length > 0 || references.range)) {
-      const geometry = a1GeometryFor(displayRows, columns, state.target.entity, references);
+      const geometry = a1GeometryFor(displayRows, columns, state.target.entity, references, requestByteLimit);
       if (!geometry) {
         setFormulaRefusal({ identity: state.identity, message: A1_TOO_MANY_ROWS });
         return;
@@ -3939,7 +3940,7 @@ export function SheetShell(props: SheetShellProps) {
       // other formula commits exactly as it did before translation.
       const references = a1References(formulaSource);
       if (witness && table && tableAdmitsFormulas(table) && onTranslateA1Formula && !isTachikoFormulaSource(formulaSource) && (references.rows.length > 0 || references.range)) {
-        const geometry = a1GeometryFor(displayRows, columns, slot.target.entity, references);
+        const geometry = a1GeometryFor(displayRows, columns, slot.target.entity, references, requestByteLimit);
         if (!geometry) {
           focusRejectedEditorRef.current = intent;
           setLocalError(A1_TOO_MANY_ROWS);
