@@ -2611,6 +2611,8 @@ const cases = [
       await page.keyboard.press(`Control+${digit}`);
       await header.waitFor({ state: "hidden" });
       await input.waitFor({ state: "hidden" });
+      await ready(page);
+      await grid.locator("td:focus").waitFor();
       await page.keyboard.press(`Control+Shift+${digit}`);
       await header.waitFor();
       await undo.click();
