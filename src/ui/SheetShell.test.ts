@@ -459,25 +459,32 @@ describe("headerless worksheets use the existing grid", () => {
     ["column", "Delete", null], ["column", "Cut", null],
     ["row", "Delete", "headerless.csv"], ["row", "Cut", "headerless.csv"],
     ["column", "Delete", "headerless.csv"], ["column", "Cut", "headerless.csv"],
-  ] as const)("clears stored cells on whole-%s %s (source %s)", async (axis, action, importedSourceName) => {
+  ] as const)("handles whole-%s %s (source %s)", async (axis, action, importedSourceName) => {
     const view = makeView();
     view.table.native_table_profile = true;
     view.table.columns = view.table.columns.slice(0, 2).map(column => ({ ...column, required: false }));
     view.table.rows = view.table.rows.map(row => ({ ...row, fields: row.fields.slice(0, 2) }));
-    const ui = await mount(view, { importedSourceName });
+    const onMoveCells = vi.fn<NonNullable<SheetShellProps["onMoveCells"]>>(async () => ({ kind: "confirmed" }));
+    const ui = await mount(view, { importedSourceName, onMoveCells });
     await act(async () => ui.container.querySelector<HTMLElement>(axis === "row" ? "tbody .ts-row-head" : "thead .ts-column-header")!.click());
-    if (action === "Delete") await ui.key("Delete");
-    else {
+    if (action === "Delete") {
+      await ui.key("Delete");
+      const targets = axis === "row" ? [{ entity: entityA, field: "c-title" }, { entity: entityA, field: "c-impact" }]
+        : [{ entity: entityA, field: "c-title" }, { entity: entityB, field: "c-title" }];
+      expect(ui.onEditCells).toHaveBeenCalledExactlyOnceWith(expect.anything(), targets.map(target => ({ target, input: { kind: "clear" } })));
+    } else {
       const event = new Event("cut", { bubbles: true, cancelable: true });
       const setData = vi.fn();
       Object.defineProperty(event, "clipboardData", { value: { setData } });
       await act(async () => { document.activeElement!.dispatchEvent(event); });
       expect(event.defaultPrevented).toBe(true);
       expect(setData).toHaveBeenCalledWith("text/plain", expect.stringContaining("Alpha work"));
+      expect(ui.container.querySelectorAll(".ts-cell--copied")).toHaveLength(2);
+      expect(ui.onEditCells).not.toHaveBeenCalled();
+      expect(onMoveCells).not.toHaveBeenCalled();
+      await ui.key("Escape");
+      expect(ui.container.querySelectorAll(".ts-cell--copied")).toHaveLength(0);
     }
-    const targets = axis === "row" ? [{ entity: entityA, field: "c-title" }, { entity: entityA, field: "c-impact" }]
-      : [{ entity: entityA, field: "c-title" }, { entity: entityB, field: "c-title" }];
-    expect(ui.onEditCells).toHaveBeenCalledExactlyOnceWith(expect.anything(), targets.map(target => ({ target, input: { kind: "clear" } })));
     expect(ui.onWrite).not.toHaveBeenCalled();
   });
 
@@ -556,24 +563,61 @@ describe("headerless worksheets use the existing grid", () => {
     const view = makeView();
     view.table.native_table_profile = true;
     view.table.rows[0]!.styles = [{ bold: true, italic: true, fill: "ffcc00", border: true, number_format: null, wrap: false, alignment: null }];
-    const ui = await mount(view, { importedSourceName: "headerless.xlsx" });
+    const onMoveCells = vi.fn<NonNullable<SheetShellProps["onMoveCells"]>>(async () => ({ kind: "confirmed" }));
+    const ui = await mount(view, { importedSourceName: "headerless.xlsx", onMoveCells });
     await ui.focus("A2");
     expect(ui.cell("A2").style.fontWeight).toBe("700");
     expect(ui.cell("A2").style.fontStyle).toBe("italic");
     expect(ui.cell("A2").style.backgroundColor).toBe("#ffcc00");
-    const clipboardData = { types: ["text/plain"], setData: vi.fn(), getData: () => "Pasted" };
-    for (const name of ["copy", "cut", "paste"]) {
+    let clipboardText = "";
+    const clipboardData = { types: ["text/plain"], setData: vi.fn((_type: string, text: string) => { clipboardText = text; }), getData: () => clipboardText };
+    async function dispatchClipboard(name: string, address: string) {
       const event = new Event(name, { bubbles: true, cancelable: true });
       Object.defineProperty(event, "clipboardData", { value: clipboardData });
-      await act(async () => { ui.cell("A2").dispatchEvent(event); });
+      await act(async () => { ui.cell(address).dispatchEvent(event); });
       expect(event.defaultPrevented).toBe(true);
     }
+    await dispatchClipboard("copy", "A2");
+    await dispatchClipboard("cut", "A2");
     expect(clipboardData.setData).toHaveBeenCalledWith("text/plain", "Alpha work");
+    expect(ui.onEditCells).not.toHaveBeenCalled();
+    await ui.focus("A3");
+    await dispatchClipboard("paste", "A3");
+    expect(onMoveCells).toHaveBeenCalledExactlyOnceWith(expect.anything(), [{
+      from: { entity: entityA, field: "c-title" }, to: { entity: entityB, field: "c-title" },
+    }]);
+    clipboardText = "Pasted";
+    await ui.focus("A2");
+    await dispatchClipboard("paste", "A2");
     expect(ui.onEditCells).toHaveBeenCalledWith(expect.anything(), [{ target: { entity: entityA, field: "c-title" }, input: { kind: "text", value: "Pasted" } }]);
     for (const key of ["Delete", "Backspace"]) { await ui.focus("A2"); await ui.key(key); }
-    expect(ui.onEditCells).toHaveBeenCalledTimes(4);
+    expect(ui.onEditCells).toHaveBeenCalledTimes(3);
     await ui.key("f", { ctrlKey: true });
     expect(ui.container.querySelector('[role="search"]')).not.toBeNull();
+  });
+
+  it("moves existing Text cells after formulas withdraw the native row profile", async () => {
+    const view = makeView();
+    view.table.native_table_profile = false;
+    const onMoveCells = vi.fn<NonNullable<SheetShellProps["onMoveCells"]>>(async () => ({ kind: "confirmed" }));
+    const ui = await mount(view, { onMoveCells });
+    const setData = vi.fn();
+    const cut = new Event("cut", { bubbles: true, cancelable: true });
+    Object.defineProperty(cut, "clipboardData", { value: { setData } });
+    await ui.focus("A2");
+    await act(async () => { ui.cell("A2").dispatchEvent(cut); });
+    expect(setData).toHaveBeenCalledExactlyOnceWith("text/plain", "Alpha work");
+    expect(ui.container.querySelectorAll(".ts-cell--copied")).toHaveLength(1);
+    expect(onMoveCells).not.toHaveBeenCalled();
+
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", { value: { types: ["text/plain"], getData: () => "Alpha work" } });
+    await ui.focus("A3");
+    await act(async () => { ui.cell("A3").dispatchEvent(paste); });
+    expect(onMoveCells).toHaveBeenCalledExactlyOnceWith(expect.anything(), [{
+      from: { entity: entityA, field: "c-title" }, to: { entity: entityB, field: "c-title" },
+    }]);
+    expect(ui.onEditCells).not.toHaveBeenCalled();
   });
 
   it("windows large imported headerless worksheets", async () => {

@@ -35,8 +35,19 @@ await context.addInitScript(() => {
 const page = await context.newPage();
 const ready = () => page.locator('[data-testid="project-ready"][aria-busy="false"]').waitFor();
 const projection = () => page.evaluate(() => window.__readObservedTable(window.__editingEvidence.records.findLast(record => record.tables.length)));
-const count = () => page.evaluate(() => window.__editingEvidence.records.flatMap(record => record.requests).filter(message => message.request?.type === "edit_cells").length);
-const publications = () => page.evaluate(() => window.__editingEvidence.records.reduce((n, record) => n + record.replies.filter(reply => reply.response?.type === "published" && record.requests.find(request => request.id === reply.id)?.request?.type === "edit_cells").length, 0));
+const counts = () => page.evaluate(() => {
+  const counts = { edits: 0, moves: 0, publishedMoves: 0 };
+  for (const record of window.__editingEvidence.records) {
+    for (const message of record.requests) {
+      if (message.request?.type === "edit_cells") counts.edits++;
+      if (message.request?.type === "move_cells") {
+        counts.moves++;
+        if (record.replies.some(reply => reply.id === message.id && reply.response?.type === "published")) counts.publishedMoves++;
+      }
+    }
+  }
+  return counts;
+});
 const cell = (table, r, c) => page.getByTestId(`cell:${table.rows[r].fields[0]?.target.entity ?? table.rows[r].id}:${table.columns[c].id}`);
 const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
 async function drag(from, to) {
@@ -72,8 +83,16 @@ try {
   assert.equal(await cell(table, 0, 1).evaluate(node => node === document.activeElement), true);
   await page.keyboard.press("ControlOrMeta+C");
   await page.locator('.ts-clipboard-status').filter({ hasText: "Copied" }).waitFor();
+  const beforeSingle = await counts();
   await page.keyboard.press("ControlOrMeta+X");
   await page.locator('.ts-clipboard-status').filter({ hasText: "Cut 1 cell" }).waitFor(); await ready();
+  assert.deepEqual(await counts(), beforeSingle);
+  assert.deepEqual((await projection()).rows, original);
+  await expect(cell(table, 0, 1)).toHaveText("two");
+  await cell(table, 2, 1).click();
+  await page.keyboard.press("ControlOrMeta+V"); await ready();
+  await expect(cell(table, 2, 1)).toHaveText("two");
+  assert.deepEqual(await counts(), { ...beforeSingle, moves: beforeSingle.moves + 1, publishedMoves: beforeSingle.publishedMoves + 1 });
   table = await projection();
   assert.ok(!table.rows[0].fields.some(field => field.target.field === table.columns[1].id && field.stored?.value));
   await expect(cell(table, 0, 1)).toHaveText("");
@@ -88,14 +107,21 @@ try {
   await cell(table, 0, 0).click();
   assert.equal(await page.locator('.ts-cell--range-selected').count(), 0);
   await drag(cell(table, 0, 0), cell(table, 1, 1));
-  const before = await count(), beforePublications = await publications();
+  const beforeBlock = await counts();
   await page.keyboard.press("ControlOrMeta+X");
   await page.locator('.ts-clipboard-status').filter({ hasText: "Cut 4 cells" }).waitFor(); await ready();
   assert.equal(await clipboard(), "one\ttwo\nthree\tfour");
-  assert.equal(await count(), before + 1); assert.equal(await publications(), beforePublications + 1);
+  assert.deepEqual(await counts(), beforeBlock);
+  assert.deepEqual((await projection()).rows, original);
+  await cell(table, 1, 0).click();
+  await page.keyboard.press("ControlOrMeta+V"); await ready();
+  const movedText = [["", ""], ["one", "two"], ["three", "four"]];
+  for (const [r, row] of movedText.entries()) for (const [c, text] of row.entries()) await expect(cell(table, r, c)).toHaveText(text);
+  assert.deepEqual(await counts(), { ...beforeBlock, moves: beforeBlock.moves + 1, publishedMoves: beforeBlock.publishedMoves + 1 });
   table = await projection();
-  for (const row of table.rows.slice(0, 2)) for (const column of table.columns.slice(0, 2)) assert.ok(!row.fields.some(field => field.target.field === column.id && field.stored?.value));
-  for (const r of [0, 1]) for (const c of [0, 1]) await expect(cell(table, r, c)).toHaveText("");
+  for (const [r, row] of movedText.entries()) for (const [c, text] of row.entries()) {
+    assert.equal(table.rows[r].fields.find(field => field.target.field === table.columns[c].id)?.stored?.value ?? "", text);
+  }
   await page.getByRole("button", { name: "Undo", exact: true }).click(); await ready();
   table = await projection(); assert.deepEqual(table.rows, original);
   for (const [r, row] of originalText.entries()) for (const [c, text] of row.entries()) await expect(cell(table, r, c)).toHaveText(text);
@@ -111,13 +137,22 @@ try {
   if (await unsaved.count()) await unsaved.getByRole("button", { name: "Close without saving", exact: true }).click();
   await waitForColdHome(page); await openReleasePlanExample(page); await ready();
   table = await projection();
-  const calculated = table.rows.flatMap((row, r) => table.columns.flatMap((column, c) => row.fields.find(field => field.target.field === column.id)?.calculated?.status === "value" ? [{ r, c }] : []))[0];
+  const calculated = table.rows.flatMap((row, r) => table.columns.flatMap((column, c) => column.required && row.fields.find(field => field.target.field === column.id)?.calculated?.status === "value" ? [{ r, c }] : []))[0];
   assert.ok(calculated);
   await cell(table, calculated.r, calculated.c).click();
-  await page.evaluate(() => navigator.clipboard.writeText("unchanged clipboard"));
-  const refusedCount = await count();
+  const beforeRefusal = await counts();
   await page.keyboard.press("ControlOrMeta+X");
-  await page.locator('.ts-clipboard-status').filter({ hasText: "Nothing was cut." }).waitFor();
-  assert.equal(await count(), refusedCount); assert.equal(await clipboard(), "unchanged clipboard");
-  console.log("PASS: drag, real-key copy and cut, refusal, multi-row delete and undo");
+  await page.locator('.ts-clipboard-status').filter({ hasText: "Cut 1 cell" }).waitFor();
+  assert.deepEqual(await counts(), beforeRefusal);
+  const formulaClipboard = await clipboard();
+  assert.match(formulaClipboard, /^=/);
+  // Moving this formula would leave its required Number source blank.
+  await cell(table, (calculated.r + 1) % table.rows.length, calculated.c).click();
+  await page.keyboard.press("ControlOrMeta+V");
+  const refusal = page.locator('.ts-clipboard-status').filter({ hasText: /\S/, hasNotText: "Cut 1 cell" });
+  await expect(refusal).toBeVisible(); await ready();
+  assert.deepEqual(await counts(), { ...beforeRefusal, moves: beforeRefusal.moves + 1 });
+  assert.deepEqual((await projection()).rows, table.rows);
+  assert.equal(await clipboard(), formulaClipboard);
+  console.log("PASS: drag, real-key copy and cut/paste, refusal, multi-row delete and undo");
 } finally { await context.close(); await browser.close(); }

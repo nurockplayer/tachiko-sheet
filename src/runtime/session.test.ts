@@ -230,6 +230,7 @@ class FakeClient {
       return hook();
     }
     this.#requireRevision(request.expected_revision);
+    if (request.type === "move_cells") return this.#publish(request.moves[0]!.to);
     if (request.type === "edit_cells" || request.type === "insert_row" || request.type === "paste_cells" || request.type === "remove_table_rows" || request.type === "add_column" || request.type === "set_column_requiredness" || request.type === "rename_column" || request.type === "remove_column" || request.type === "move_column") return this.#publish(IMPACT);
     const available = request.type === "undo" ? this.#undoCount : this.#redoCount;
     if (available < 1) throw new FakeDesignerRuntimeError("no_history", this.#revision);
@@ -2089,6 +2090,19 @@ describe("native table and row adapter", () => {
     await pending;
     expect(client.calls.trackerCommand[0]).toEqual({ type: "edit_cells", expected_revision: view.revision,
       edits: [{ target: { entity: "e1", field: "f1" }, input: { kind: "number", input: "1,300" } }] });
+  });
+
+  it("dispatches one revision-checked move with stable cell IDs", async () => {
+    const { runtime, client, view } = await opened();
+    const moves = [{ from: { entity: "e1", field: "f1" }, to: { entity: "e2", field: "f1" } }];
+    const pending = runtime.moveCells(witnessOf(view), moves);
+    moves[0]!.to.entity = "other";
+    const confirmed = await pending;
+    expect(client.calls.trackerCommand).toEqual([{
+      type: "move_cells", expected_revision: view.revision,
+      moves: [{ from: { entity: "e1", field: "f1" }, to: { entity: "e2", field: "f1" } }],
+    }]);
+    expect(confirmed.view.revision).toBe(confirmed.publication.resulting_revision);
   });
 
   const edits = [{ target: { entity: "e1", field: "f1" }, input: { kind: "number" as const, input: "1,300" } },

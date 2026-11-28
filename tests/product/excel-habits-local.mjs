@@ -510,29 +510,121 @@ const cases = [
     await page.keyboard.press("Escape");
     assert.equal(await page.locator(".ts-cell--range-selected").count(), 0, "second Escape did not clear the range selection");
   } },
-  { id: "14", name: "Cut/paste", tier: "A", run: async (page) => {
+  { id: "14", name: "Cut/paste", tier: "A", budgetMs: 60_000, run: async (page) => {
     await example(page);
     const table = await projection(page);
     const area = (row) => cellIdFor(table, row, 1);
     const source = (row) => cellIdFor(table, row, 6);
-    const original = await cellText(page, table, 0, 1);
+    const original = await Promise.all([0, 1].map(row => cellText(page, table, row, 1)));
+    const overwritten = await Promise.all([0, 1].map(row => cellText(page, table, row, 6)));
     await dragCells(page, area(0), area(1));
     await page.keyboard.press("Control+x");
     await page.locator(".ts-clipboard-status").filter({ hasText: "Cut 2 cells" }).waitFor();
-    await settle(page);
-    assert.equal(await cellText(page, await projection(page), 0, 1), "", "the cut source was not cleared");
+    assert.equal(await page.locator(".ts-cell--copied").count(), 2, "Cut did not mark both source cells");
+    assert.equal((await projection(page)).revision, table.revision, "Cut published before Paste");
+    for (const [row, value] of original.entries()) await waitForCellText(page, area(row), value);
     await page.getByTestId(source(0)).click();
     await page.keyboard.press("Control+v");
-    await settle(page);
-    assert.equal(await cellText(page, await projection(page), 0, 6), original, "the cut value did not arrive at the destination");
+    for (const [row, value] of original.entries()) {
+      await waitForCellText(page, source(row), value);
+      await waitForCellText(page, area(row), "");
+    }
+    assert.equal(await page.locator(".ts-cell--copied").count(), 0, "Paste did not consume the cut outline");
     await page.keyboard.press("Control+z");
+    for (const [row, value] of original.entries()) {
+      await waitForCellText(page, area(row), value);
+      await waitForCellText(page, source(row), overwritten[row]);
+    }
+
+    await home(page);
+    await page.keyboard.press("Control+n");
+    const id = (address) => `worksheet:${address}`;
+    const cell = (address) => page.getByTestId(id(address));
+    const weight = (address) => cell(address).evaluate(node => Number(getComputedStyle(node).fontWeight));
+    await cell("A1").click();
+    await page.evaluate(() => navigator.clipboard.writeText("7\t0\t0\t0\n2\t3\t0\t0"));
+    await page.keyboard.press("Control+v");
+    await waitForCellText(page, id("B2"), "3");
+    await replaceCell(page, id("B1"), "=A1*2");
+    await replaceCell(page, id("D1"), "=B1+1");
+    await cell("B1").click();
+    await page.keyboard.press("Control+b");
     await settle(page);
-    assert.equal(await cellText(page, await projection(page), 0, 1), original, "one Undo did not restore the cut source; the cut and the paste are two transactions");
-    await page.getByTestId(cellIdFor(table, 0, 4)).click();
+    assert.ok(await weight("B1") >= 600, "the source formula cell was not bold");
+    await saveCopy(page, "habits-14");
+
+    await cell("B1").click();
     await page.keyboard.press("Control+x");
-    await settle(page);
     const copied = (await clipboard(page)).trim();
     assert.ok(copied.startsWith("="), `cutting a formula cell put ${JSON.stringify(copied.slice(0, 30))} on the clipboard, not the formula`);
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator(".ts-cell--copied").count(), 0, "Escape did not cancel Cut");
+    await waitForCellText(page, id("B1"), "14");
+
+    await dragCells(page, id("A1"), id("B1"));
+    await page.keyboard.press("Control+x");
+    await cell("A2").click();
+    await page.keyboard.press("Control+v");
+    const assertMoved = async () => {
+      for (const [address, value] of [["A1", ""], ["B1", ""], ["A2", "7"], ["B2", "14"], ["D1", "15"]]) {
+        await waitForCellText(page, id(address), value);
+      }
+      assert.ok(fieldAt(await projection(page), 1, 1)?.formula, "the moved cell lost its formula");
+      assert.ok(await weight("B1") < 600 && await weight("B2") >= 600, "bold did not move with the formula");
+    };
+    await assertMoved();
+    await page.keyboard.press("Control+z");
+    for (const [address, value] of [["A1", "7"], ["B1", "14"], ["A2", "2"], ["B2", "3"], ["D1", "15"]]) {
+      await waitForCellText(page, id(address), value);
+    }
+    assert.ok(await weight("B1") >= 600 && await weight("B2") < 600, "one Undo did not restore both styles");
+    await page.keyboard.press("Control+y");
+    await assertMoved();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+    await home(page);
+    await page.getByRole("button", { name: "Open saved habits-14", exact: true }).click();
+    await ready(page);
+    await assertMoved();
+    await replaceCell(page, id("A2"), "9");
+    await waitForCellText(page, id("B2"), "18");
+    await waitForCellText(page, id("D1"), "19");
+
+    await home(page);
+    await page.keyboard.press("Control+n");
+    await cell("A1").click();
+    await page.evaluate(() => navigator.clipboard.writeText("Apple\t7\n0\t8"));
+    await page.keyboard.press("Control+v");
+    await waitForCellText(page, id("B2"), "8");
+    await replaceCell(page, id("B1"), "=2+5");
+    await replaceCell(page, id("B2"), "=B1+1");
+    await cell("A1").click();
+    await page.keyboard.press("Control+b");
+    await settle(page);
+    for (const [destination, formulaDestination] of [["C1", "D1"], ["A3", "B3"]]) {
+      await dragCells(page, id("A1"), id("B1"));
+      await page.keyboard.press("Control+x");
+      await cell(destination).click();
+      await page.keyboard.press("Control+v");
+      await waitForCellText(page, id(destination), "Apple");
+      await waitForCellText(page, id("A1"), "");
+      await waitForCellText(page, id("B1"), "");
+      await waitForCellText(page, id(formulaDestination), "7");
+      await waitForCellText(page, id("B2"), "8");
+      assert.ok(await weight(destination) >= 600 && await weight("A1") < 600, "bold did not move into the new allocation");
+      await page.keyboard.press("Control+z");
+      await waitForCellText(page, id(destination), "");
+      await waitForCellText(page, id("A1"), "Apple");
+      await waitForCellText(page, id("B1"), "7");
+      assert.ok(await weight("A1") >= 600 && await weight(destination) < 600, "the first Undo did not restore the source style");
+      const allocated = await projection(page);
+      assert.deepEqual([allocated.rows.length, allocated.columns.length], destination === "C1" ? [2, 4] : [3, 2]);
+      await page.keyboard.press("Control+z");
+      await page.waitForFunction(() => {
+        const table = window.__readObservedTable(window.__habits);
+        return table?.rows.length === 2 && table.columns.length === 2;
+      });
+    }
   } },
   { id: "15", name: "Undo/redo", tier: "A", run: async (page) => {
     await example(page);
@@ -2164,14 +2256,19 @@ const cases = [
     await page.keyboard.press("Control+z");
     await waitForCellText(page, id(0, 6), source);
 
-    // Cut clears the cell it copies; one Undo restores it.
+    // Cut marks its source until Paste; one Undo restores both cells.
     await page.getByTestId(id(0, 6)).click({ button: "right" });
     await item("Cut").click();
-    await waitForCellText(page, id(0, 6), "");
+    await waitForCellText(page, id(0, 6), source);
+    assert.ok(await page.getByTestId(id(0, 6)).evaluate(cell => cell.classList.contains("ts-cell--copied")), "Cut from the menu did not mark the source");
     assert.equal((await clipboard(page)).trim(), source, "Cut from the cell menu did not put the cell on the clipboard");
-    await settle(page);
+    await page.getByTestId(id(0, 1)).click({ button: "right" });
+    await item("Paste").click();
+    await waitForCellText(page, id(0, 1), source);
+    await waitForCellText(page, id(0, 6), "");
     await page.keyboard.press("Control+z");
     await waitForCellText(page, id(0, 6), source);
+    await waitForCellText(page, id(0, 1), areas[0]);
 
     // Clear contents, and one Undo restores it.
     const original = await cellText(page, await projection(page), 0, 0);
