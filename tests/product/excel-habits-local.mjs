@@ -2589,13 +2589,49 @@ const cases = [
     assert.equal((await projection(page)).columns[numberColumn].number_format?.kind.type, "percent", "Number format did not survive reopen");
   } },
   { id: "48", name: "Table creation", tier: "B", run: async (page) => {
-    await example(page);
+    await newTable(page, "Produce", [{ name: "First" }, { name: "Second" }]);
+    await addRow(page, ["Fruit", "Color"], 1);
+    await addRow(page, ["Pear", "Green"], 2);
+    await addRow(page, ["Plum", "Purple"], 3);
+    await saveCopy(page, "habits-48");
     const table = await projection(page);
     const tabs = await page.locator(".ts-table-tab").count();
     await dragCells(page, cellIdFor(table, 0, 0), cellIdFor(table, table.rows.length - 1, table.columns.length - 1));
+    const dialog = page.getByRole("dialog", { name: "Create table", exact: true });
+    await page.keyboard.press("Meta+t");
+    await dialog.getByText("Selected range: A2:B4", { exact: true }).waitFor();
+    await page.keyboard.press("Escape");
+    await dialog.waitFor({ state: "detached" });
+    await settle(page);
+    assert.equal(await page.locator(".ts-table-tab").count(), tabs, "Cancel created a table");
     await page.keyboard.press("Control+t");
+    await dialog.getByLabel("My table has headers").check();
+    await dialog.getByRole("button", { name: "Create table", exact: true }).press("Enter");
+    await dialog.waitFor({ state: "detached" });
     await settle(page);
     assert.equal(await page.locator(".ts-table-tab").count(), tabs + 1, "Ctrl+T created no table from the selected region");
+    const created = await projection(page);
+    const assertTable = async () => {
+      const current = await projection(page);
+      assert.equal(current.collection.id, created.collection.id);
+      assert.deepEqual(current.columns.map(column => column.display_name), ["Fruit", "Color"]);
+      assert.deepEqual(current.rows.map((_, row) => current.columns.map((_, col) => fieldAt(current, row, col)?.stored?.value)), [["Pear", "Green"], ["Plum", "Purple"]]);
+    };
+    await assertTable();
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await settle(page);
+    assert.equal(await page.locator(".ts-table-tab").count(), tabs, "One Undo did not remove the new table");
+    assert.equal(fieldAt(await projection(page), 0, 0)?.stored?.value, "Fruit", "The source lost the header cell");
+    await page.getByRole("button", { name: "Redo", exact: true }).click();
+    await settle(page);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+    await home(page);
+    await page.getByRole("button", { name: "Open saved habits-48", exact: true }).click();
+    await ready(page);
+    await page.locator(".ts-table-tab").and(page.getByTitle("Table 1", { exact: true })).click();
+    await settle(page);
+    await assertTable();
   } },
   { id: "49", name: "Show formulas", tier: "C", run: async (page) => {
     await example(page);
