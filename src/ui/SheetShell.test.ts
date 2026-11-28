@@ -596,6 +596,30 @@ describe("headerless worksheets use the existing grid", () => {
     expect(ui.container.querySelector('[role="search"]')).not.toBeNull();
   });
 
+  it("moves existing Text cells after formulas withdraw the native row profile", async () => {
+    const view = makeView();
+    view.table.native_table_profile = false;
+    const onMoveCells = vi.fn<NonNullable<SheetShellProps["onMoveCells"]>>(async () => ({ kind: "confirmed" }));
+    const ui = await mount(view, { onMoveCells });
+    const setData = vi.fn();
+    const cut = new Event("cut", { bubbles: true, cancelable: true });
+    Object.defineProperty(cut, "clipboardData", { value: { setData } });
+    await ui.focus("A2");
+    await act(async () => { ui.cell("A2").dispatchEvent(cut); });
+    expect(setData).toHaveBeenCalledExactlyOnceWith("text/plain", "Alpha work");
+    expect(ui.container.querySelectorAll(".ts-cell--copied")).toHaveLength(1);
+    expect(onMoveCells).not.toHaveBeenCalled();
+
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", { value: { types: ["text/plain"], getData: () => "Alpha work" } });
+    await ui.focus("A3");
+    await act(async () => { ui.cell("A3").dispatchEvent(paste); });
+    expect(onMoveCells).toHaveBeenCalledExactlyOnceWith(expect.anything(), [{
+      from: { entity: entityA, field: "c-title" }, to: { entity: entityB, field: "c-title" },
+    }]);
+    expect(ui.onEditCells).not.toHaveBeenCalled();
+  });
+
   it("windows large imported headerless worksheets", async () => {
     const view = makeView();
     view.table.rows = Array.from({ length: 1000 }, (_, index) => ({ id: `r-${index}`, key: `r-${index}`, fields: [projected(`r-${index}`, "c-title", { kind: "text", value: `Row ${index}` })] }));

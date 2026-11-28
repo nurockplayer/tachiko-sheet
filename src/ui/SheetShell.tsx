@@ -1966,7 +1966,7 @@ export function SheetShell(props: SheetShellProps) {
     if (controlsLocked || rowCommandPendingRef.current || currentness !== "current" || editor || formulaDraftActive || rowDraftActive || anyNotesDraft || hasInvalidReportDraft || modalInteractionOpen) {
       announceClipboard("Finish the current edit or operation before cutting cells.", true, true); return;
     }
-    if (!witness || !onMoveCells || !table.native_table_profile) {
+    if (!witness || !onMoveCells) {
       announceClipboard("Cutting cells is not available in this view.", true, true); return;
     }
     const at = address(position);
