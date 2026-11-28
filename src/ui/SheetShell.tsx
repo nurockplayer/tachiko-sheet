@@ -49,7 +49,7 @@ import type {
 } from "../contracts.js";
 import type { InterfaceProfileV1 } from "../application/interface-profile-contract.js";
 import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViolation, savedCopiesAreVisible } from "../contracts.js";
-import { EDIT_CELLS_MAX, cutBlockRefusal, ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress, type CellRectangle } from "./clipboard.js";
+import { EDIT_CELLS_MAX, cutBlockRefusal, cutValueEdits, ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress, type CellRectangle } from "./clipboard.js";
 import { SelectionStatisticsBar } from "./SelectionStatisticsBar.js";
 import { selectionStatisticsRange, selectionStatisticsTargets } from "./selection-statistics.js";
 import type { SelectionStatisticsProjection } from "../../public/core-kit/runtime/protocol.js";
@@ -2022,23 +2022,13 @@ export function SheetShell(props: SheetShellProps) {
         top: start.row, left: start.column,
         bottom: start.row + cut.entities.length - 1, right: start.column + cut.fields.length - 1,
       });
-      if (to && (valuesOnly ? onEditCells : onMoveCells)) {
-        if (!valuesOnly && start.row === cutSource.area.top && start.column === cutSource.area.left) {
-          setCopiedArea(null);
-          announceClipboard("The selected cells are unchanged.", false, true);
-          return;
-        }
-        const moves = cut.entities.flatMap((entity, row) => cut.fields.map((field, column) => ({
-          from: { entity, field }, to: { entity: to.entities[row]!, field: to.fields[column]! },
-        })));
-        let publish = () => onMoveCells!(witness, moves);
-        if (valuesOnly) {
-          const edits = new Map<string, CellEdit>();
-          for (const { from } of moves) {
-            edits.set(cellKey(from.entity, from.field), { target: from, input: { kind: "clear" } });
-          }
-          for (const { from, to } of moves) {
-            const field = fieldForColumn(displayRows[rowIndexByEntity.get(from.entity)!]!, from.field);
+      let values: CellEdit["input"][] | undefined;
+      if (valuesOnly) {
+        values = [];
+        for (const entity of cut.entities) {
+          const row = displayRows[rowIndexByEntity.get(entity)!]!;
+          for (const column of cut.fields) {
+            const field = fieldForColumn(row, column);
             const calculated = field?.calculated;
             if (field?.formula && calculated?.status !== "value") {
               announceClipboard("The cut formula has no calculated value. Nothing was pasted.", true, true);
@@ -2054,10 +2044,22 @@ export function SheetShell(props: SheetShellProps) {
             const input = !value ? { kind: "clear" as const }
               : value.kind === "number" ? { kind: "number" as const, input: String(value.value) }
               : value;
-            edits.set(cellKey(to.entity, to.field), { target: to, input });
+            values.push(input);
           }
-          publish = () => onEditCells!(witness, [...edits.values()]);
         }
+      }
+      if (to && (values ? onEditCells : onMoveCells)) {
+        if (!values && start.row === cutSource.area.top && start.column === cutSource.area.left) {
+          setCopiedArea(null);
+          announceClipboard("The selected cells are unchanged.", false, true);
+          return;
+        }
+        const moves = cut.entities.flatMap((entity, row) => cut.fields.map((field, column) => ({
+          from: { entity, field }, to: { entity: to.entities[row]!, field: to.fields[column]! },
+        })));
+        const publish = values
+          ? () => onEditCells!(witness, cutValueEdits(moves, values))
+          : () => onMoveCells!(witness, moves);
         const intent = completionIntent();
         keepGridRows(to.entities);
         void publishCells(publish, moves.length, "Moved", "move").then(confirmed => {
@@ -2067,7 +2069,7 @@ export function SheetShell(props: SheetShellProps) {
         });
         return;
       }
-      if (valuesOnly || !onMoveCellsAt || draft || (!unallocated && !worksheet)) {
+      if (!onMoveCellsAt || draft || (!unallocated && !worksheet)) {
         announceClipboard("Choose an existing range large enough for the cut cells.", true, true);
         return;
       }
@@ -2089,7 +2091,7 @@ export function SheetShell(props: SheetShellProps) {
       }
       const intent = completionIntent();
       void publishCells(async () => {
-        const result = await onMoveCellsAt(witness, storedStart.row, storedStart.column, cut);
+        const result = await onMoveCellsAt(witness, storedStart.row, storedStart.column, cut, values);
         if (result.kind === "confirmed" && liveOccurrenceRef.current === intent.occurrence && clipboardIdentityRef.current === collectionIdentity) {
           keepGridRows(result.addedEntities ?? []);
         }

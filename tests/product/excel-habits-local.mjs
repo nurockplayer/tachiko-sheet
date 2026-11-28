@@ -561,19 +561,29 @@ const cases = [
     assert.equal(await page.locator(".ts-cell--copied").count(), 0, "Escape did not cancel Cut");
     await waitForCellText(page, id("B1"), "14");
 
-    // #633: Paste values consumes the cut and restores both cells on one Undo.
-    await cell("B1").click();
-    await page.keyboard.press("Control+x");
-    await cell("B2").click({ button: "right" });
-    await page.getByRole("menuitem", { name: "Paste values", exact: true }).click();
-    await waitForCellText(page, id("B2"), "14");
-    await waitForCellText(page, id("B1"), "");
-    assert.deepEqual(fieldAt(await projection(page), 1, 1)?.stored, { kind: "number", value: 14 });
-    assert.equal(fieldAt(await projection(page), 1, 1)?.formula, null);
-    await page.keyboard.press("Control+z");
-    await waitForCellText(page, id("B1"), "14");
-    await waitForCellText(page, id("B2"), "3");
-    assert.ok(fieldAt(await projection(page), 0, 1)?.formula, "Undo did not restore the cut formula");
+    // #633: Paste values restores both cells on one Undo, including in newly allocated space.
+    for (const [destination, row, column, previous] of [["B2", 1, 1, "3"], ["B3", 2, 1, ""], ["E2", 1, 4, ""]]) {
+      await cell("B1").click();
+      await page.keyboard.press("Control+x");
+      await cell(destination).click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Paste values", exact: true }).click();
+      await waitForCellText(page, id(destination), "14");
+      await waitForCellText(page, id("B1"), "");
+      const pasted = fieldAt(await projection(page), row, column);
+      assert.deepEqual(pasted?.stored, { kind: "number", value: 14 });
+      assert.equal(pasted?.formula, null);
+      await page.keyboard.press("Control+z");
+      await waitForCellText(page, id("B1"), "14");
+      await waitForCellText(page, id(destination), previous);
+      assert.ok(fieldAt(await projection(page), 0, 1)?.formula, "Undo did not restore the cut formula");
+      if (destination !== "B2") {
+        await page.keyboard.press("Control+z");
+        await page.waitForFunction(() => {
+          const table = window.__readObservedTable(window.__habits);
+          return table?.rows.length === 2 && table.columns.length === 4;
+        });
+      }
+    }
 
     await dragCells(page, id("A1"), id("B1"));
     await page.keyboard.press("Control+x");
