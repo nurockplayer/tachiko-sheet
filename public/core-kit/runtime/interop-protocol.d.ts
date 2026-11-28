@@ -168,6 +168,10 @@ export type SpreadsheetOperation = {
     metadata: InteropMetadata;
     profile?: "working_size";
 } | {
+    type: "reopen_imported_xlsx_working_size";
+    expected: OccurrenceProjection;
+    occurrence_id: string;
+} | {
     type: "export";
     expected_revision: string;
     metadata: InteropMetadata;

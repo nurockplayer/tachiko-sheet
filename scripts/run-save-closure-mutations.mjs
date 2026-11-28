@@ -27,8 +27,8 @@ const expectedSeeds = {
   'tests/product/web-save-closure-prerequisites.mjs': 'b3e0f9a99b64db9d8bc0caa35e78fc7973f96896bd84f4d77eb5cec08bd9e704',
   'tests/product/production-lifecycle.mjs': 'a8e7b64145501ccec1d7a98348a0d86a5aa28e600e7c055f1aa6ff6f31d5c58f',
 };
-const workPin = '0b12f8b332d54d7b0825be4ccb21671f4ab87223';
-const kitManifest = 'c8de49ecdb8e035e5e247b1c044a27352528fb80cc59ad0d01e8366296ed0315';
+const workPin = 'ac719ae7b0148d2fe17c15f7ca18ff75513c0cbe';
+const kitManifest = '4584a7bf788131e5545ab58633dfe64da2641910cd71e8351265999cac5d56b8';
 const currentCases = [
   'A-Date-only-normal-Save-fresh-reopen', 'B-same-table-Date-summary-refusal',
   'C-unrelated-Date-summary-refusal', 'C-empty-unrelated-Date-schema-refusal',

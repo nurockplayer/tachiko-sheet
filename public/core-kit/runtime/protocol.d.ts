@@ -621,6 +621,11 @@ export type CellStyleChange = {
     target: "top" | "right" | "bottom" | "left" | "outline" | "all";
     value: boolean;
 };
+export type PositionalCellMove = {
+    from: FieldTarget;
+    row: number;
+    column: number;
+};
 export type TrackerCommand = {
     type: "promote_first_row_to_headers";
     expected_revision: string;
@@ -653,6 +658,11 @@ export type TrackerCommand = {
         from: FieldTarget;
         to: FieldTarget;
     }>;
+} | {
+    type: "move_cells_at";
+    expected_revision: string;
+    collection: string;
+    moves: PositionalCellMove[];
 } | {
     type: "paste_cells";
     expected_revision: string;
