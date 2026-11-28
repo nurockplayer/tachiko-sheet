@@ -117,6 +117,7 @@ export interface SheetRuntime {
   newBlankWorkbook(): Promise<WorkbookView>;
   writeCellAt(witness: ViewWitness, collection: string, row: number, column: number, input: string | ScalarValueEdit): Promise<ConfirmedPublication>;
   addTable(witness: ViewWitness, name: string, columns: NewTableColumn[]): Promise<ConfirmedPublication>;
+  rangeToTable(witness: ViewWitness, range: SelectionStatisticsRange, name: string, hasHeader: boolean): Promise<ConfirmedPublication>;
   insertRow(witness: ViewWitness, collection: string, initializers: RowInitializer[], before?: string, count?: number): Promise<ConfirmedPublication>;
   editCells(witness: ViewWitness, edits: CellEdit[]): Promise<ConfirmedPublication>;
   moveCells(witness: ViewWitness, moves: CellMove[]): Promise<ConfirmedPublication>;
@@ -434,6 +435,7 @@ export interface SheetShellProps {
   onSetColumnNumberFormat?(witness: ViewWitness, collection: string, field: string | readonly string[], format: NumberFormat | null): Promise<RowCommandOutcome>;
   onRenameTable?(witness: ViewWitness, collection: string, name: string): Promise<RowCommandOutcome>;
   onAddTable?(witness: ViewWitness, name: string, columns: NewTableColumn[]): Promise<RowCommandOutcome>;
+  onRangeToTable?(witness: ViewWitness, range: SelectionStatisticsRange, name: string, hasHeader: boolean): Promise<RowCommandOutcome>;
   onDeleteTable?(witness: ViewWitness, collection: string): Promise<RowCommandOutcome>;
   onRenameColumn?(witness: ViewWitness, collection: string, field: string, name: string): Promise<RowCommandOutcome>;
   onRemoveColumn?(witness: ViewWitness, collection: string, field: string): Promise<RowCommandOutcome>;

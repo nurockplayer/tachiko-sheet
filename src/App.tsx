@@ -1977,6 +1977,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.addTable(witness, name, columns), (importedSourceRef.current?.format === "xlsx" || interop?.metadata) ? null : "add", name, true);
   }
 
+  function rangeToTable(witness: ViewWitness, range: SelectionStatisticsRange, name: string, hasHeader: boolean) {
+    return changeRows(witness, () => runtime.rangeToTable(witness, range, name, hasHeader), (importedSourceRef.current || interop?.metadata) ? null : "add", undefined, true);
+  }
+
   function querySelectionStatistics(witness: ViewWitness, selection: FieldTarget[] | SelectionStatisticsRange) {
     return runtime.querySelectionStatistics(witness, selection);
   }
@@ -2554,6 +2558,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onSetColumnNumberFormat={copies.createWorkFile ? setColumnNumberFormat : undefined}
           onRenameTable={importedSourceRef.current?.format === "xlsx" || interop?.metadata || copies.createWorkFile ? renameTable : undefined}
           onAddTable={importedSourceRef.current?.format === "xlsx" || interop?.metadata || copies.createWorkFile ? addTable : undefined}
+          onRangeToTable={importedSourceRef.current || interop?.metadata || copies.createWorkFile ? rangeToTable : undefined}
           onDeleteTable={deleteTable}
           onMoveTable={moveTable}
           onRenameColumn={copies.createWorkFile ? renameColumn : undefined}
