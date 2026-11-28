@@ -52,7 +52,7 @@ import { LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE, reportPresentationTextLimitViola
 import { EDIT_CELLS_MAX, cutBlockRefusal, ClipboardRefusal, decodeTsv, encodeTsv, NATIVE_INSERTION_LIMIT_MESSAGE, pasteRefusal, rectangle, routePaste, stepAddress, type CellAddress, type CellRectangle } from "./clipboard.js";
 import { SelectionStatisticsBar } from "./SelectionStatisticsBar.js";
 import { selectionStatisticsRange, selectionStatisticsTargets } from "./selection-statistics.js";
-import type { SelectionStatisticsProjection } from "../../public/core-kit/runtime/protocol.js";
+import type { SelectionStatisticsProjection, SelectionStatisticsRange } from "../../public/core-kit/runtime/protocol.js";
 import { copiedEdges } from "./copied-area.js";
 import { CSV_DELIMITER_LABELS, CSV_ENCODING_LABELS, type CsvDelimiter, type CsvEncoding } from "./csv-text.js";
 import { edgeAddress, homeEndAddress, pageAddress, todayIsoDate, tabRunAfterMove, tabRunEnterTarget } from "./grid-navigation.js";
@@ -619,6 +619,7 @@ export function SheetShell(props: SheetShellProps) {
     onRemoveRows,
     onRenameTable,
     onAddTable,
+    onRangeToTable,
     onDeleteTable,
     onMoveTable,
     onDuplicateTable,
@@ -969,6 +970,13 @@ export function SheetShell(props: SheetShellProps) {
   const newTableFocusIntentRef = useRef<number | null>(null);
   const duplicateFocusIntentRef = useRef<number | null>(null);
   const [addSheetFocus, setAddSheetFocus] = useState<{ generation: number; occurrence: string; source: string } | null>(null);
+  const [rangeTableDialog, setRangeTableDialog] = useState<{
+    witness: ViewWitness;
+    range: SelectionStatisticsRange;
+    label: string;
+    trigger: HTMLElement;
+    error?: string;
+  } | null>(null);
   const liveOccurrenceRef = useRef<string | null>(null);
   const appFocusingRef = useRef(false);
   // Declared before the windowing effects so a replacement occurrence never
@@ -2868,7 +2876,7 @@ export function SheetShell(props: SheetShellProps) {
 
   const controlsLocked = busy || commitPending || currentness === "unknown";
   const saveUnavailableReason = closeSaveUnavailableReason({ saveStatus, currentness, busy: controlsLocked, workFileSaveUnavailableReason: view?.openedFromWorkFile ? workFileSaveUnavailableReason : null }, false);
-  const modalInteractionOpen = shortcutHelp || deleteTable !== null || renameTable !== null || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null || formatCellsDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
+  const modalInteractionOpen = shortcutHelp || deleteTable !== null || renameTable !== null || columnDialog !== null || ruleDialog !== null || alignmentDialog !== null || formatDialog !== null || formatCellsDialog !== null || rangeTableDialog !== null || deleteName !== null || newTableOpen || duplicateOpen || copyOpen || closeOpen || downloadFormat !== null || Boolean(interop?.importInspection);
   const historyDraftLocked = editor !== null || anyNotesDraft || rowDraftActive || formulaDraftActive;
   const historyInteractionLocked = historyDraftLocked || modalInteractionOpen;
   useLayoutEffect(() => {
@@ -4376,6 +4384,59 @@ export function SheetShell(props: SheetShellProps) {
     });
   }
 
+  function openRangeTable(position: GridPosition, trigger: HTMLElement): void {
+    if (!table || !witness || columnChangesBlocked || modalInteractionOpen) return;
+    const at = address(position);
+    const area = selectionRectangle ?? rectangle(at, at);
+    const selectedRows = displayRows.slice(area.top, area.bottom + 1);
+    const stored = rowSource(table);
+    const range = selectionStatisticsRange(table.collection.key, displayRows, columns, area);
+    const firstRow = stored.indexOf(range.first);
+    const firstColumn = table.columns.findIndex(column => column.id === range.fields[0]);
+    // Work accepts one stored rectangle. A gap or reordering in the grid
+    // must not add unseen cells or change which row supplies the headers.
+    if (firstRow < 0 || !selectedRows.every((row, offset) => row === stored.rowAt(firstRow + offset)) ||
+      !range.fields.every((field, offset) => field === table.columns[firstColumn + offset]?.id)) {
+      announceClipboard("Select a contiguous range of stored cells in their original order.", true);
+      return;
+    }
+    const start = `${a1ColumnLetter(firstColumn)}${a1RowNumber(rowAxis.indices.get(range.first)!, headerRow)}`;
+    const end = `${a1ColumnLetter(firstColumn + range.fields.length - 1)}${a1RowNumber(rowAxis.indices.get(range.last)!, headerRow)}`;
+    setRangeTableDialog({ witness, range, label: start === end ? start : `${start}:${end}`, trigger });
+  }
+
+  function cancelRangeTable(): void {
+    const trigger = rangeTableDialog!.trigger;
+    setRangeTableDialog(null);
+    requestAnimationFrame(() => trigger.focus());
+  }
+
+  async function createRangeTable(hasHeader: boolean): Promise<void> {
+    if (!rangeTableDialog || !view || !onRangeToTable || columnChangesBlocked || rowCommandPendingRef.current || props.appearancePreference.getSnapshot().composing) return;
+    const { witness, range } = rangeTableDialog;
+    const used = new Set(view.collections.flatMap(collection => [collection.display_name, names.table(collection.id) ?? collection.display_name]).map(name => name.toLowerCase()));
+    let number = 1;
+    while (used.has(`table ${number}`)) number += 1;
+    const intent = { ...completionIntent(), occurrence: witness.occurrence, source: range.collection };
+    rowCommandPendingRef.current = true;
+    setCommitPending(true);
+    setLocalError(null);
+    try {
+      const result = await onRangeToTable(witness, range, `Table ${number}`, hasHeader);
+      if (result.kind === "refused") {
+        setRangeTableDialog({ ...rangeTableDialog, error: result.message });
+        return;
+      }
+      setRangeTableDialog(null);
+      if (result.kind === "confirmed") setAddSheetFocus(intent);
+    } catch (cause) {
+      setRangeTableDialog({ ...rangeTableDialog, error: explain(cause, "The table could not be created. Refresh to check the current work.") });
+    } finally {
+      rowCommandPendingRef.current = false;
+      setCommitPending(false);
+    }
+  }
+
   function onCellKeyDown(
     event: ReactKeyboardEvent<HTMLTableCellElement>,
     entity: string,
@@ -4418,6 +4479,11 @@ export function SheetShell(props: SheetShellProps) {
     if (!draft && !editor && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key === "1" && clipboardPosition(event.target)) {
       event.preventDefault();
       if (!event.repeat) openFormatCells(position, event.currentTarget);
+      return;
+    }
+    if (onRangeToTable && !draft && !editor && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "t" && clipboardPosition(event.target)) {
+      event.preventDefault();
+      if (!event.repeat) openRangeTable(position, event.currentTarget);
       return;
     }
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown", "Escape"].includes(event.key) || (event.key === "Enter" && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey))) tabRunStartRef.current = null;
@@ -7841,6 +7907,20 @@ export function SheetShell(props: SheetShellProps) {
         if (created) newTableFocusIntentRef.current = generation;
         return created;
       }} onSuccess={() => setNewTableOpen(false)} onDraftChange={setNewTableDraftActive} onCancel={() => { setNewTableOpen(false); requestAnimationFrame(() => newTableTriggerRef.current?.focus()); }} /> : null}
+      {rangeTableDialog ? <Modal label="Create table" variant="save" onCancel={cancelRangeTable} dismissDisabled={commitPending}>
+        <form onSubmit={event => {
+          event.preventDefault();
+          void createRangeTable(new FormData(event.currentTarget).has("hasHeader"));
+        }}>
+          <div className="ts-dialog-intro"><h2 className="ts-h2">Create table</h2><p>Selected range: {rangeTableDialog.label}</p></div>
+          <div className="ts-dialog-field"><label><input type="checkbox" name="hasHeader" disabled={commitPending} /> My table has headers</label></div>
+          {rangeTableDialog.error ? <p className="ts-dialog-error" role="alert">{rangeTableDialog.error}</p> : null}
+          <div className="ts-dialog-actions">
+            <button type="button" className="ts-button" disabled={commitPending} onClick={cancelRangeTable}>Cancel</button>
+            <button type="submit" className="ts-button ts-button--primary" data-autofocus="true" disabled={commitPending}>Create table</button>
+          </div>
+        </form>
+      </Modal> : null}
       {duplicateOpen && onDuplicateTable && view && witness ? <DuplicateTableDialog
         tableName={names.table(view.table.collection.id) ?? view.table.collection.display_name}
         composing={() => props.appearancePreference.getSnapshot().composing}
