@@ -1,7 +1,20 @@
 /** Clipboard transport and grid geometry only; Work owns value validation. */
-import type { PasteCellInput } from "../contracts.js";
+import type { CellEdit, CellMove, PasteCellInput } from "../contracts.js";
 import { NATIVE_INSERTION_ROW_LIMIT, nativeInsertionFits, nativeInsertionLimitReached } from "../runtime/native-insertion-limit.js";
 import { supportsOptional } from "./column-requiredness.js";
+import { cellKey } from "./projection-access.js";
+
+export function cutValueEdits(moves: CellMove[], values: CellEdit["input"][]): CellEdit[] {
+  const edits = new Map<string, CellEdit>();
+  for (const { from } of moves) {
+    edits.set(cellKey(from.entity, from.field), { target: from, input: { kind: "clear" } });
+  }
+  // Destination writes take precedence when the rectangles overlap.
+  for (const [index, { to }] of moves.entries()) {
+    edits.set(cellKey(to.entity, to.field), { target: to, input: values[index]! });
+  }
+  return [...edits.values()];
+}
 
 export const NATIVE_INSERTION_LIMIT_MESSAGE = `This table has reached the ${NATIVE_INSERTION_ROW_LIMIT.toLocaleString("en-US")}-row limit for adding rows here. Nothing was changed.`;
 export interface CellAddress { row: number; column: number }

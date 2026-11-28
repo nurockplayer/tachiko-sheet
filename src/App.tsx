@@ -63,6 +63,7 @@ import {
 } from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
 import { rowSource } from "./ui/row-source.js";
+import { cutValueEdits } from "./ui/clipboard.js";
 import { csvSampleLines, detectCsvDelimiter, guessCsvEncoding, toUtf8Bytes, type CsvDelimiter, type CsvEncoding } from "./ui/csv-text.js";
 import { capacityForView, type CapacityReading } from "./ui/capacity-message.js";
 import { workFileOpenRefusal } from "./ui/work-file-copy.js";
@@ -1814,7 +1815,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.moveCells(witness, moves));
   }
 
-  async function moveCellsAt(witness: ViewWitness, row: number, column: number, source: CellMoveSource): Promise<RowCommandOutcome> {
+  async function moveCellsAt(witness: ViewWitness, row: number, column: number, source: CellMoveSource, values?: CellEdit["input"][]): Promise<RowCommandOutcome> {
     const view = viewRef.current;
     if (!view || view.occurrence !== witness.occurrence || view.revision !== witness.revision) {
       return { kind: "refused", message: "This change belongs to an older view. Refresh before trying again." };
@@ -1848,7 +1849,9 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     const moves = source.entities.flatMap((entity, r) => source.fields.map((field, c) => ({
       from: { entity, field }, to: { entity: entities[r]!, field: fields[c]! },
     })));
-    const moved = await moveCells(witnessOf(allocated), moves);
+    const moved = await (values
+      ? editCells(witnessOf(allocated), cutValueEdits(moves, values))
+      : moveCells(witnessOf(allocated), moves));
     if (moved.kind === "refused") {
       return { ...moved, message: `${moved.message} The source stayed in place. Use Undo to remove the blank allocation.` };
     }
@@ -1972,6 +1975,10 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
 
   function addTable(witness: ViewWitness, name: string, columns: NewTableColumn[]) {
     return changeRows(witness, () => runtime.addTable(witness, name, columns), (importedSourceRef.current?.format === "xlsx" || interop?.metadata) ? null : "add", name, true);
+  }
+
+  function rangeToTable(witness: ViewWitness, range: SelectionStatisticsRange, name: string, hasHeader: boolean) {
+    return changeRows(witness, () => runtime.rangeToTable(witness, range, name, hasHeader), (importedSourceRef.current || interop?.metadata) ? null : "add", undefined, true);
   }
 
   function querySelectionStatistics(witness: ViewWitness, selection: FieldTarget[] | SelectionStatisticsRange) {
@@ -2551,6 +2558,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onSetColumnNumberFormat={copies.createWorkFile ? setColumnNumberFormat : undefined}
           onRenameTable={importedSourceRef.current?.format === "xlsx" || interop?.metadata || copies.createWorkFile ? renameTable : undefined}
           onAddTable={importedSourceRef.current?.format === "xlsx" || interop?.metadata || copies.createWorkFile ? addTable : undefined}
+          onRangeToTable={importedSourceRef.current || interop?.metadata || copies.createWorkFile ? rangeToTable : undefined}
           onDeleteTable={deleteTable}
           onMoveTable={moveTable}
           onRenameColumn={copies.createWorkFile ? renameColumn : undefined}

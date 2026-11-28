@@ -577,6 +577,30 @@ const cases = [
     assert.equal(await page.locator(".ts-cell--copied").count(), 0, "Escape did not cancel Cut");
     await waitForCellText(page, id("B1"), "14");
 
+    // #633: Paste values restores both cells on one Undo, including in newly allocated space.
+    for (const [destination, row, column, previous] of [["B2", 1, 1, "3"], ["B3", 2, 1, ""], ["E2", 1, 4, ""]]) {
+      await cell("B1").click();
+      await page.keyboard.press("Control+x");
+      await cell(destination).click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Paste values", exact: true }).click();
+      await waitForCellText(page, id(destination), "14");
+      await waitForCellText(page, id("B1"), "");
+      const pasted = fieldAt(await projection(page), row, column);
+      assert.deepEqual(pasted?.stored, { kind: "number", value: 14 });
+      assert.equal(pasted?.formula, null);
+      await page.keyboard.press("Control+z");
+      await waitForCellText(page, id("B1"), "14");
+      await waitForCellText(page, id(destination), previous);
+      assert.ok(fieldAt(await projection(page), 0, 1)?.formula, "Undo did not restore the cut formula");
+      if (destination !== "B2") {
+        await page.keyboard.press("Control+z");
+        await page.waitForFunction(() => {
+          const table = window.__readObservedTable(window.__habits);
+          return table?.rows.length === 2 && table.columns.length === 4;
+        });
+      }
+    }
+
     await dragCells(page, id("A1"), id("B1"));
     await page.keyboard.press("Control+x");
     await cell("A2").click();
@@ -2605,13 +2629,73 @@ const cases = [
     assert.equal((await projection(page)).columns[numberColumn].number_format?.kind.type, "percent", "Number format did not survive reopen");
   } },
   { id: "48", name: "Table creation", tier: "B", run: async (page) => {
-    await example(page);
+    await newTable(page, "Produce", [{ name: "First" }, { name: "Second" }]);
+    await addRow(page, ["Fruit", "Color"], 1);
+    await addRow(page, ["Pear", "Green"], 2);
+    await addRow(page, ["Plum", "Purple"], 3);
+    await saveCopy(page, "habits-48");
     const table = await projection(page);
     const tabs = await page.locator(".ts-table-tab").count();
     await dragCells(page, cellIdFor(table, 0, 0), cellIdFor(table, table.rows.length - 1, table.columns.length - 1));
+    const dialog = page.getByRole("dialog", { name: "Create table", exact: true });
+    await page.keyboard.press("Meta+t");
+    await dialog.getByText("Selected range: A2:B4", { exact: true }).waitFor();
+    await page.keyboard.press("Escape");
+    await dialog.waitFor({ state: "detached" });
+    await settle(page);
+    assert.equal(await page.locator(".ts-table-tab").count(), tabs, "Cancel created a table");
     await page.keyboard.press("Control+t");
+    await dialog.getByLabel("My table has headers").check();
+    await dialog.getByRole("button", { name: "Create table", exact: true }).press("Enter");
+    await dialog.waitFor({ state: "detached" });
     await settle(page);
     assert.equal(await page.locator(".ts-table-tab").count(), tabs + 1, "Ctrl+T created no table from the selected region");
+    const created = await projection(page);
+    const assertTable = async () => {
+      const current = await projection(page);
+      assert.equal(current.collection.id, created.collection.id);
+      assert.deepEqual(current.columns.map(column => column.display_name), ["Fruit", "Color"]);
+      assert.deepEqual(current.rows.map((_, row) => current.columns.map((_, col) => fieldAt(current, row, col)?.stored?.value)), [["Pear", "Green"], ["Plum", "Purple"]]);
+    };
+    await assertTable();
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await settle(page);
+    assert.equal(await page.locator(".ts-table-tab").count(), tabs, "One Undo did not remove the new table");
+    assert.equal(fieldAt(await projection(page), 0, 0)?.stored?.value, "Fruit", "The source lost the header cell");
+    await page.getByRole("button", { name: "Redo", exact: true }).click();
+    await settle(page);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+    await home(page);
+    await page.getByRole("button", { name: "Open saved habits-48", exact: true }).click();
+    await ready(page);
+    await page.locator(".ts-table-tab").and(page.getByTitle("Table 1", { exact: true })).click();
+    await settle(page);
+    await assertTable();
+
+    await home(page);
+    await (await homeImportInput(page)).setInputFiles({
+      name: "produce.csv", mimeType: "text/csv", buffer: Buffer.from("Item,Quantity\nPear,2\nPlum,3\n"),
+    });
+    const importDialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
+    await importDialog.locator(".ts-import-column select").nth(0).selectOption("text");
+    await importDialog.locator(".ts-import-column select").nth(1).selectOption("number");
+    await importDialog.getByRole("button", { name: "Import file", exact: true }).click();
+    await ready(page);
+    const imported = await projection(page);
+    const importedTabs = await page.locator(".ts-table-tab").count();
+    await dragCells(page, cellIdFor(imported, 0, 0), cellIdFor(imported, 1, 1));
+    await page.keyboard.press("Control+t");
+    await dialog.getByText("Selected range: A2:B3", { exact: true }).waitFor();
+    await dialog.getByRole("button", { name: "Create table", exact: true }).click();
+    const refusal = dialog.getByRole("alert");
+    const tableTab = page.locator(".ts-table-tab").and(page.getByTitle("Table 1", { exact: true }));
+    await tableTab.or(refusal).first().waitFor();
+    assert.equal(await refusal.count(), 0, await refusal.allTextContents().then(messages => messages.join("\n")));
+    await settle(page);
+    assert.equal(await page.locator(".ts-table-tab").count(), importedTabs + 1, "Ctrl+T did not create a table from the CSV range");
+    const csvTable = await projection(page);
+    assert.deepEqual(csvTable.rows.map((_, row) => csvTable.columns.map((_, col) => fieldAt(csvTable, row, col)?.stored?.value)), [["Pear", 2], ["Plum", 3]]);
   } },
   { id: "49", name: "Show formulas", tier: "C", run: async (page) => {
     await example(page);

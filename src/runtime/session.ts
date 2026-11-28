@@ -1369,17 +1369,26 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   }
 
   function addTable(witness: ViewWitness, name: string, columns: NewTableColumn[]): Promise<ConfirmedPublication> {
+    return publishNewTable(witness, (client, revision) =>
+      capability(client.addTable, "table addition").call(client, revision, name, columns));
+  }
+
+  function rangeToTable(witness: ViewWitness, range: SelectionStatisticsRange, name: string, hasHeader: boolean): Promise<ConfirmedPublication> {
+    return publishNewTable(witness, (client, revision) =>
+      capability(client.rangeToTable, "table creation from a range").call(client, revision, range, name, hasHeader));
+  }
+
+  function publishNewTable(witness: ViewWitness, create: (client: PublicClient, revision: string) => Promise<DuplicateCollectionProjection>): Promise<ConfirmedPublication> {
     return enqueue(async () => {
       const live = requireWitness(witness);
       const expected = epoch;
       const { kit, client } = await loadKitOnce();
       assertUsable(expected);
-      const add = capability(client.addTable, "table addition");
       let added: DuplicateCollectionProjection;
       try {
         added = await afterUsable(
           expected,
-          dispatch(kit, () => add.call(client, live.revision, name, columns)),
+          dispatch(kit, () => create(client, live.revision)),
         );
       } catch (error) {
         if (error instanceof UnknownOperationOutcomeError) {
@@ -1910,7 +1919,7 @@ export function createSheetRuntime(loadKit: KitLoader): SheetRuntime {
   return {
     get requestByteLimit() { return requestByteLimit; },
     prepare,
-    addTable, newTable, newBlankWorkbook, writeCellAt, insertRow, editCells, moveCells, pasteCells, pasteCellsAt, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setCellStyle, setColumnWidth, setTableVisibility, queryCapacity, querySelectionStatistics, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, moveCollection, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
+    addTable, rangeToTable, newTable, newBlankWorkbook, writeCellAt, insertRow, editCells, moveCells, pasteCells, pasteCellsAt, addColumn, setColumnRequiredness, setColumnConstraint, setColumnNumberFormat, setColumnDateFormat, setColumnAlignment, setCellStyle, setColumnWidth, setTableVisibility, queryCapacity, querySelectionStatistics, queryColumnTotals, queryDistinctValues, queryGroupTotals, translateA1Formula, copyFormula, renameTable, deleteTable, moveCollection, renameColumn, removeColumn, moveColumn, removeRows, duplicateCollection, openFiles, openCanonical, openOpaque, openWorkFile, exportWorkFile, read, selectCollection, readFields, edit, editConfirmed, trackerHistory, exportCanonical, exportOpaque,
     listKeyedGroupedSumBindings, createKeyedGroupedSum, queryKeyedGroupedSum, discoverKeyedGroupedSums,
     inspectSpreadsheet, importSpreadsheet, previewCleanup, commitCleanup, exportSpreadsheet, exportNativeTables, validateImportedProject, close,
   };
