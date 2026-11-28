@@ -13,6 +13,13 @@ import { fileURLToPath } from 'node:url';
 // tuple for an explicit rollback, never mix receipts between qualified kits.
 const qualifiedArtifacts = [
   {
+    // Work #1015, #1016 and #1024 re-pin. The producer export is recorded on #246.
+    sourceCommit: 'ac719ae7b0148d2fe17c15f7ca18ff75513c0cbe',
+    artifactManifestSha256: '4584a7bf788131e5545ab58633dfe64da2641910cd71e8351265999cac5d56b8',
+    review: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7239807533',
+    handback: 'https://github.com/nurockplayer/tachiko-sheet/issues/246#issuecomment-7239807533',
+  },
+  {
     // Work #1002, #978 and #979 re-pin. The producer export is recorded on #246.
     sourceCommit: '0b12f8b332d54d7b0825be4ccb21671f4ab87223',
     artifactManifestSha256: 'c8de49ecdb8e035e5e247b1c044a27352528fb80cc59ad0d01e8366296ed0315',

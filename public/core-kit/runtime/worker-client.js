@@ -97,6 +97,14 @@ export class WorkerDesignerClient {
             throw new Error("Expected imported project open.");
         return expectResponse("opened_window", reply.response);
     }
+    async reopenImportedXlsxWorkingSize(expected) {
+        const reply = await this.#spreadsheet({
+            type: "reopen_imported_xlsx_working_size", expected, occurrence_id: freshOccurrenceId(),
+        });
+        if (reply.status !== "ok")
+            throw new Error("Expected working-size XLSX reopen.");
+        return expectResponse("opened_window", reply.response);
+    }
     async exportSpreadsheet(expectedRevision, metadata, format, collection) {
         const reply = await this.#spreadsheet({ type: "export", expected_revision: expectedRevision, metadata, format, collection });
         if (reply.status !== "spreadsheet_exported")
@@ -169,6 +177,9 @@ export class WorkerDesignerClient {
     }
     async pasteCellsAt(expectedRevision, collection, row, column, rows) {
         return this.trackerCommand({ type: "paste_cells_at", expected_revision: expectedRevision, collection, row, column, rows });
+    }
+    async moveCellsAt(expectedRevision, collection, moves) {
+        return this.trackerCommand({ type: "move_cells_at", expected_revision: expectedRevision, collection, moves });
     }
     async newTable(name, columns) {
         return expectResponse("opened", await this.#command({ type: "new_table", occurrence_id: freshOccurrenceId(), name, columns }));

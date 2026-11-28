@@ -1,6 +1,6 @@
 import type { A1Translation, RenderA1FormulaInput, TranslateA1FormulaInput } from "./protocol.ts";
 import type { CleanupOperation, CleanupPreview, ImportedProjection, ImportedWindowProjection, ImportOptions, ImportSelection, InteropMetadata, NativeBudgetExportPresentation, NativeTrackerExportPresentation, SourceWorkbook, SpreadsheetExport, SpreadsheetFormat } from "./interop-protocol.ts";
-import type { FormulaCopy, TrackerCommand, ScalarEditInput, PasteCellInput, BootstrapProjection, ProjectInspectionProjection, CapacityProjection, FieldBatchProjection, FieldExplanationProjection, CellStyleChange, FieldTarget, CanonicalTreeExport, CanonicalProjectFile, OccurrenceProjection, OpenedProjection, OpenedWindowProjection, ProjectExport, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, SelectionStatisticsProjection, SelectionStatisticsRange, GroupDimension, GroupScope, GroupTotalsProjection, FailureProjection, FieldConstraintInput, NumberFormat, DateFormat } from "./protocol.ts";
+import type { FormulaCopy, TrackerCommand, ScalarEditInput, PasteCellInput, PositionalCellMove, BootstrapProjection, ProjectInspectionProjection, CapacityProjection, FieldBatchProjection, FieldExplanationProjection, CellStyleChange, FieldTarget, CanonicalTreeExport, CanonicalProjectFile, OccurrenceProjection, OpenedProjection, OpenedWindowProjection, ProjectExport, PublicationProjection, DuplicateCollectionProjection, KeyedGroupedSumDefinitionInput, KeyedGroupedSumProjection, KeyedGroupedSumPublishedProjection, NewTableColumnInput, TableProjection, TableView, TableWindowProjection, LocatedInViewProjection, DistinctValuesProjection, FindDirection, FindInViewProjection, FindPosition, ColumnTotalsProjection, SelectionStatisticsProjection, SelectionStatisticsRange, GroupDimension, GroupScope, GroupTotalsProjection, FailureProjection, FieldConstraintInput, NumberFormat, DateFormat } from "./protocol.ts";
 export interface DesignerClient {
     inspectCurrentProject?(): Promise<ProjectInspectionProjection>;
     inspectSpreadsheet?(bytes: ArrayBuffer, format: SpreadsheetFormat, csvOptions: ImportOptions, profile?: "working_size"): Promise<SourceWorkbook>;
@@ -11,6 +11,8 @@ export interface DesignerClient {
     inspectImportedProjectWorkingSize?(bytes: ArrayBuffer, metadata: InteropMetadata): Promise<OpenedWindowProjection>;
     openImportedProject?(bytes: ArrayBuffer, metadata: InteropMetadata): Promise<OpenedProjection>;
     openImportedProjectWorkingSize?(bytes: ArrayBuffer, metadata: InteropMetadata): Promise<OpenedWindowProjection>;
+    /** Reopen the live, unedited XLSX import with working-size limits and its overwrite proof. */
+    reopenImportedXlsxWorkingSize?(expected: OccurrenceProjection): Promise<OpenedWindowProjection>;
     exportSpreadsheet?(expectedRevision: string, metadata: InteropMetadata, format: SpreadsheetFormat, collection: string): Promise<SpreadsheetExport>;
     /** Refuses with displayable diagnostics unless overwriting this opened XLSX is proven safe. */
     exportSpreadsheetOverwrite?(expected: OccurrenceProjection): Promise<SpreadsheetExport>;
@@ -31,6 +33,7 @@ export interface DesignerClient {
     newBlankWorkbook?(): Promise<OpenedWindowProjection>;
     writeCellAt?(expectedRevision: string, collection: string, row: number, column: number, input: ScalarEditInput): Promise<PublicationProjection>;
     pasteCellsAt?(expectedRevision: string, collection: string, row: number, column: number, rows: PasteCellInput[][]): Promise<PublicationProjection>;
+    moveCellsAt?(expectedRevision: string, collection: string, moves: PositionalCellMove[]): Promise<PublicationProjection>;
     newTable?(name: string, columns: NewTableColumnInput[]): Promise<OpenedProjection>;
     /** Create a table whose session profile is the working-size one. */
     newTableWorkingSize?(name: string, columns: NewTableColumnInput[]): Promise<OpenedWindowProjection>;
