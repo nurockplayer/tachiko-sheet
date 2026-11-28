@@ -419,7 +419,7 @@ export interface SheetShellProps {
   onMoveCells?(witness: ViewWitness, moves: CellMove[]): Promise<RowCommandOutcome>;
   onCopyFormula?(witness: ViewWitness, request: FormulaCopy): Promise<RowCommandOutcome>;
   onPasteCells?(witness: ViewWitness, collection: string, startEntity: string | null, startField: string, rows: PasteCellInput[][]): Promise<RowCommandOutcome>;
-  onPasteCellsAt?(witness: ViewWitness, collection: string, row: number, column: number, rows: PasteCellInput[][]): Promise<RowCommandOutcome>;
+  onPasteCellsAt?(witness: ViewWitness, collection: string, row: number, column: number, rows: PasteCellInput[][], cutEdits?: CellEdit[]): Promise<RowCommandOutcome>;
   onInsertRow?(witness: ViewWitness, collection: string, initializers: RowInitializer[], before?: string, count?: number): Promise<RowCommandOutcome>;
   onAddColumn?(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[] | undefined, required?: boolean): Promise<RowCommandOutcome>;
   onSetColumnRequiredness?(witness: ViewWitness, collection: string, field: string, required: boolean): Promise<RowCommandOutcome>;

@@ -1819,8 +1819,19 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.pasteCells(witness, collection, startEntity, startField, rows));
   }
 
-  function pasteCellsAt(witness: ViewWitness, collection: string, row: number, column: number, rows: PasteCellInput[][]) {
-    return changeRows(witness, () => runtime.pasteCellsAt(witness, collection, row, column, rows));
+  async function pasteCellsAt(witness: ViewWitness, collection: string, row: number, column: number, rows: PasteCellInput[][], cutEdits?: CellEdit[]): Promise<RowCommandOutcome> {
+    let pasteWitness = witness;
+    const clearSource = Boolean(cutEdits?.length);
+    if (cutEdits?.length) {
+      const cleared = await editCells(witness, cutEdits);
+      if (cleared.kind !== "confirmed") return cleared;
+      pasteWitness = witnessOf(viewRef.current!);
+    }
+    const pasted = await changeRows(pasteWitness, () => runtime.pasteCellsAt(pasteWitness, collection, row, column, rows));
+    if (clearSource && pasted.kind === "refused") {
+      return { kind: "refused", message: `${pasted.message} The cut source was cleared. Use Undo to restore it.` };
+    }
+    return pasted;
   }
 
   function addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[] | undefined, required = true) {

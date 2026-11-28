@@ -589,6 +589,23 @@ const cases = [
     await replaceCell(page, id("A2"), "9");
     await waitForCellText(page, id("B2"), "18");
     await waitForCellText(page, id("D1"), "19");
+
+    await home(page);
+    await page.keyboard.press("Control+n");
+    await replaceCell(page, id("A1"), "Apple");
+    for (const destination of ["B1", "A2"]) {
+      await cell("A1").click();
+      await page.keyboard.press("Control+x");
+      await cell(destination).click();
+      await page.keyboard.press("Control+v");
+      await waitForCellText(page, id(destination), "Apple");
+      await waitForCellText(page, id("A1"), "");
+      await page.keyboard.press("Control+z");
+      await waitForCellText(page, id(destination), "");
+      await waitForCellText(page, id("A1"), "");
+      await page.keyboard.press("Control+z");
+      await waitForCellText(page, id("A1"), "Apple");
+    }
   } },
   { id: "15", name: "Undo/redo", tier: "A", run: async (page) => {
     await example(page);
