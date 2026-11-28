@@ -592,23 +592,38 @@ const cases = [
 
     await home(page);
     await page.keyboard.press("Control+n");
-    await replaceCell(page, id("A1"), "Apple");
-    await replaceCell(page, id("B1"), "7");
+    await cell("A1").click();
+    await page.evaluate(() => navigator.clipboard.writeText("Apple\t7\n0\t8"));
+    await page.keyboard.press("Control+v");
+    await waitForCellText(page, id("B2"), "8");
     await replaceCell(page, id("B1"), "=2+5");
-    assert.ok(fieldAt(await projection(page), 0, 1)?.formula, "the worksheet lacks the formula for the positional cut check");
-    for (const destination of ["C1", "A2"]) {
-      await cell("A1").click();
+    await replaceCell(page, id("B2"), "=B1+1");
+    await cell("A1").click();
+    await page.keyboard.press("Control+b");
+    await settle(page);
+    for (const [destination, formulaDestination] of [["C1", "D1"], ["A3", "B3"]]) {
+      await dragCells(page, id("A1"), id("B1"));
       await page.keyboard.press("Control+x");
       await cell(destination).click();
       await page.keyboard.press("Control+v");
       await waitForCellText(page, id(destination), "Apple");
       await waitForCellText(page, id("A1"), "");
-      await waitForCellText(page, id("B1"), "7");
+      await waitForCellText(page, id("B1"), "");
+      await waitForCellText(page, id(formulaDestination), "7");
+      await waitForCellText(page, id("B2"), "8");
+      assert.ok(await weight(destination) >= 600 && await weight("A1") < 600, "bold did not move into the new allocation");
       await page.keyboard.press("Control+z");
       await waitForCellText(page, id(destination), "");
-      await waitForCellText(page, id("A1"), "");
-      await page.keyboard.press("Control+z");
       await waitForCellText(page, id("A1"), "Apple");
+      await waitForCellText(page, id("B1"), "7");
+      assert.ok(await weight("A1") >= 600 && await weight(destination) < 600, "the first Undo did not restore the source style");
+      const allocated = await projection(page);
+      assert.deepEqual([allocated.rows.length, allocated.columns.length], destination === "C1" ? [2, 4] : [3, 2]);
+      await page.keyboard.press("Control+z");
+      await page.waitForFunction(() => {
+        const table = window.__readObservedTable(window.__habits);
+        return table?.rows.length === 2 && table.columns.length === 2;
+      });
     }
   } },
   { id: "15", name: "Undo/redo", tier: "A", run: async (page) => {

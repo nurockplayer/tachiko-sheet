@@ -28,6 +28,7 @@ import {
   type LocalCopies,
   type A1TranslationRequest,
   LOCAL_RUNTIME_RELOAD_REQUIRED_MESSAGE,
+  rowEntity,
   type OperationOutcome,
   type PresentationAttachment,
   type ReportConfiguration,
@@ -42,6 +43,7 @@ import {
   type RowInitializer,
   type CellEdit,
   type CellMove,
+  type CellMoveSource,
   type CellStyleRows,
   type CommitOutcome,
   type CreateCopyOutcome,
@@ -60,6 +62,7 @@ import {
   RuntimeStartupError,
 } from "./runtime/session.js";
 import { SheetShell } from "./ui/SheetShell.js";
+import { rowSource } from "./ui/row-source.js";
 import { csvSampleLines, detectCsvDelimiter, guessCsvEncoding, toUtf8Bytes, type CsvDelimiter, type CsvEncoding } from "./ui/csv-text.js";
 import { capacityForView, type CapacityReading } from "./ui/capacity-message.js";
 import { workFileOpenRefusal } from "./ui/work-file-copy.js";
@@ -1811,6 +1814,47 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.moveCells(witness, moves));
   }
 
+  async function moveCellsAt(witness: ViewWitness, row: number, column: number, source: CellMoveSource): Promise<RowCommandOutcome> {
+    const view = viewRef.current;
+    if (!view || view.occurrence !== witness.occurrence || view.revision !== witness.revision) {
+      return { kind: "refused", message: "This change belongs to an older view. Refresh before trying again." };
+    }
+    const { columns, collection } = view.table;
+    const lastRow = row + source.entities.length - 1;
+    const lastColumn = column + source.fields.length - 1;
+    let allocationColumn = lastColumn;
+    let blank: PasteCellInput = { kind: "clear" };
+    // Touch one new cell at the extent of the block. An already allocated
+    // column in a new row must still satisfy Work's requiredness.
+    if (lastColumn < columns.length) {
+      allocationColumn = columns.findIndex(field => !field.required);
+      if (allocationColumn === -1) {
+        allocationColumn = columns.findIndex(field => field.field_type === "text" && !field.constraint);
+        blank = "";
+      }
+      if (allocationColumn === -1) {
+        return { kind: "refused", message: "A blank row cannot be allocated in this table. Choose an existing destination." };
+      }
+    }
+    // Work #1013 will combine this allocation and move into one history step.
+    const allocation = await pasteCellsAt(witness, collection.key, lastRow, allocationColumn, [[blank]]);
+    if (allocation.kind !== "confirmed") return allocation;
+    const allocated = viewRef.current!;
+    const entities = rowSource(allocated.table).rows(row, source.entities.length).map(rowEntity);
+    const fields = allocated.table.columns.slice(column, column + source.fields.length).map(field => field.id);
+    if (entities.length !== source.entities.length || fields.length !== source.fields.length) {
+      return { kind: "refused", message: "The allocated destination could not be found. Use Undo to remove the allocation." };
+    }
+    const moves = source.entities.flatMap((entity, r) => source.fields.map((field, c) => ({
+      from: { entity, field }, to: { entity: entities[r]!, field: fields[c]! },
+    })));
+    const moved = await moveCells(witnessOf(allocated), moves);
+    if (moved.kind === "refused") {
+      return { ...moved, message: `${moved.message} The source stayed in place. Use Undo to remove the blank allocation.` };
+    }
+    return moved.kind === "confirmed" ? { ...moved, addedEntities: allocation.addedEntities } : moved;
+  }
+
   function writeCellAt(witness: ViewWitness, collection: string, row: number, column: number, input: string | ScalarValueEdit) {
     return changeRows(witness, () => runtime.writeCellAt(witness, collection, row, column, input));
   }
@@ -1819,19 +1863,8 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
     return changeRows(witness, () => runtime.pasteCells(witness, collection, startEntity, startField, rows));
   }
 
-  async function pasteCellsAt(witness: ViewWitness, collection: string, row: number, column: number, rows: PasteCellInput[][], cutEdits?: CellEdit[]): Promise<RowCommandOutcome> {
-    let pasteWitness = witness;
-    const clearSource = Boolean(cutEdits?.length);
-    if (cutEdits?.length) {
-      const cleared = await editCells(witness, cutEdits);
-      if (cleared.kind !== "confirmed") return cleared;
-      pasteWitness = witnessOf(viewRef.current!);
-    }
-    const pasted = await changeRows(pasteWitness, () => runtime.pasteCellsAt(pasteWitness, collection, row, column, rows));
-    if (clearSource && pasted.kind === "refused") {
-      return { kind: "refused", message: `${pasted.message} The cut source was cleared. Use Undo to restore it.` };
-    }
-    return pasted;
+  function pasteCellsAt(witness: ViewWitness, collection: string, row: number, column: number, rows: PasteCellInput[][]) {
+    return changeRows(witness, () => runtime.pasteCellsAt(witness, collection, row, column, rows));
   }
 
   function addColumn(witness: ViewWitness, collection: string, name: string, fieldType: NewTableColumn["field_type"], initializers: ColumnInitializer[] | undefined, required = true) {
@@ -2500,6 +2533,7 @@ export function App({ runtime, copies, appearancePreference }: AppProps) {
           onWriteCellAt={writeCellAt}
           onEditCells={editCells}
           onMoveCells={moveCells}
+          onMoveCellsAt={moveCellsAt}
           onCopyFormula={copyFormula}
           onPasteCells={pasteCells}
           onPasteCellsAt={pasteCellsAt}
