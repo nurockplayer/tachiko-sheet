@@ -327,6 +327,7 @@ const cases = [
   } },
   { id: "05", name: "Add data beside table", tier: "A", run: async (page) => {
     await example(page);
+    await saveCopy(page, "habits-05");
     const before = await projection(page);
     const ids = before.columns.map((column) => column.id);
     const last = page.getByTestId(cellIdFor(before, 0, before.columns.length - 1));
@@ -339,6 +340,21 @@ const cases = [
     assert.equal(after.columns.length, before.columns.length + 1, "typing to the right of the last column created no field");
     assert.deepEqual(after.columns.slice(0, ids.length).map((column) => column.id), ids, "existing field ids changed");
     assert.equal(fieldAt(after, 0, ids.length)?.stored?.value, "Extra", "Work did not store the text beside the table");
+    const addedCell = cellIdFor(after, 0, ids.length);
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await page.getByTestId(addedCell).waitFor({ state: "detached" });
+    assert.deepEqual((await projection(page)).columns.map((column) => column.id), ids, "one Undo did not remove the new field");
+    await page.getByRole("button", { name: "Redo", exact: true }).click();
+    await waitForCellText(page, addedCell, "Extra");
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByTestId("save-status").filter({ hasText: "Saved on this device" }).waitFor();
+    await home(page);
+    await page.getByRole("button", { name: "Open saved habits-05", exact: true }).click();
+    await waitForCellText(page, addedCell, "Extra");
+    const reopened = await projection(page);
+    assert.deepEqual(reopened.columns.map((column) => column.id), after.columns.map((column) => column.id), "field ids changed after Save and reopen");
+    assert.equal(fieldAt(reopened, 0, ids.length)?.stored?.value, "Extra", "the new field value did not survive Save and reopen");
   } },
   { id: "06", name: "Mixed values", tier: "A", run: async (page) => {
     await newTable(page, "Typed", [{ name: "Value", type: "number" }]);
