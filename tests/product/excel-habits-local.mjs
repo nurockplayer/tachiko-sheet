@@ -2632,6 +2632,30 @@ const cases = [
     await page.locator(".ts-table-tab").and(page.getByTitle("Table 1", { exact: true })).click();
     await settle(page);
     await assertTable();
+
+    await home(page);
+    await (await homeImportInput(page)).setInputFiles({
+      name: "produce.csv", mimeType: "text/csv", buffer: Buffer.from("Item,Quantity\nPear,2\nPlum,3\n"),
+    });
+    const importDialog = page.getByRole("dialog", { name: "Review import preview", exact: true });
+    await importDialog.locator(".ts-import-column select").nth(0).selectOption("text");
+    await importDialog.locator(".ts-import-column select").nth(1).selectOption("number");
+    await importDialog.getByRole("button", { name: "Import file", exact: true }).click();
+    await ready(page);
+    const imported = await projection(page);
+    const importedTabs = await page.locator(".ts-table-tab").count();
+    await dragCells(page, cellIdFor(imported, 0, 0), cellIdFor(imported, 1, 1));
+    await page.keyboard.press("Control+t");
+    await dialog.getByText("Selected range: A2:B3", { exact: true }).waitFor();
+    await dialog.getByRole("button", { name: "Create table", exact: true }).click();
+    const refusal = dialog.getByRole("alert");
+    const tableTab = page.locator(".ts-table-tab").and(page.getByTitle("Table 1", { exact: true }));
+    await tableTab.or(refusal).first().waitFor();
+    assert.equal(await refusal.count(), 0, await refusal.allTextContents().then(messages => messages.join("\n")));
+    await settle(page);
+    assert.equal(await page.locator(".ts-table-tab").count(), importedTabs + 1, "Ctrl+T did not create a table from the CSV range");
+    const csvTable = await projection(page);
+    assert.deepEqual(csvTable.rows.map((_, row) => csvTable.columns.map((_, col) => fieldAt(csvTable, row, col)?.stored?.value)), [["Pear", 2], ["Plum", 3]]);
   } },
   { id: "49", name: "Show formulas", tier: "C", run: async (page) => {
     await example(page);
