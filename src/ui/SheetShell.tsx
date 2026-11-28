@@ -2014,7 +2014,7 @@ export function SheetShell(props: SheetShellProps) {
     const start = unallocated ?? (draft ? { row: displayRows.length, column: at.column } : selectionRectangle ? { row: selectionRectangle.top, column: selectionRectangle.left } : at);
     const pasteRowCount = worksheet ? displayRows.filter(row => !row.id.startsWith("worksheet-row:")).length : displayRows.length;
     const pasteBlocked = controlsLocked || rowCommandPendingRef.current || currentness !== "current" || cellDraftActive || formulaDraftActive || anyNotesDraft || hasInvalidReportDraft || rowDraft?.needsReview === true || modalInteractionOpen;
-    const cutSource = !valuesOnly && pasteSource?.cut?.text.replaceAll("\r\n", "\n") === text.replaceAll("\r\n", "\n") ? pasteSource : null;
+    const cutSource = pasteSource?.cut?.text.replaceAll("\r\n", "\n") === text.replaceAll("\r\n", "\n") ? pasteSource : null;
     if (cutSource?.cut) {
       const cut = cutSource.cut;
       if (pasteBlocked || rowDraftActive) { announceClipboard("Finish the current edit or operation before pasting.", true); return; }
@@ -2022,8 +2022,8 @@ export function SheetShell(props: SheetShellProps) {
         top: start.row, left: start.column,
         bottom: start.row + cut.entities.length - 1, right: start.column + cut.fields.length - 1,
       });
-      if (to && onMoveCells) {
-        if (start.row === cutSource.area.top && start.column === cutSource.area.left) {
+      if (to && (valuesOnly ? onEditCells : onMoveCells)) {
+        if (!valuesOnly && start.row === cutSource.area.top && start.column === cutSource.area.left) {
           setCopiedArea(null);
           announceClipboard("The selected cells are unchanged.", false, true);
           return;
@@ -2031,16 +2031,43 @@ export function SheetShell(props: SheetShellProps) {
         const moves = cut.entities.flatMap((entity, row) => cut.fields.map((field, column) => ({
           from: { entity, field }, to: { entity: to.entities[row]!, field: to.fields[column]! },
         })));
+        let publish = () => onMoveCells!(witness, moves);
+        if (valuesOnly) {
+          const edits = new Map<string, CellEdit>();
+          for (const { from } of moves) {
+            edits.set(cellKey(from.entity, from.field), { target: from, input: { kind: "clear" } });
+          }
+          for (const { from, to } of moves) {
+            const field = fieldForColumn(displayRows[rowIndexByEntity.get(from.entity)!]!, from.field);
+            const calculated = field?.calculated;
+            if (field?.formula && calculated?.status !== "value") {
+              announceClipboard("The cut formula has no calculated value. Nothing was pasted.", true, true);
+              return;
+            }
+            const value = calculated?.status === "value"
+              ? calculated.result ?? { kind: "number" as const, value: calculated.value }
+              : field?.stored;
+            if (value?.kind === "reference") {
+              announceClipboard("The cut cells include a reference that cannot be pasted as a value.", true, true);
+              return;
+            }
+            const input = !value ? { kind: "clear" as const }
+              : value.kind === "number" ? { kind: "number" as const, input: String(value.value) }
+              : value;
+            edits.set(cellKey(to.entity, to.field), { target: to, input });
+          }
+          publish = () => onEditCells!(witness, [...edits.values()]);
+        }
         const intent = completionIntent();
         keepGridRows(to.entities);
-        void publishCells(() => onMoveCells(witness, moves), moves.length, "Moved", "move").then(confirmed => {
+        void publishCells(publish, moves.length, "Moved", "move").then(confirmed => {
           if (!confirmed) return;
           setCopiedArea(current => current === cutSource ? null : current);
           revealPastedCell(moves[0]!.to, intent);
         });
         return;
       }
-      if (!onMoveCellsAt || draft || (!unallocated && !worksheet)) {
+      if (valuesOnly || !onMoveCellsAt || draft || (!unallocated && !worksheet)) {
         announceClipboard("Choose an existing range large enough for the cut cells.", true, true);
         return;
       }

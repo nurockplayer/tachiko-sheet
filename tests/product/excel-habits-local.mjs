@@ -561,6 +561,20 @@ const cases = [
     assert.equal(await page.locator(".ts-cell--copied").count(), 0, "Escape did not cancel Cut");
     await waitForCellText(page, id("B1"), "14");
 
+    // #633: Paste values consumes the cut and restores both cells on one Undo.
+    await cell("B1").click();
+    await page.keyboard.press("Control+x");
+    await cell("B2").click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Paste values", exact: true }).click();
+    await waitForCellText(page, id("B2"), "14");
+    await waitForCellText(page, id("B1"), "");
+    assert.deepEqual(fieldAt(await projection(page), 1, 1)?.stored, { kind: "number", value: 14 });
+    assert.equal(fieldAt(await projection(page), 1, 1)?.formula, null);
+    await page.keyboard.press("Control+z");
+    await waitForCellText(page, id("B1"), "14");
+    await waitForCellText(page, id("B2"), "3");
+    assert.ok(fieldAt(await projection(page), 0, 1)?.formula, "Undo did not restore the cut formula");
+
     await dragCells(page, id("A1"), id("B1"));
     await page.keyboard.press("Control+x");
     await cell("A2").click();
